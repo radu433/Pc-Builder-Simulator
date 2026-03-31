@@ -68,7 +68,7 @@ class PSU(ComponentaBase):
     def __str__(self):
         return self.nume
 
-class Carcasa(ComponentaBase):
+class Case(ComponentaBase):
     TIP_CARCASA_CHOICES = [
         ('MID', 'Mid Tower'),
         ('FULL', 'Full Tower'),
