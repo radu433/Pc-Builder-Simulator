@@ -95,3 +95,70 @@ class Cooler(ComponentaBase):
 
     def __str__(self):
         return self.nume
+class Storage(ComponentaBase):
+    TIP_STORAGE_CHOICES = [
+        ('SSD', 'Solid State Drive'),
+        ('HDD', 'Hard Disk Drive'),
+        ('NVME', 'M.2 NVMe'),
+    ]
+    tip = models.CharField(max_length=10, choices=TIP_STORAGE_CHOICES)
+    capacitate_gb = models.IntegerField()
+    interfata = models.CharField(max_length=100) # ex: SATA III, PCIe 5.0 x4
+    viteza_citire_mb_s = models.IntegerField(null=True, blank=True)
+    viteza_scriere_mb_s = models.IntegerField(null=True, blank=True)
+    format = models.CharField(max_length=50) # ex: 2.5", M.2 2280, 3.5"
+
+    def __str__(self):
+        return f"{self.nume} ({self.capacitate_gb}GB)"
+
+class Monitor(ComponentaBase):
+    diagonala_inch = models.DecimalField(max_digits=4, decimal_places=1)
+    rezolutie = models.CharField(max_length=50) # ex: 2560x1440
+    rata_refresh_hz = models.IntegerField()
+    tip_panou = models.CharField(max_length=50) # ex: IPS, OLED, VA
+    timp_raspuns_ms = models.DecimalField(max_digits=3, decimal_places=1)
+    aspect_ratio = models.CharField(max_length=20, default="16:9")
+    are_boxe = models.BooleanField(default=False)
+
+class Fan(ComponentaBase):
+    dimensiune_mm = models.IntegerField() # ex: 120, 140
+    tip_conector = models.CharField(max_length=50) # ex: 4-pin PWM, 3-pin
+    flux_aer_cfm = models.DecimalField(max_digits=5, decimal_places=2)
+    nivel_zgomot_db = models.DecimalField(max_digits=4, decimal_places=1)
+    are_rgb = models.BooleanField(default=False)
+
+class OpticalDrive(ComponentaBase):
+    tip = models.CharField(max_length=100) # ex: Blu-Ray, DVD-RW
+    interfata = models.CharField(max_length=50, default="SATA")
+    format = models.CharField(max_length=50) # ex: Internal 5.25", External
+
+class OperatingSystem(ComponentaBase):
+    editie = models.CharField(max_length=200) # ex: Windows 11 Pro, Home
+    arhitectura = models.CharField(max_length=20, default="64-bit")
+    tip_licenta = models.CharField(max_length=100) # ex: OEM, Retail
+
+class NetworkAdapter(ComponentaBase):
+    interfata = models.CharField(max_length=100) # ex: PCIe x1, USB 3.0
+    viteza_maxima_mbps = models.IntegerField()
+    standard_wireless = models.CharField(max_length=100, null=True, blank=True) # ex: Wi-Fi 7, Wi-Fi 6E
+    are_bluetooth = models.BooleanField(default=False)
+
+class ExternalStorage(ComponentaBase):
+    tip = models.CharField(max_length=50) # ex: External SSD, HDD, Flash Drive
+    capacitate_gb = models.IntegerField()
+    interfata_conectare = models.CharField(max_length=100) # ex: USB-C, USB 3.2
+
+class SoundCard(ComponentaBase):
+    interfata = models.CharField(max_length=100) # ex: PCIe x1, USB
+    canale_audio = models.CharField(max_length=50) # ex: 7.1, 5.1
+    rata_esantionare_khz = models.IntegerField()
+
+class Accessory(ComponentaBase):
+    categorie = models.CharField(max_length=100)
+    specificatii_cheie = models.JSONField(default=dict)
+
+class UPS(ComponentaBase):
+    capacitate_va = models.IntegerField()
+    putere_w = models.IntegerField()
+    numar_prize = models.IntegerField()
+    tip_unda = models.CharField(max_length=100)
