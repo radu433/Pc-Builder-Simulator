@@ -18,6 +18,7 @@ class GPU(ComponentaBase):
     serie = models.CharField(max_length=200)
     model_chipset = models.CharField(max_length=200)
     vram_gb = models.IntegerField()
+    tip_vram = models.CharField(max_length=50, null=True, blank=True)
     consum_tdp = models.IntegerField()
     lungime_mm = models.IntegerField()
     latime_mm = models.IntegerField()
@@ -30,6 +31,7 @@ class CPU(ComponentaBase):
     socket = models.CharField(max_length=100)
     serie = models.CharField(max_length=200)
     nuclee = models.IntegerField()
+    threaduri = models.IntegerField(null=True, blank=True)
     frecventa_ghz = models.DecimalField(max_digits=4, decimal_places=2)
     consum_tdp = models.IntegerField()
 
@@ -41,6 +43,8 @@ class Motherboard(ComponentaBase):
     chipset = models.CharField(max_length=100)
     format = models.CharField(max_length=50)
     tip_memorie = models.CharField(max_length=50)
+    sloturi_ram = models.IntegerField(default=4) 
+    nr_sloturi_m2 = models.IntegerField(default=1)
     are_wifi = models.BooleanField(default=False)
     are_bluetooth = models.BooleanField(default=False)
     porturi_io = models.JSONField(default=dict)
@@ -79,6 +83,10 @@ class Case(ComponentaBase):
     tip_carcasa = models.CharField(max_length=10, choices=TIP_CARCASA_CHOICES)
     formate_suportate = models.JSONField(default=list)
     include_sursa = models.BooleanField(default=False)
+    lungime_max_gpu_mm = models.IntegerField(null=True, blank=True) 
+    inaltime_max_cooler_mm = models.IntegerField(null=True, blank=True)
+    suport_radiator_mm = models.JSONField(default=list)
+    
     pozitie_sursa = models.CharField(max_length=100, default="Jos Spate")
     inaltime_mm = models.IntegerField()
     lungime_mm = models.IntegerField()
@@ -150,7 +158,7 @@ class ExternalStorage(ComponentaBase):
 
 class SoundCard(ComponentaBase):
     interfata = models.CharField(max_length=100) # ex: PCIe x1, USB
-    canale_audio = models.CharField(max_length=50) # ex: 7.1, 5.1
+    canale_audio = models.CharField(max_length=50) 
     rata_esantionare_khz = models.IntegerField()
 
 class Accessory(ComponentaBase):
