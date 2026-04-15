@@ -1,4 +1,5 @@
 from django.db import models
+from django.contrib.auth.models import User
 
 class ComponentaBase(models.Model):
     nume = models.CharField(max_length=300)
@@ -170,3 +171,33 @@ class UPS(ComponentaBase):
     putere_w = models.IntegerField()
     numar_prize = models.IntegerField()
     tip_unda = models.CharField(max_length=100)
+
+class SaveBuild(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='builds') #leg de utilizator
+    nume = models.CharField(max_length=100, blank=True)
+
+    cpu = models.ForeignKey(CPU, on_delete=models.SET_NULL, null=True, blank=True)
+    gpu = models.ForeignKey(GPU, on_delete=models.SET_NULL, null=True, blank=True)
+    motherboard = models.ForeignKey(Motherboard, on_delete=models.SET_NULL, null=True, blank=True)
+    ram = models.ForeignKey(RAM, on_delete=models.SET_NULL, null=True, blank=True)
+    storage = models.ForeignKey(Storage, on_delete=models.SET_NULL, null=True, blank=True)
+    psu = models.ForeignKey(PSU, on_delete=models.SET_NULL, null=True, blank=True)
+    case = models.ForeignKey(Case, on_delete=models.SET_NULL, null=True, blank=True)
+    cooler = models.ForeignKey(Cooler, on_delete=models.SET_NULL, null=True, blank=True)
+        
+    pret_total = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    data_salvarii = models.DateTimeField(auto_now_add=True)  
+
+def save(self, *args, **kwargs):
+       
+        if not self.nume:
+            #numaram al catelea pc salvat este 
+            numar_pc_uri_existente = SaveBuild.objects.filter(user=self.user).count()
+            # Setăm numele adăugând +1 la numărătoare
+            self.nume = f"My Custom PC {numar_pc_uri_existente + 1}"
+            
+        #functia de salvare in baza de date
+        super().save(*args, **kwargs)
+
+def __str__(self):
+    return f"{self.nume} - {self.user.username}"

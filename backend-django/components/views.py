@@ -3,8 +3,8 @@ from django.shortcuts import render
 # Create your views here.
 
 from rest_framework import viewsets
-from .models import CPU, GPU, RAM, Storage, Motherboard, PowerSupply, Case,Cooler
-from .serializers import CPUSerializer, GPUSerializer, RAMSerializer, StorageSerializer, MotherboardSerializer, PowerSupplySerializer, CaseSerializer,CoolerSerializer 
+from .models import CPU, GPU, RAM, Storage, Motherboard, PSU, Case,Cooler
+from .serializers import CPUSerializer, GPUSerializer, RAMSerializer, StorageSerializer, MotherboardSerializer, PSU, CaseSerializer,CoolerSerializer,PSUSerializer
 
 class CPUViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = CPU.objects.all()
@@ -26,9 +26,9 @@ class MotherboardViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Motherboard.objects.all()
     serializer_class = MotherboardSerializer
 
-class PowerSupplyViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = PowerSupply.objects.all()
-    serializer_class = PowerSupplySerializer
+class PSUViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = PSU.objects.all()
+    serializer_class = PSUSerializer
 
 class CaseViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Case.objects.all()
