@@ -4,9 +4,10 @@ from django.contrib.auth.models import User
 class ComponentaBase(models.Model):
     nume = models.CharField(max_length=300)
     brand = models.CharField(max_length=200)
-    pret = models.DecimalField(max_digits=10, decimal_places=2)
-    magazin = models.CharField(max_length=100)
-    url_produs = models.URLField(max_length=500)
+    pret = models.DecimalField(max_digits=10, decimal_places=2,null=True, blank=True)
+    magazin = models.CharField(max_length=100, null=True, blank=True)
+    url_produs = models.URLField(max_length=500, null=True, blank=True)
+    part_number = models.CharField(max_length=100, unique=True, null=True, blank=True)
     imagine_url = models.URLField(max_length=500, null=True, blank=True)
     stoc = models.BooleanField(default=True)
     regiune = models.CharField(max_length=50, default='Romania')
@@ -136,15 +137,6 @@ class Fan(ComponentaBase):
     nivel_zgomot_db = models.DecimalField(max_digits=4, decimal_places=1)
     are_rgb = models.BooleanField(default=False)
 
-class OpticalDrive(ComponentaBase):
-    tip = models.CharField(max_length=100) # ex: Blu-Ray, DVD-RW
-    interfata = models.CharField(max_length=50, default="SATA")
-    format = models.CharField(max_length=50) # ex: Internal 5.25", External
-
-class OperatingSystem(ComponentaBase):
-    editie = models.CharField(max_length=200) # ex: Windows 11 Pro, Home
-    arhitectura = models.CharField(max_length=20, default="64-bit")
-    tip_licenta = models.CharField(max_length=100) # ex: OEM, Retail
 
 class NetworkAdapter(ComponentaBase):
     interfata = models.CharField(max_length=100) # ex: PCIe x1, USB 3.0
@@ -152,25 +144,6 @@ class NetworkAdapter(ComponentaBase):
     standard_wireless = models.CharField(max_length=100, null=True, blank=True) # ex: Wi-Fi 7, Wi-Fi 6E
     are_bluetooth = models.BooleanField(default=False)
 
-class ExternalStorage(ComponentaBase):
-    tip = models.CharField(max_length=50) # ex: External SSD, HDD, Flash Drive
-    capacitate_gb = models.IntegerField()
-    interfata_conectare = models.CharField(max_length=100) # ex: USB-C, USB 3.2
-
-class SoundCard(ComponentaBase):
-    interfata = models.CharField(max_length=100) # ex: PCIe x1, USB
-    canale_audio = models.CharField(max_length=50) 
-    rata_esantionare_khz = models.IntegerField()
-
-class Accessory(ComponentaBase):
-    categorie = models.CharField(max_length=100)
-    specificatii_cheie = models.JSONField(default=dict)
-
-class UPS(ComponentaBase):
-    capacitate_va = models.IntegerField()
-    putere_w = models.IntegerField()
-    numar_prize = models.IntegerField()
-    tip_unda = models.CharField(max_length=100)
 
 class SaveBuild(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='builds') #leg de utilizator
