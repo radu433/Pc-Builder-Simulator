@@ -19,3 +19,9 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+
+# Medii virtuale Python
+venv/
+.venv/
+scraper-service/venv/
+__pycache__/

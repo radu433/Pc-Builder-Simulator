@@ -105,6 +105,7 @@ class Cooler(ComponentaBase):
 
     def __str__(self):
         return self.nume
+
 class Storage(ComponentaBase):
     TIP_STORAGE_CHOICES = [
         ('SSD', 'Solid State Drive'),

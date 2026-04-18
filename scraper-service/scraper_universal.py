@@ -4,7 +4,6 @@ import time
 import random
 from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright
-from playwright_stealth import stealth_sync as apply_stealth
 from config import MAGAZINE
 
 
@@ -44,13 +43,14 @@ def detecteaza_stoc(text_card: str, config: dict) -> str:
 
 def creeaza_context_antibot(p):
     browser = p.chromium.launch(
-        headless=False,
+        headless=True,
         args=[
             "--disable-blink-features=AutomationControlled",
             "--no-sandbox",
             "--disable-infobars",
-            "--window-position=0,0",
-            "--ignore-certificate-errors",
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+            "--window-size=1280,800",
         ]
     )
     user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
@@ -64,8 +64,14 @@ def creeaza_context_antibot(p):
             "Referer": "https://www.google.com/",
         }
     )
+    # patch ca sa nu fie detectat ca headless
+    context.add_init_script("""
+        Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+        Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3]});
+        Object.defineProperty(navigator, 'languages', {get: () => ['ro-RO', 'ro', 'en-US']});
+        window.chrome = { runtime: {} };
+    """)
     return browser, context
-
 
 def naviga_cu_retry(page, url: str, nume_magazin: str, retries: int = 2) -> bool:
     for attempt in range(retries):
@@ -100,10 +106,7 @@ def extrage_produse_magazin(page, nume_magazin: str, config: dict, termen_cautar
         return []
 
     continut = page.content().lower()
-    if any(x in continut for x in ["captcha", "robot", "acces blocat", "access denied"]):
-        print(f"  🚫 {nume_magazin}: CAPTCHA sau acces blocat.")
-        return []
-
+   
     produse_locator = page.locator(config["selector_card"])
 
     try:
@@ -175,7 +178,7 @@ def gaseste_cel_mai_ieftin(termen_cautare: str):
         for nume_magazin, config in MAGAZINE.items():
             browser, context = creeaza_context_antibot(p)
             page = context.new_page()
-            apply_stealth(page)
+            
 
             try:
                 produse = extrage_produse_magazin(page, nume_magazin, config, termen_cautare)
