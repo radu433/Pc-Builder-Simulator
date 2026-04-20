@@ -1,15 +1,6 @@
 """
 Scraper all-in-one pentru PC Builder Simulator.
 Copiaza in: components/management/commands/import_all.py
-Ruleaza cu: python manage.py import_all
-
-FIX-URI APLICATE:
-  1. get_ean() - fallback la slug URL cand nu exista cifre => rezolva motherboard + cooler
-  2. PSU certificare - regex corectat sa prinda "80 PLUS GOLD" nu doar "80"
-  3. PSU putere - labele extinse + fallback regex direct in text
-  4. Case - adaugat lungime_maxima_gpu_mm si inaltime_maxima_cooler_mm
-  5. RAM - fix parse capacitate module, fix swap frecventa/latenta
-  6. Storage - model inregistrat in admin (vezi admin.py la sfarsit)
 """
 
 import time
@@ -25,7 +16,7 @@ try:
 except ImportError:
     raise ImportError("Ruleaza: pip install requests beautifulsoup4")
 
-from components.models import GPU, Motherboard, RAM, PSU, Case, Cooler, Storage
+from components.models import CPU,GPU, Motherboard, RAM, PSU, Case, Cooler, Storage
 
 BASE_URL = "https://www.pc-kombo.com"
 
@@ -100,7 +91,6 @@ def extract_spec(soup, *labels):
                 if ":" in text:
                     return text.split(":", 1)[1].strip()
 
-        # FIX: cauta si in div-uri cu clase de tip spec/detail
         for div in soup.find_all(["div", "li"], class_=re.compile(r"spec|detail|prop|feature|attr", re.I)):
             text = div.get_text(strip=True)
             if ll in text.lower() and ":" in text:
@@ -189,10 +179,6 @@ def get_name(soup, url):
     return slug.split("_", 1)[-1].replace("-", " ") if "_" in slug else slug
 
 
-# ─────────────────────────── FIX 1: get_ean cu fallback la slug ──────────────
-# PROBLEMA VECHE: regex cerea cifre in URL => motherboard + cooler aveau slug text
-# => part_number = None => toate produsele sarite
-# FIX: daca nu gasim cifre, folosim slug-ul URL ca identificator unic
 def get_ean(url, keyword):
     m = re.search(rf"/{keyword}/(\d+)_", url)
     if m:
@@ -201,6 +187,109 @@ def get_ean(url, keyword):
     slug = url.rstrip("/").split("/")[-1]
     return slug if slug else None
 
+#────────────────────────── CPU ─────────────────────────────────────────
+
+CPU_SERIES = [
+    # AMD Ryzen 9000
+    "Ryzen 9 9950X", "Ryzen 9 9900X", "Ryzen 7 9700X", "Ryzen 5 9600X",
+    # AMD Ryzen 7000
+    "Ryzen 9 7950X3D", "Ryzen 9 7950X", "Ryzen 9 7900X3D", "Ryzen 9 7900X",
+    "Ryzen 9 7900", "Ryzen 7 7800X3D", "Ryzen 7 7700X", "Ryzen 7 7700",
+    "Ryzen 5 7600X", "Ryzen 5 7600",
+    # AMD Ryzen 5000
+    "Ryzen 9 5950X", "Ryzen 9 5900X", "Ryzen 7 5800X3D", "Ryzen 7 5800X",
+    "Ryzen 7 5800", "Ryzen 5 5600X", "Ryzen 5 5600", "Ryzen 5 5500",
+    # Intel Core Ultra (Arrow Lake)
+    "Core Ultra 9 285K", "Core Ultra 7 265K", "Core Ultra 7 265KF",
+    "Core Ultra 5 245K", "Core Ultra 5 245KF",
+    # Intel Core 14th Gen
+    "Core i9-14900K", "Core i9-14900KF", "Core i9-14900F",
+    "Core i7-14700K", "Core i7-14700KF", "Core i7-14700F",
+    "Core i5-14600K", "Core i5-14600KF", "Core i5-14500",
+    "Core i5-14400", "Core i5-14400F", "Core i3-14100", "Core i3-14100F",
+    # Intel Core 13th Gen
+    "Core i9-13900K", "Core i9-13900KF", "Core i9-13900F",
+    "Core i7-13700K", "Core i7-13700KF", "Core i7-13700F",
+    "Core i5-13600K", "Core i5-13600KF", "Core i5-13500",
+    "Core i5-13400", "Core i5-13400F", "Core i3-13100", "Core i3-13100F",
+    # Intel Core 12th Gen
+    "Core i9-12900K", "Core i9-12900KF", "Core i7-12700K",
+    "Core i5-12600K", "Core i5-12400", "Core i5-12400F",
+    "Core i3-12100", "Core i3-12100F",
+]
+ 
+ 
+def detect_cpu_serie(name):
+    for serie in CPU_SERIES:
+        if serie.upper() in name.upper():
+            return serie
+    m = re.search(
+        r"(Ryzen\s+[359]\s+\d+\w*|Core\s+(?:Ultra\s+)?\w+[-\s]\d+\w*|Threadripper\s+\w+)",
+        name, re.IGNORECASE
+    )
+    return m.group().strip() if m else name
+ 
+ 
+def detect_cpu_brand(name, producer):
+    if producer:
+        p = producer.lower()
+        if "amd" in p: return "AMD"
+        if "intel" in p: return "Intel"
+    n = name.upper()
+    if any(x in n for x in ["RYZEN", "ATHLON", "THREADRIPPER", "EPYC"]): return "AMD"
+    if any(x in n for x in ["CORE", "CELERON", "PENTIUM", "XEON"]): return "Intel"
+    return producer or "Unknown"
+ 
+ 
+def parse_ghz(text):
+    if not text: return None
+    m = re.search(r"([\d.]+)\s*GHz", text, re.IGNORECASE)
+    if m:
+        try: return Decimal(m.group(1))
+        except InvalidOperation: return None
+    m = re.search(r"([\d.]+)\s*MHz", text, re.IGNORECASE)
+    if m:
+        try: return round(Decimal(m.group(1)) / 1000, 2)
+        except InvalidOperation: return None
+    return None
+ 
+ 
+def scrape_cpu(session, url):
+    resp = fetch(session, url)
+    if not resp:
+        return None
+ 
+    soup = BeautifulSoup(resp.text, "html.parser")
+    name = get_name(soup, url)
+    ean  = get_ean(url, "cpu")
+ 
+    mpn      = extract_spec(soup, "MPN", "Part Number")
+    producer = extract_spec(soup, "Producer", "Brand", "Manufacturer")
+ 
+    base_clock = extract_spec(soup, "Base Clock", "Base Frequency", "Clock Speed")
+    cores      = extract_spec(soup, "Cores", "Core Count", "Physical Cores")
+    threads    = extract_spec(soup, "Threads", "Thread Count", "Logical Cores")
+    tdp        = extract_spec(soup, "TDP", "Power Consumption", "Thermal Design Power")
+    socket     = extract_spec(soup, "Socket", "CPU Socket")
+ 
+    return {
+        "part_number":   mpn or ean,
+        "nume":          name,
+        "brand":         detect_cpu_brand(name, producer),
+        "serie":         detect_cpu_serie(name),
+        "socket":        socket or "",
+        "nuclee":        parse_int(cores) or 0,
+        "threaduri":     parse_int(threads),
+        "frecventa_ghz": parse_ghz(base_clock) or Decimal("0.0"),
+        "consum_tdp":    parse_int(tdp) or 0,
+        "pret":          None,
+        "magazin":       None,
+        "url_produs":    None,
+        "stoc":          True,
+        "regiune":       "Romania",
+    }
+ 
+ 
 
 # ─────────────────────────── GPU ─────────────────────────────────────────────
 
@@ -437,7 +526,7 @@ def scrape_motherboard(session, url):
  
     soup = BeautifulSoup(resp.text, "html.parser")
     name = get_name(soup, url)
-    ean  = get_ean(url, "motherboard")
+    ean  = get_ean(url, "mainboard")
  
     mpn      = extract_spec(soup, "MPN", "Part Number")
     producer = extract_spec(soup, "Producer", "Brand", "Manufacturer")
@@ -446,14 +535,12 @@ def scrape_motherboard(session, url):
     form     = extract_spec(soup, "Form Factor", "Format", "Motherboard Size")
     memory   = extract_spec(soup, "Memory Type", "RAM Type", "Memory Standard")
  
-    # Campuri noi cu labelele corecte de pe pc-kombo
-    max_ram_gb = extract_spec(soup, "Memory Capacity", "Max Memory", "Maximum Memory")
-    ram_slots  = extract_spec(soup, "Ramslots", "RAM Slots", "Memory Slots", "DIMM Slots")
+    
+    capacitate_max_ram_gb = extract_spec(soup, "Memory Capacity", "Max Memory", "Maximum Memory")
+    sloturi_ram  = extract_spec(soup, "Ramslots", "RAM Slots", "Memory Slots", "DIMM Slots")
  
-    # Wifi/BT: pe pc-kombo sunt iconite icon-check/icon-stop, nu text
     are_wifi = extract_icon_bool(soup, "Wifi")
     are_bt   = extract_icon_bool(soup, "Bluetooth")
-    # Fallback text pentru cazuri rare
     if not are_wifi:
         are_wifi = bool(re.search(r"\bwi.?fi\b|\bwlan\b|\b802\.11\b", soup.get_text().lower()))
     if not are_bt:
@@ -476,8 +563,8 @@ def scrape_motherboard(session, url):
         "chipset":               chipset or "",
         "format":                normalize_form_factor(form),
         "tip_memorie":           normalize_memory_type(memory, name),
-        "capacitate_max_ram_gb": parse_int(max_ram_gb) or 0,
-        "numar_sloturi_ram":     parse_int(ram_slots) or 0,
+        "capacitate_max_ram_gb": parse_int(capacitate_max_ram_gb) or 0,
+        "sloturi_ram":     parse_int(sloturi_ram) or 0,
         "are_wifi":              are_wifi,
         "are_bluetooth":         are_bt,
         "porturi_io":            parse_porturi_io_mb(soup),
@@ -517,9 +604,6 @@ def scrape_ram(session, url):
         "Unknown"
     )
 
-    # ── FIX 5a: capacitate totala si pe modul ────────────────────────────────
-    # PROBLEMA VECHE: parse_int("2x16GB") nu returna nimic util pentru capacitate_modul_gb
-    # FIX: calculam explicit capacitate_modul si capacitate_totala din acelasi string
     cap_total = None
     cap_modul = None
 
@@ -545,10 +629,6 @@ def scrape_ram(session, url):
     if not cap_modul and cap_total and num_modules:
         cap_modul = cap_total // num_modules
 
-    # ── FIX 5b: frecventa si latenta ─────────────────────────────────────────
-    # PROBLEMA VECHE: parse_int() lua primul numar din orice string, deci
-    # din "CL40" extrăgea 40 dar il punea si la frecventa, si invers
-    # FIX: parsam frecventa DOAR din campul de frecventa, CL DOAR din campul CL
 
     freq_val = None
     if freq:
@@ -593,11 +673,11 @@ def scrape_ram(session, url):
         "nume":                 name,
         "brand":                brand,
         "capacitate_totala_gb": cap_total or 0,
-        "capacitate_modul_gb":  cap_modul or 0,   # FIX: camp nou
+        "capacitate_modul_gb":  cap_modul or 0,   
         "numar_module":         num_modules,
         "tip_memorie":          normalize_memory_type(tip, name),
-        "frecventa_mhz":        freq_val,          # FIX: nu mai confunda cu CL
-        "latenta_cl":           cl_val,            # FIX: acum e corect
+        "frecventa_mhz":        freq_val,          
+        "latenta_cl":           cl_val,            
         "inaltime_mm":          h if h > 0 else None,
         "pret":                 None,
         "magazin":              None,
@@ -620,27 +700,25 @@ def scrape_psu(session, url):
     mpn      = extract_spec(soup, "MPN", "Part Number")
     producer = extract_spec(soup, "Producer", "Brand", "Manufacturer")
  
-    # Label corect pe pc-kombo: "Watt" (nu "Wattage", "Power", etc.)
+    
     power = extract_spec(soup, "Watt", "Wattage", "Power Output", "Watts")
  
-    # Fallback: cauta pattern "850W" sau "850 Watt" direct in text
+   
     if not power:
         m = re.search(r"(\d{2,4})\s*(?:W\b|Watt|watt)", soup.get_text())
         if m:
             power = m.group(0)
  
-    # Label corect pe pc-kombo: "Efficiency Rating" -> "80 PLUS Platinum"
-    # Valoarea e deja text complet in <dd>, nu mai avem nevoie de regex complex
-    cert = extract_spec(soup, "Efficiency Rating", "80 Plus", "Certification", "Efficiency")
+
+    cert = extract_spec(soup, "Efficiency Rating")
  
-    # "Size" pe pc-kombo = formatul sursei (ATX/SFX), nu lungimea in mm
-    # Lungimea fizica nu e disponibila pe acest site, folosim default
+    
     modular = extract_spec(soup, "Modularity", "Modular", "Cable Management")
     length  = extract_spec(soup, "Depth", "Length", "Dimension")
  
     brand = producer or "Unknown"
  
-    # Modular: nu exista camp dedicat pe pc-kombo
+    
     # -> detectam din numele produsului care contine "modular" / "semi-modular"
     mod_text = (modular or name).lower()
     if "full modular" in mod_text or "full-modular" in mod_text:
@@ -748,10 +826,10 @@ def scrape_case(session, url):
     psu_inc  = extract_spec(soup, "Included PSU", "Power Supply Included", "Bundled PSU", "PSU Included")
     psu_pos  = extract_spec(soup, "PSU Position", "Power Supply Position", "PSU Location")
 
-    # FIX: label-uri reale de pe pc-kombo adaugate primul
+   
     max_gpu_length = extract_spec(
         soup,
-        "Supported GPU length",         # ← label real din HTML
+        "Supported GPU length",         
         "Max GPU Length", "Maximum GPU Length", "GPU Clearance",
         "Graphics Card Length", "Max Graphics Card Length",
         "Maximum Graphics Card", "GPU Length",
@@ -807,7 +885,6 @@ def scrape_case(session, url):
     }
 # ─────────────────────────── COOLER ──────────────────────────────────────────
 
-# ─────────────────────────── COOLER ──────────────────────────────────────────
 
 ALL_SOCKETS = [
     "AM5", "AM4", "AM3+", "AM3", "AM2+", "AM2",
@@ -902,7 +979,7 @@ def scrape_cooler(session, url):
 
     soup = BeautifulSoup(resp.text, "html.parser")
     name = get_name(soup, url)
-    ean  = get_ean(url, "cooler")
+    ean  = get_ean(url, "cpucooler")
 
     mpn      = extract_spec(soup, "MPN", "Part Number")
     producer = extract_spec(soup, "Producer", "Brand", "Manufacturer")
@@ -1060,12 +1137,13 @@ class Command(BaseCommand):
     help = "Scrapeaza GPU/Motherboard/RAM/PSU/Case/Cooler/Storage de pe pc-kombo.com"
 
     COMPONENTS = [
+        (CPU,         "/us/components/cpus",          "/us/product/cpu/",          scrape_cpu),
         (GPU,         "/us/components/gpus",          "/us/product/gpu/",          scrape_gpu),
-        (Motherboard, "/us/components/motherboards",  "/us/product/motherboard/",  scrape_motherboard),
+        (Motherboard, "/us/components/motherboards",  "/us/product/mainboard/",    scrape_motherboard),
         (RAM,         "/us/components/rams",          "/us/product/ram/",          scrape_ram),
         (PSU,         "/us/components/psus",          "/us/product/psu/",          scrape_psu),
         (Case,        "/us/components/cases",         "/us/product/case/",         scrape_case),
-        (Cooler,      "/us/components/coolers",       "/us/product/cooler/",       scrape_cooler),
+        (Cooler, "/us/components/cpucoolers",         "/us/product/cpucooler/",    scrape_cooler),
         (Storage,     "/us/components/hdds",          "/us/product/hdd/",          scrape_storage),
         (Storage,     "/us/components/ssds",          "/us/product/ssd/",          scrape_storage),
     ]

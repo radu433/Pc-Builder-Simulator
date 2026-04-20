@@ -46,6 +46,7 @@ class Motherboard(ComponentaBase):
     format = models.CharField(max_length=50)
     tip_memorie = models.CharField(max_length=50)
     sloturi_ram = models.IntegerField(default=4) 
+    capacitate_max_ram_gb = models.IntegerField(default=0)
     nr_sloturi_m2 = models.IntegerField(default=1)
     are_wifi = models.BooleanField(default=False)
     are_bluetooth = models.BooleanField(default=False)
@@ -68,7 +69,7 @@ class RAM(ComponentaBase):
 class PSU(ComponentaBase):
     putere_w = models.IntegerField()
     certificare = models.CharField(max_length=150)
-    este_modulara = models.BooleanField(default=False)
+    este_modulara = models.CharField(max_length=10, default="Non")
     lungime_mm = models.IntegerField(default=150)
 
     def __str__(self):
