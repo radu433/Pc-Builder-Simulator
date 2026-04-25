@@ -116,6 +116,15 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
+    'DEFAULT_TROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '10/minute', # 10 cerere/minut non autentificat
+        'user': '100/minute',# 100 cerere/minut autentificat
+    },
+
 }
 
 CORS_ALLOWED_ORIGINS = [

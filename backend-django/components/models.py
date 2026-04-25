@@ -1,11 +1,13 @@
 from django.db import models
+from django.contrib.auth.models import User
 
 class ComponentaBase(models.Model):
     nume = models.CharField(max_length=300)
     brand = models.CharField(max_length=200)
-    pret = models.DecimalField(max_digits=10, decimal_places=2)
-    magazin = models.CharField(max_length=100)
-    url_produs = models.URLField(max_length=500)
+    pret = models.DecimalField(max_digits=10, decimal_places=2,null=True, blank=True)
+    magazin = models.CharField(max_length=100, null=True, blank=True)
+    url_produs = models.URLField(max_length=500, null=True, blank=True)
+    part_number = models.CharField(max_length=100, unique=True, null=True, blank=True)
     imagine_url = models.URLField(max_length=500, null=True, blank=True)
     stoc = models.BooleanField(default=True)
     regiune = models.CharField(max_length=50, default='Romania')
@@ -18,6 +20,7 @@ class GPU(ComponentaBase):
     serie = models.CharField(max_length=200)
     model_chipset = models.CharField(max_length=200)
     vram_gb = models.IntegerField()
+    tip_vram = models.CharField(max_length=50, null=True, blank=True)
     consum_tdp = models.IntegerField()
     lungime_mm = models.IntegerField()
     latime_mm = models.IntegerField()
@@ -30,6 +33,7 @@ class CPU(ComponentaBase):
     socket = models.CharField(max_length=100)
     serie = models.CharField(max_length=200)
     nuclee = models.IntegerField()
+    threaduri = models.IntegerField(null=True, blank=True)
     frecventa_ghz = models.DecimalField(max_digits=4, decimal_places=2)
     consum_tdp = models.IntegerField()
 
@@ -41,6 +45,9 @@ class Motherboard(ComponentaBase):
     chipset = models.CharField(max_length=100)
     format = models.CharField(max_length=50)
     tip_memorie = models.CharField(max_length=50)
+    sloturi_ram = models.IntegerField(default=4) 
+    capacitate_max_ram_gb = models.IntegerField(default=0)
+    nr_sloturi_m2 = models.IntegerField(default=1)
     are_wifi = models.BooleanField(default=False)
     are_bluetooth = models.BooleanField(default=False)
     porturi_io = models.JSONField(default=dict)
@@ -62,7 +69,7 @@ class RAM(ComponentaBase):
 class PSU(ComponentaBase):
     putere_w = models.IntegerField()
     certificare = models.CharField(max_length=150)
-    este_modulara = models.BooleanField(default=False)
+    este_modulara = models.CharField(max_length=10, default="Non")
     lungime_mm = models.IntegerField(default=150)
 
     def __str__(self):
@@ -79,6 +86,10 @@ class Case(ComponentaBase):
     tip_carcasa = models.CharField(max_length=10, choices=TIP_CARCASA_CHOICES)
     formate_suportate = models.JSONField(default=list)
     include_sursa = models.BooleanField(default=False)
+    lungime_max_gpu_mm = models.IntegerField(null=True, blank=True) 
+    inaltime_max_cooler_mm = models.IntegerField(null=True, blank=True)
+    suport_radiator_mm = models.JSONField(default=list)
+    
     pozitie_sursa = models.CharField(max_length=100, default="Jos Spate")
     inaltime_mm = models.IntegerField()
     lungime_mm = models.IntegerField()
@@ -95,6 +106,7 @@ class Cooler(ComponentaBase):
 
     def __str__(self):
         return self.nume
+
 class Storage(ComponentaBase):
     TIP_STORAGE_CHOICES = [
         ('SSD', 'Solid State Drive'),
@@ -127,15 +139,6 @@ class Fan(ComponentaBase):
     nivel_zgomot_db = models.DecimalField(max_digits=4, decimal_places=1)
     are_rgb = models.BooleanField(default=False)
 
-class OpticalDrive(ComponentaBase):
-    tip = models.CharField(max_length=100) # ex: Blu-Ray, DVD-RW
-    interfata = models.CharField(max_length=50, default="SATA")
-    format = models.CharField(max_length=50) # ex: Internal 5.25", External
-
-class OperatingSystem(ComponentaBase):
-    editie = models.CharField(max_length=200) # ex: Windows 11 Pro, Home
-    arhitectura = models.CharField(max_length=20, default="64-bit")
-    tip_licenta = models.CharField(max_length=100) # ex: OEM, Retail
 
 class NetworkAdapter(ComponentaBase):
     interfata = models.CharField(max_length=100) # ex: PCIe x1, USB 3.0
@@ -143,22 +146,33 @@ class NetworkAdapter(ComponentaBase):
     standard_wireless = models.CharField(max_length=100, null=True, blank=True) # ex: Wi-Fi 7, Wi-Fi 6E
     are_bluetooth = models.BooleanField(default=False)
 
-class ExternalStorage(ComponentaBase):
-    tip = models.CharField(max_length=50) # ex: External SSD, HDD, Flash Drive
-    capacitate_gb = models.IntegerField()
-    interfata_conectare = models.CharField(max_length=100) # ex: USB-C, USB 3.2
 
-class SoundCard(ComponentaBase):
-    interfata = models.CharField(max_length=100) # ex: PCIe x1, USB
-    canale_audio = models.CharField(max_length=50) # ex: 7.1, 5.1
-    rata_esantionare_khz = models.IntegerField()
+class SaveBuild(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='builds') #leg de utilizator
+    nume = models.CharField(max_length=100, blank=True)
 
-class Accessory(ComponentaBase):
-    categorie = models.CharField(max_length=100)
-    specificatii_cheie = models.JSONField(default=dict)
+    cpu = models.ForeignKey(CPU, on_delete=models.SET_NULL, null=True, blank=True)
+    gpu = models.ForeignKey(GPU, on_delete=models.SET_NULL, null=True, blank=True)
+    motherboard = models.ForeignKey(Motherboard, on_delete=models.SET_NULL, null=True, blank=True)
+    ram = models.ForeignKey(RAM, on_delete=models.SET_NULL, null=True, blank=True)
+    storage = models.ForeignKey(Storage, on_delete=models.SET_NULL, null=True, blank=True)
+    psu = models.ForeignKey(PSU, on_delete=models.SET_NULL, null=True, blank=True)
+    case = models.ForeignKey(Case, on_delete=models.SET_NULL, null=True, blank=True)
+    cooler = models.ForeignKey(Cooler, on_delete=models.SET_NULL, null=True, blank=True)
+        
+    pret_total = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    data_salvarii = models.DateTimeField(auto_now_add=True)  
 
-class UPS(ComponentaBase):
-    capacitate_va = models.IntegerField()
-    putere_w = models.IntegerField()
-    numar_prize = models.IntegerField()
-    tip_unda = models.CharField(max_length=100)
+def save(self, *args, **kwargs):
+       
+        if not self.nume:
+            #numaram al catelea pc salvat este 
+            numar_pc_uri_existente = SaveBuild.objects.filter(user=self.user).count()
+            # Setăm numele adăugând +1 la numărătoare
+            self.nume = f"My Custom PC {numar_pc_uri_existente + 1}"
+            
+        #functia de salvare in baza de date
+        super().save(*args, **kwargs)
+
+def __str__(self):
+    return f"{self.nume} - {self.user.username}"
