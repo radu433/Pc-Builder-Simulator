@@ -17,35 +17,47 @@
       </div>
       
       <div class="build-list">
+        <div v-if="loading" class="loading">Se încarcă componentele...</div>
+        <div v-else-if="totalPartsLoaded === 0" class="empty-state">
+          Nu s-a încărcat nicio componentă de la API. Verifică backend-ul și consola browserului.
+        </div>
         <div 
+          v-else
           v-for="category in categories" 
           :key="category.id" 
           class="build-row"
           :class="{ 'has-part': category.selectedPart }"
         >
-          <div class="category-icon">
-            <img v-if="category.image" :src="category.image" :alt="category.name" class="custom-icon" />
-            <span v-else>{{ category.icon }}</span>
-         </div>
+          <div class="category-icon">{{ category.icon }}</div>
           <div class="category-info">
             <div class="category-name">{{ category.name }}</div>
             <div v-if="category.selectedPart" class="selected-name">
-              {{ category.selectedPart.name }}
+              {{ displayPartName(category.selectedPart) }}
             </div>
             <div v-else class="empty-state">Nicio componentă selectată</div>
           </div>
           
           <div class="price-section">
-            <span v-if="category.selectedPart">{{ category.selectedPart.price }} RON</span>
+            <span v-if="category.selectedPart">{{ formatCurrency(displayPartPrice(category.selectedPart)) }} RON</span>
           </div>
           
           <div class="actions">
-            <button v-if="!category.selectedPart" class="btn btn-outline" @click="openPartSelector(category.id)">
-              + Alege
+            <button class="btn btn-outline" @click="openPartSelector(category.id)">
+              {{ openCategoryId === category.id ? 'Închide' : '+ Alege' }} ({{ category.parts.length }} disponibile)
             </button>
-            <button v-else class="btn-remove" @click="removePart(category.id)">
+            <button v-if="category.selectedPart" class="btn-remove" @click="removePart(category.id)">
               🗑️
             </button>
+          </div>
+
+          <div v-if="openCategoryId === category.id" class="parts-list">
+            <div v-if="category.parts.length === 0" class="empty-state">
+              Nu s-au găsit componente în această categorie.
+            </div>
+            <div v-for="part in category.parts" :key="part.id" class="part-row" @click="selectPart(category.id, part)">
+              <div class="part-name">{{ displayPartName(part) }}</div>
+              <div class="part-price">{{ displayPartPrice(part) }} RON</div>
+            </div>
           </div>
         </div>
       </div>
@@ -61,7 +73,7 @@
         <hr class="divider" />
         <div class="summary-row total">
           <span>💰 Total</span>
-          <strong class="total-price">{{ totalPrice }} RON</strong>
+          <strong class="total-price">{{ formatCurrency(totalPrice) }} RON</strong>
         </div>
       </div>
       
@@ -77,9 +89,16 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
+import axios from 'axios'
 
+// API base URL
+const API_BASE = 'http://127.0.0.1:8000/api/'
 
+// Loading state
+const loading = ref(true)
+
+// Am adăugat iconițe pentru fiecare categorie
 const categories = ref([
   { id: 'cpu', name: 'Procesor', image: '/cpu.png', selectedPart: null },
   { id: 'cooler', name: 'Cooler', image: '/aio.png', selectedPart: null },
@@ -91,6 +110,22 @@ const categories = ref([
   { id: 'psu', name: 'Sursă', image: '/psu.png', selectedPart: null }
 ])
 
+// Load parts from API
+const loadParts = async () => {
+  loading.value = true
+  for (const category of categories.value) {
+    try {
+      const response = await axios.get(`${API_BASE}${category.id}/`)
+      category.parts = response.data
+      console.log(`Loaded ${category.id}:`, category.parts.length)
+    } catch (error) {
+      console.error(`Error loading ${category.id}:`, error)
+      category.parts = []
+    }
+  }
+  loading.value = false
+}
+
 // --- LOGICA PENTRU BARĂ DE PROGRES ---
 const selectedPartsCount = computed(() => {
   return categories.value.filter(cat => cat.selectedPart !== null).length
@@ -100,32 +135,71 @@ const progressPercentage = computed(() => {
   return (selectedPartsCount.value / categories.value.length) * 100
 })
 
-// --- FUNCȚII SIMULATE ---
+// --- FUNCȚII ---
+const openCategoryId = ref(null)
+
 const openPartSelector = (categoryId) => {
-  // Simulăm adăugarea unei piese direct ca să vezi efectele vizuale
-  const catIndex = categories.value.findIndex(c => c.id === categoryId)
-  if(catIndex !== -1) {
-    categories.value[catIndex].selectedPart = { 
-      name: `Componentă PRO ${categoryId.toUpperCase()}`, 
-      price: Math.floor(Math.random() * 1000) + 300, 
-      wattage: Math.floor(Math.random() * 100) + 50 
-    }
+  if (openCategoryId.value === categoryId) {
+    openCategoryId.value = null
+    return
+  }
+  openCategoryId.value = categoryId
+}
+
+const selectPart = (categoryId, part) => {
+  const cat = categories.value.find(c => c.id === categoryId)
+  if (cat) {
+    cat.selectedPart = part
+    openCategoryId.value = null
   }
 }
 
 const removePart = (categoryId) => {
-  const catIndex = categories.value.findIndex(c => c.id === categoryId)
-  if(catIndex !== -1) {
-    categories.value[catIndex].selectedPart = null
+  const cat = categories.value.find(c => c.id === categoryId)
+  if (cat) {
+    cat.selectedPart = null
   }
 }
 
+const displayPartName = (part) => {
+  if (!part) return ''
+  return part.nume || part.name || part.model || 'Componentă'
+}
+
+const displayPartPrice = (part) => {
+  if (!part) return 0
+  const rawPrice = part.pret ?? part.price ?? 0
+  const parsed = Number(rawPrice)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+const displayPartWattage = (part) => {
+  if (!part) return 0
+  const rawWattage = part.consum_tdp ?? part.wattage ?? 0
+  const parsed = Number(rawWattage)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
 const totalPrice = computed(() => {
-  return categories.value.reduce((sum, cat) => sum + (cat.selectedPart ? cat.selectedPart.price : 0), 0)
+  return categories.value.reduce((sum, cat) => sum + displayPartPrice(cat.selectedPart), 0)
 })
 
 const totalWattage = computed(() => {
-  return categories.value.reduce((sum, cat) => sum + (cat.selectedPart ? cat.selectedPart.wattage : 0), 0)
+  return categories.value.reduce((sum, cat) => sum + displayPartWattage(cat.selectedPart), 0)
+})
+
+const formatCurrency = (value) => {
+  const number = Number(value)
+  return Number.isFinite(number) ? number.toFixed(2) : '0.00'
+}
+
+const totalPartsLoaded = computed(() => {
+  return categories.value.reduce((sum, cat) => sum + (cat.parts?.length || 0), 0)
+})
+
+// Load data on mount
+onMounted(() => {
+  loadParts()
 })
 </script>
 
@@ -135,13 +209,6 @@ const totalWattage = computed(() => {
   grid-template-columns: 3fr 1fr;
   gap: 30px;
   margin-top: 20px;
-}
-
-
-.custom-icon {
-  width: 40px;
-  height: 40px;
-  object-fit: contain; 
 }
 
 .main-panel, .summary-panel {
@@ -174,6 +241,29 @@ const totalWattage = computed(() => {
 
 .build-row:hover { background-color: rgba(255, 255, 255, 0.05); border-color: #3f4455; transform: translateX(5px); }
 .build-row.has-part { border-left: 4px solid var(--accent-color); }
+
+.parts-list {
+  margin-top: 12px;
+  padding: 14px 18px;
+  background-color: rgba(255,255,255,0.04);
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.08);
+}
+.part-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.2s;
+}
+.part-row:hover {
+  background-color: rgba(255,255,255,0.08);
+  transform: translateX(4px);
+}
+.part-name { color: white; }
+.part-price { color: var(--accent-color); font-weight: 600; }
 
 .category-icon { font-size: 1.5rem; margin-right: 20px; width: 30px; text-align: center; }
 .category-info { flex-grow: 1; }

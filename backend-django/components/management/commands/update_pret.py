@@ -1,11 +1,13 @@
 """
 Scraper preturi pentru PC Builder Simulator.
+Copiaza in: components/management/commands/update_prices.py
+Ruleaza cu: python manage.py update_prices
 
 Dependinte extra fata de ce ai deja:
     pip install playwright
     playwright install chromium
 
-Cauta fiecare componenta din DB pe: eMag, Altex, CEL
+Cauta fiecare componenta din DB pe: eMag, PCGarage, Altex, Vexio, CEL
 Ia primele 5 rezultate, verifica stoc, compara preturi, updateaza DB.
 Daca nu e gasit pe niciun site -> sterge din DB.
 """
@@ -21,7 +23,7 @@ from typing import Optional
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
-from components.models import CPU, GPU, Motherboard, RAM, PSU, Case, Cooler, Storage
+from components.models import CPU, GPU, Motherboard, RAM, PSU, Case, Cooler, Storage, Blacklist
 
 try:
     from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
@@ -55,7 +57,6 @@ ALL_MODELS = [CPU, GPU, Motherboard, RAM, PSU, Case, Cooler, Storage]
 
 # ─────────────────────────── ANTI-BOT ────────────────────────────────────────
 
-# User agents reale de Chrome/Firefox actualizate periodic
 _USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
@@ -65,7 +66,6 @@ _USER_AGENTS = [
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
 ]
 
-# Rezolutii comune de monitoare — variatie usoara de fingerprint
 _VIEWPORTS = [
     {"width": 1920, "height": 1080},
     {"width": 1440, "height": 900},
@@ -86,7 +86,6 @@ _EXTRA_HEADERS = {
 
 
 def _new_context(browser):
-    """Creeaza un context browser cu UA si viewport aleatorii + headers realiste."""
     ctx = browser.new_context(
         user_agent=random.choice(_USER_AGENTS),
         viewport=random.choice(_VIEWPORTS),
@@ -100,11 +99,13 @@ def _new_context(browser):
 
 @dataclass
 class PriceResult:
-    site:    str
-    price:   Decimal
-    in_stoc: bool
-    url:     str
-    title:   str = field(default="")
+    site:           str
+    price:          Decimal
+    in_stoc:        bool
+    url:            str
+    title:          str           = field(default="")
+    viteza_citire:  Optional[int] = field(default=None)  # MB/s
+    viteza_scriere: Optional[int] = field(default=None)  # MB/s
 
 
 # ─────────────────────────── HELPERS ─────────────────────────────────────────
@@ -114,14 +115,41 @@ def _rand_delay(min_s: float, max_s: float):
 
 
 def _clean_price(text: str) -> Optional[Decimal]:
+    if not text:
+        return None
+
+    cleaned = re.sub(r"[^\d,.]", "", text)
+
+    # Romanian format: 1.299,99
+    if "," in cleaned:
+        cleaned = cleaned.replace(".", "").replace(",", ".")
+    else:
+        parts = cleaned.split(".")
+        if len(parts) > 1 and len(parts[-1]) == 3:
+            cleaned = "".join(parts)
+
+    try:
+        return Decimal(cleaned)
+    except Exception:
+        pass
+    
     """Extrage primul numar dintr-un string de pret. '1.299,99 Lei' -> 1299.99"""
     if not text:
         return None
     cleaned = re.sub(r"[^\d,.]", "", text)
     if re.search(r"\d{1,3}\.\d{3},\d{2}$", cleaned):
         cleaned = cleaned.replace(".", "").replace(",", ".")
+    elif re.search(r"\d{1,3},\d{3}\.\d{2}$", cleaned):
+        cleaned = cleaned.replace(",", "")
+    elif re.search(r"^\d{1,3},\d{3},\d{2}$", cleaned):
+        parts = cleaned.split(",")
+        cleaned = parts[0] + parts[1] + "." + parts[2]
     elif "," in cleaned and "." not in cleaned:
-        cleaned = cleaned.replace(",", ".")
+        parts = cleaned.split(",")
+        if len(parts[-1]) == 3:
+            cleaned = cleaned.replace(",", "")
+        else:
+            cleaned = cleaned.replace(",", ".")
     elif "." in cleaned and "," not in cleaned:
         parts = cleaned.split(".")
         if len(parts[-1]) == 3:
@@ -133,14 +161,22 @@ def _clean_price(text: str) -> Optional[Decimal]:
         return None
 
 
+def _normalize_text(text: str) -> str:
+    text = text.lower()
+    text = re.sub(r"(rtx|rx)(\d{3,4})", r"\1 \2", text)
+    text = re.sub(r"(\d{3,4})(ti|xtx|xt|super|gre)", r"\1 \2", text)
+    text = re.sub(r"\bo(\d{1,2})g\b", r"\1gb", text)
+    text = re.sub(r"\b(\d{1,2})g\b", r"\1gb", text)
+    text = re.sub(r"[-_/]", " ", text)
+    return text
+
 def _tokenize(text: str) -> set[str]:
-    tokens = re.findall(r"[a-z0-9]+", text.lower())
+    text = _normalize_text(text)
+    tokens = re.findall(r"[a-z0-9]+", text)
     stopwords = {"the", "and", "with", "for", "de", "si", "cu"}
     return {t for t in tokens if len(t) > 1 and t not in stopwords}
 
-
 def _similarity(query_name: str, result_text: str) -> float:
-    """Proportia de tokeni din query_name care apar in result_text."""
     q_tokens = _tokenize(query_name)
     r_tokens = _tokenize(result_text)
     if not q_tokens:
@@ -153,11 +189,11 @@ def _similarity(query_name: str, result_text: str) -> float:
 _CATEGORY_PREFIX = {
     CPU:         "Procesor",
     GPU:         "Placa video",
-    RAM:         "Memorie RAM",
+    RAM:         "Kit RAM",
     Motherboard: "Placa de baza",
     PSU:         "Sursa",
     Case:        "Carcasa",
-    Cooler:      "Cooler",
+    Cooler:      "Cooler procesor",
 }
 
 _STORAGE_PREFIX = {
@@ -167,109 +203,467 @@ _STORAGE_PREFIX = {
 }
 
 
-def build_query(obj) -> str:
-    """Construieste query-ul de cautare adaptat tipului de componenta."""
-    # Prefixul categoriei impiedica site-urile sa returneze laptopuri/prebuilturi
+def build_query(obj, site: str = None) -> str:
     prefix = _CATEGORY_PREFIX.get(type(obj), "")
-    if isinstance(obj, Storage):
-        prefix = _STORAGE_PREFIX.get(obj.tip, "SSD")
 
-    base = " ".join(obj.nume.split()[:6])
+    # ───────── RAM: prefix diferit per site ─────────
+    if isinstance(obj, RAM):
+        ram_prefixes = {
+            "altex": "Memorie desktop",
+            "emag":  "Memorie",
+            "cel":    "Kit RAM",
+        }
+        prefix = ram_prefixes.get(site, "Kit RAM") if site else "Kit RAM"
 
+    # ───────── GPU ─────────
     if isinstance(obj, GPU):
-        base = f"{base} {obj.vram_gb}GB"
-    elif isinstance(obj, RAM):
-        base = f"{base} {obj.frecventa_mhz}MHz CL{obj.latenta_cl}"
+        brand = str(obj.brand).strip()
+        name_lower = obj.nume.lower()
+        
+        match_model = re.search(r'(\d{3,4})\s*(ti|xtx|xt|super|gre)?', name_lower)
+        
+        if match_model:
+            baza = match_model.group(1)
+            sufix = match_model.group(2) if match_model.group(2) else ""
+            chipset_curat = f"{baza} {sufix}".strip().upper()
+        else:
+            chipset_curat = str(obj.model_chipset).strip()
+            chipset_curat = re.sub(rf"(?i)\b{brand}\b", "", chipset_curat).strip()
+
+        vram_curat = f"{obj.vram_gb}GB" if obj.vram_gb else ""
+        
+        db_has_o_sku = bool(re.search(r"(?:-|_|\b)o\d+g\b", name_lower))
+        words = re.findall(r'[a-z0-9]+', name_lower)
+        is_oc = "oc" in words or db_has_o_sku
+        oc_str = "OC" if is_oc else ""
+        
+        variant_words = [
+            "dual", "strix", "tuf", "gaming", "ventus",
+            "eagle", "aorus", "taichi", "challenger"
+        ]
+
+        variant = ""
+        for v in variant_words:
+            if v in name_lower:
+                variant = v.upper()
+                break
+
+        query = f"{prefix} {brand} {chipset_curat} {vram_curat} {variant} {oc_str}".strip()
+        return re.sub(r'\s+', ' ', query)
+
+    # ───────── CPU ─────────
+    elif isinstance(obj, CPU):
+        brand = str(obj.brand).strip()
+        name_lower = obj.nume.lower()
+        
+        match_cpu = re.search(r'(\d{4,5})\s*([a-z0-9]{1,3})?', name_lower)
+        if match_cpu:
+            baza = match_cpu.group(1)
+            sufix = match_cpu.group(2) if match_cpu.group(2) else ""
+            serie_curata = f"{baza} {sufix}".strip().upper()
+        else:
+            serie_curata = str(obj.serie).strip()
+            
+        query = f"{prefix} {brand} {serie_curata}".strip()
+        return re.sub(r'\s+', ' ', query)
+
+    # ───────── MOTHERBOARD ─────────
+    elif isinstance(obj, Motherboard):
+        socket_str = obj.socket if obj.socket else ""
+        wifi_str   = "WiFi" if obj.are_wifi else ""
+
+        short_name = " ".join(obj.nume.split()[:4])
+
+        if site == "cel":
+            query = f"{prefix} {socket_str} {short_name} {wifi_str}"
+        else:
+            query = f"{prefix} {short_name} {socket_str} {wifi_str}"
+
+        return re.sub(r'\s+', ' ', query.strip())
+
+    # ───────── STORAGE ─────────
     elif isinstance(obj, Storage):
+        prefix = _STORAGE_PREFIX.get(obj.tip, "SSD")
         cap = f"{obj.capacitate_gb // 1000}TB" if obj.capacitate_gb >= 1000 else f"{obj.capacitate_gb}GB"
-        base = f"{base} {cap}"
+        return f"{prefix} {obj.brand} {cap}".strip()
 
-    return f"{prefix} {base}".strip()
+    # ───────── CARCASE ─────────
+    elif isinstance(obj, Case):
+        nume_curat = obj.nume.lower()
+
+        # 1. Ștergem cuvintele de umplutură care strică search-ul pe eMag/Altex/CEL
+        fluff = [
+            "tempered glass", "window", "midi-tower", "mid-tower", "midi tower", "mid tower",
+            "full-tower", "full tower", "mini-tower", "mini tower", "micro-atx", "e-atx", "atx",
+            "tg", "fara sursa", "cu sursa", "usb 3.0", "usb 3.1"
+        ]
+        for f in fluff:
+            nume_curat = nume_curat.replace(f, " ")
+
+        # 2. Ștergem culorile de la coadă (ex: "- white", "- blue/black") 
+        nume_curat = re.sub(r'-\s*(white|black|blue|red|yellow|pink|alb|negru).*', '', nume_curat)
+
+        # 3. Extragem primele 3-4 cuvinte relevante (Ex: "Corsair 4000D Airflow")
+        cuvinte = [w for w in nume_curat.split() if len(w) > 1]
+        short_name = " ".join(cuvinte[:4])
+
+        # Formăm query-ul curat
+        query = f"Carcasa {short_name}"
+        return re.sub(r'\s+', ' ', query).strip()
+
+    # ───────── FALLBACK PENTRU RESTUL ─────────
+    base = " ".join(obj.nume.split()[:4])
+    if isinstance(obj, RAM):
+        kit_name = obj.nume.strip()
+        cap_str = f"{obj.capacitate_totala_gb}GB" if hasattr(obj, 'capacitate_totala_gb') and obj.capacitate_totala_gb else ""
+        freq_str = f"{obj.frecventa_mhz}HZ" if hasattr(obj, 'frecventa_mhz') and obj.frecventa_mhz else ""
+        latency_str = f"CL{obj.latenta_cl}" if hasattr(obj, 'latenta_cl') and obj.latenta_cl else ""
+        query = f"Kit RAM {kit_name} {cap_str} {freq_str} {latency_str}"
+        return re.sub(r'\s+', ' ', query.strip())
+
+    if isinstance(obj, PSU):
+        brand = str(obj.brand).strip()
+        psu_name = obj.nume.strip()
+        power_str = f"{obj.putere_w}W" if getattr(obj, 'putere_w', None) else ""
+        cert_str = str(obj.certificare).strip() if getattr(obj, 'certificare', None) else ""
+        modular_str = "Modulara" if getattr(obj, 'este_modulara', None) and str(obj.este_modulara).strip().lower() != "non" else ""
+
+        if site == "cel":
+            query = f"{prefix} {brand} {power_str} {cert_str} {psu_name} {modular_str}".strip()
+        else:
+            query = f"{prefix} {brand} {psu_name} {cert_str} {power_str} {modular_str}".strip()
+
+        return re.sub(r'\s+', ' ', query)
+
+    return re.sub(r'\s+', ' ', f"{prefix} {base}".strip())
 
 
-def _is_valid_title_match(title: str, obj) -> bool:
-    """
-    Verifica daca titlul rezultatului corespunde componentei din DB.
-    Aplica filtre specifice tipului de componenta.
-    """
+def _is_valid_title_match(title: str, obj) -> Optional[bool]:
+    title_original_lower = title.lower()
+    title_lower = _normalize_text(title)
     title_tokens = _tokenize(title)
 
-    # Regula generala: tokenii cu cifre din DB name trebuie sa apara in titlu.
-    # Ex: DB="5600X" → "5600x" trebuie in titlu; respinge "5600" si "9600X".
-    # Nu aplicam pentru GPU/RAM/Storage care au verificari dedicate mai flexibile.
-    if not isinstance(obj, (GPU, RAM, Storage)):
-        model_tokens = {t for t in _tokenize(obj.nume) if re.search(r"\d", t)}
-        if model_tokens and not model_tokens.issubset(title_tokens):
+    reference_str = _normalize_text(f"{obj.nume} {obj.brand}")
+    
+    if isinstance(obj, GPU) and hasattr(obj, 'model_chipset') and obj.model_chipset:
+        reference_str += f" {obj.model_chipset}".lower()
+    elif isinstance(obj, CPU) and hasattr(obj, 'serie') and obj.serie:
+        reference_str += f" {obj.serie}".lower()
+
+    name_lower = reference_str
+    name_tokens = _tokenize(reference_str)
+
+    # ───────── BRAND CHECK ─────────
+    cuvinte_iertate = ["radeon", "geforce", "amd", "nvidia", "intel", "rtx", "rx", "core"]
+
+    if hasattr(obj, 'brand') and obj.brand:
+        brand_real = str(obj.brand).lower().strip()
+        if brand_real not in cuvinte_iertate:
+            if brand_real not in title_lower:
+                return False
+
+    # ───────── MODEL STRICT ─────────
+    db_numbers = re.findall(r"\d{3,4}", name_lower)
+    title_numbers = re.findall(r"\d{3,4}", title_lower)
+    
+    for num in db_numbers:
+        if num not in title_numbers:
             return False
 
+    # ───────── GPU ─────────
     if isinstance(obj, GPU):
-        # Trebuie sa contina VRAM-ul corect (ex: "8gb" sau "8g")
-        vram = str(obj.vram_gb)
-        has_vram = (vram + "gb") in title_tokens or (vram + "g") in title_tokens
-        if not has_vram:
+
+        if obj.vram_gb:
+            vram = str(obj.vram_gb)
+            if not ((vram + "gb") in title_tokens or (vram + "g") in title_tokens):
+                return False
+
+        gpu_suffixes = ["xtx", "xt", "ti", "super", "gre"]
+        for suf in gpu_suffixes:
+            db_has = bool(re.search(rf"(?:\b|\d){suf}\b", name_lower))
+            title_has = bool(re.search(rf"(?:\b|\d){suf}\b", title_lower))
+            if db_has != title_has:
+                return False
+
+        if "white" in title_lower and "white" not in name_lower:
             return False
 
-        # Daca produsul din DB nu e OC, excludem variantele OC
-        db_name_lower = obj.nume.lower()
-        product_is_oc = bool(re.search(r'\boc\b', db_name_lower))
-        result_is_oc  = bool(re.search(r'\boc\b', title.lower()))
-        if not product_is_oc and result_is_oc:
+        nume_original_db = obj.nume.lower()
+        db_has_o_sku = bool(re.search(r"(?:-|_|\b)o\d+g\b", nume_original_db))
+        db_oc = "oc" in name_tokens or db_has_o_sku
+        
+        title_has_o_sku = bool(re.search(r"(?:-|_|\b)o\d+g\b", title_original_lower))
+        title_oc = "oc" in title_tokens or title_has_o_sku
+
+        if not db_oc and title_oc:
+            return False
+            
+        if db_oc and not title_oc:
             return False
 
+        gpu_variants = [
+            "strix", "tuf", "dual", "phoenix", "evo",
+            "gaming", "ventus", "suprim",
+            "aorus", "eagle", "windforce",
+            "taichi", "challenger", "phantom", "steel",
+            "pulse", "nitro",
+            "merc", "qick", "swift",
+            "trinity", "amp",
+            "founders"
+        ]
+
+        for variant in gpu_variants:
+            if variant in name_lower and variant not in title_lower:
+                return False
+
+    # ───────── CPU ─────────
+    elif isinstance(obj, CPU):
+        cpu_suffixes = ["x", "xt", "k", "kf", "f", "g", "ge"]
+
+        for suf in cpu_suffixes:
+            if re.search(rf"\b{suf}\b", name_lower) and not re.search(rf"\b{suf}\b", title_lower):
+                return False
+
+    # ───────── RAM ─────────
     elif isinstance(obj, RAM):
-        # Frecventa trebuie sa apara in titlu
+        if hasattr(obj, 'capacitate_totala_gb') and obj.capacitate_totala_gb:
+            cap = str(obj.capacitate_totala_gb)
+            if not ((cap + "gb") in title_tokens or cap in title_tokens):
+                return False
+
         freq = str(obj.frecventa_mhz)
-        has_freq = freq in title_tokens or (freq + "mhz") in title_tokens
-        if not has_freq:
+        if not (freq in title_tokens or (freq + "mhz") in title_tokens):
             return False
 
-        # CL trebuie sa apara: "cl30" combinat SAU "cl" + "30" separat
         cl = str(obj.latenta_cl)
-        has_cl = (
-            ("cl" + cl) in title_tokens
-            or (cl in title_tokens and "cl" in title_tokens)
-        )
-        if not has_cl:
+        if not (("cl" + cl) in title_tokens or (cl in title_tokens and "cl" in title_tokens)):
             return False
 
+    # ───────── PSU ─────────
+    elif isinstance(obj, PSU):
+        if getattr(obj, 'putere_w', None):
+            power_token = f"{obj.putere_w}w"
+            if power_token not in title_lower and str(obj.putere_w) not in title_tokens:
+                return False
+
+        if getattr(obj, 'certificare', None):
+            cert_text = str(obj.certificare).lower()
+            cert_terms = re.findall(r"[a-z0-9]+", cert_text)
+            if cert_terms and not any(term in title_lower for term in cert_terms):
+                return False
+
+        modular_value = str(getattr(obj, 'este_modulara', '')).strip().lower()
+        if modular_value and modular_value != "non":
+            if "modular" not in title_lower:
+                return False
+
+        return True
+
+    # ───────── MOTHERBOARD ─────────
+    elif isinstance(obj, Motherboard):
+        if obj.socket:
+            if obj.socket.lower() not in title_lower:
+                return False
+
+        has_wifi_in_title = "wifi" in title_tokens or "wi-fi" in title_lower
+        if not obj.are_wifi and has_wifi_in_title:
+            return False
+        if obj.are_wifi and not has_wifi_in_title:
+            return None
+
+        if obj.format:
+            format_lower = obj.format.lower()
+            if format_lower in title_lower:
+                pass
+            else:
+                return None
+
+        return True
+
+    # ───────── STORAGE ─────────
     elif isinstance(obj, Storage):
-        # Capacitatea trebuie sa apara in titlu
         if obj.capacitate_gb >= 1000:
             tb = str(obj.capacitate_gb // 1000)
-            has_cap = (tb + "tb") in title_tokens or tb in title_tokens
+            if not ((tb + "tb") in title_tokens or tb in title_tokens):
+                return False
         else:
             gb = str(obj.capacitate_gb)
-            has_cap = (gb + "gb") in title_tokens or gb in title_tokens
-        if not has_cap:
+            if not ((gb + "gb") in title_tokens or gb in title_tokens):
+                return False
+
+    # ───────── CARCASE ─────────
+    elif isinstance(obj, Case):
+        name_lower = obj.nume.lower()
+        
+        # 1. Verificare Strictă Model (Căutăm coduri cu cifre ex: 4000d, 500dx, gt301)
+        model_identifiers = re.findall(r'\b[a-z]*\d+[a-z]*\b', name_lower)
+        for identifier in model_identifiers:
+            # Ignorăm versiunile și porturile USB din seria principală
+            if identifier in ["v1", "v2", "30", "31"]: 
+                continue
+            if identifier not in title_lower:
+                return False
+
+        # 2. Verificare Culoare (Alb vs Negru)
+        db_is_white = "white" in name_lower or "alb" in name_lower
+        db_is_black = "black" in name_lower or "negru" in name_lower
+
+        title_is_white = "white" in title_lower or "alb" in title_lower
+        title_is_black = "black" in title_lower or "negru" in title_lower
+
+        # Respingem carcasele negre dacă noi căutăm alb
+        if db_is_white and title_is_black and not title_is_white:
             return False
+        # Respingem carcasele albe dacă noi căutăm negru
+        if db_is_black and title_is_white and not title_is_black:
+            return False
+
+        # 3. Verificare "Airflow" (Sunt structuri fizice diferite)
+        if "airflow" in name_lower and "airflow" not in title_lower:
+            return False
+        if "airflow" not in name_lower and "airflow" in title_lower:
+            return False
+
+        # 4. Verificare RGB/ARGB
+        db_has_rgb = "rgb" in name_lower # Prinde și 'argb'
+        title_has_rgb = "rgb" in title_lower
+        # Respingem dacă varianta listată are RGB, dar baza noastră de date cere una simplă (RGB-ul e mereu mai scump)
+        if not db_has_rgb and title_has_rgb:
+            return False
+
+        # 5. Verificare Versiune (V2)
+        if "v2" in name_lower and "v2" not in title_lower:
+            return False
+        if "v2" not in name_lower and "v2" in title_lower:
+            return False
+
+        return True
 
     return True
 
 
-# ─────────────────────────── URL DISCOVERY ───────────────────────────────────
-#
-# Modifica doar aceste 3 dictionare cand un site isi schimba URL-ul sau selectoarele.
-# {q} = query cu spatii inlocuite de "+"
-# "FORM_FILL" = sentinel special pentru PCGarage (bara de cautare din JS)
+def _parse_ram_kit_info(text: str) -> tuple[Optional[int], Optional[int]]:
+    if not text:
+        return None, None
+
+    normalized = text.lower()
+    normalized = normalized.replace('×', 'x').replace('*', 'x')
+    normalized = re.sub(r"[^0-9a-z x]", " ", normalized)
+
+    match = re.search(r"\b\d+gb\s*\(\s*(\d+)x(\d+)gb\s*\)", normalized)
+    if match:
+        return int(match.group(1)), int(match.group(2))
+
+    match = re.search(r"\b(\d+)x(\d+)gb\b", normalized)
+    if match:
+        return int(match.group(1)), int(match.group(2))
+
+    match = re.search(r"\b(?:set|kit|pachet)\s*(?:de\s*)?(\d+)\b", normalized)
+    if match:
+        return int(match.group(1)), None
+
+    match = re.search(r"\b(\d+)\s*(?:module|modul|stick|stickuri|bucati)\b", normalized)
+    if match:
+        return int(match.group(1)), None
+
+    if "dual kit" in normalized or "2x" in normalized and "gb" in normalized:
+        return 2, None
+    if "quad kit" in normalized or "4x" in normalized and "gb" in normalized:
+        return 4, None
+
+    return None, None
+
+
+def _matches_ram_module_count(text: str, obj: RAM) -> Optional[bool]:
+    modules, module_gb = _parse_ram_kit_info(text)
+    if modules is None:
+        return None
+
+    if obj.numar_module and modules != obj.numar_module:
+        return False
+    if module_gb is not None and obj.capacitate_totala_gb is not None:
+        if module_gb * modules != obj.capacitate_totala_gb:
+            return False
+    return True
+
+
+def _get_page_text(page, url: str) -> Optional[str]:
+    try:
+        page.goto(url, timeout=PAGE_TIMEOUT_MS, wait_until="domcontentloaded")
+        return page.inner_text("body")
+    except Exception:
+        return None
+
+
+def _verify_motherboard_details(page, result: PriceResult, obj: Motherboard) -> bool:
+    if not result.url:
+        return False
+
+    try:
+        page.goto(result.url, timeout=PAGE_TIMEOUT_MS, wait_until="domcontentloaded")
+        _rand_delay(0.5, 1.5)
+        page_text = page.inner_text("body").lower()
+
+        if obj.chipset:
+            if obj.chipset.lower() not in page_text:
+                return False
+
+        if obj.format:
+            if obj.format.lower() not in page_text:
+                return False
+
+        has_wifi = (
+            "wifi"     in page_text or
+            "wi-fi"    in page_text or
+            "wireless" in page_text
+        )
+        if obj.are_wifi != has_wifi:
+            return False
+
+        has_bluetooth = "bluetooth" in page_text
+        if obj.are_bluetooth != has_bluetooth:
+            return False
+
+        return True
+
+    except Exception as e:
+        logger.debug("Eroare verificare detalii MB (%s): %s", result.url, e)
+        return False
+
+
+def _verify_ram_module_count(page, result: PriceResult, obj: RAM) -> bool:
+    if not hasattr(obj, 'numar_module') or not obj.numar_module:
+        return True
+
+    title_text = result.title or ""
+    title_match = _matches_ram_module_count(title_text, obj)
+    if title_match is False:
+        return False
+    if title_match is True:
+        return True
+
+    if result.url:
+        page_text = _get_page_text(page, result.url)
+        if page_text:
+            page_match = _matches_ram_module_count(page_text, obj)
+            if page_match is False:
+                return False
+            if page_match is True:
+                return True
+
+    return True
+
+#─────────── URL DISCOVERY ───────────────────────────────────
 
 _SEARCH_URL_PATTERNS: dict[str, list[str]] = {
     "emag": [
         "https://www.emag.ro/search/{q}",
         "https://www.emag.ro/cautare/{q}",
     ],
-    "pcgarage": [
-        "https://www.pcgarage.ro/cauta/?search_query={q}",
-        "FORM_FILL",
-    ],
     "altex": [
         "https://altex.ro/cauta/?q={q}",
         "https://altex.ro/search?q={q}",
         "https://altex.ro/cautare/{q}/",
-    ],
-    "vexio": [
-        "https://www.vexio.ro/search?q={q}",
-        "https://www.vexio.ro/cautare/{q}/",
-        "https://www.vexio.ro/cauta/?q={q}",
     ],
     "cel": [
         "https://www.cel.ro/cauta/{q}/",
@@ -279,27 +673,21 @@ _SEARCH_URL_PATTERNS: dict[str, list[str]] = {
 }
 
 _CARD_SELECTORS: dict[str, list[str]] = {
-    "emag":     ["div.card-item", "div.product-card", "article.product"],
-    "pcgarage": ["div.product_box", "div.product-item", "li.product-item"],
-    "altex":    ["div.Product", "div.product-card", "article.product"],
-    "vexio":    ["article.product-box", "div.product-item", "div.product-card"],
-    "cel":      ["div.product_data", "div.productListing-item", "article.product"],
+    "emag":  ["div.card-item", "div.product-card", "article.product"],
+    "altex": ["div.Product", "div.product-card", "article.product"],
+    "cel":   ["div.product_data", "div.productListing-item", "article.product"],
 }
 
 _COOKIE_BTN: dict[str, str] = {
-    "emag":     "button:has-text('Sunt de acord'), button:has-text('Accept')",
-    "pcgarage": "button:has-text('Accept'), button:has-text('De acord'), button:has-text('OK')",
-    "altex":    "button:has-text('Acceptati tot'), button:has-text('Accept all'), button:has-text('Accept')",
-    "vexio":    "button:has-text('Permite toate'), button:has-text('Accept toate'), button:has-text('Accept')",
-    "cel":      "button:has-text('Accept'), button:has-text('OK'), button:has-text('Accepta')",
+    "emag":  "button:has-text('Sunt de acord'), button:has-text('Accept')",
+    "altex": "button:has-text('Acceptati tot'), button:has-text('Accept all'), button:has-text('Accept')",
+    "cel":   "button:has-text('Accept'), button:has-text('OK'), button:has-text('Accepta')",
 }
 
-# Cache per sesiune: site -> (url_template_care_a_functionat, card_selector_care_a_functionat)
 _url_session_cache: dict[str, tuple[str, str]] = {}
 
 
 def _dismiss_cookie(page, site: str):
-    """Inchide popup-ul de cookies. Silent daca nu e gasit."""
     sel = _COOKIE_BTN.get(site, "")
     if not sel:
         return
@@ -313,12 +701,6 @@ def _dismiss_cookie(page, site: str):
 
 
 def _navigate_results(page, site: str, query: str) -> tuple[Optional[str], Optional[str]]:
-    """
-    Navigheza pe pagina de rezultate si returneaza (url_actual, card_selector).
-    Prima apelare: testeaza patternurile in ordine pana gaseste unul cu rezultate.
-    Apelari ulterioare: foloseste patternul din cache, daca esueaza re-detecteaza.
-    Returneaza (None, None) daca niciun pattern nu functioneaza.
-    """
     q = query.replace(" ", "+")
 
     def _try_patterns(skip_cache=False):
@@ -326,39 +708,15 @@ def _navigate_results(page, site: str, query: str) -> tuple[Optional[str], Optio
         selectors = _CARD_SELECTORS.get(site, [])
 
         for url_tpl in patterns:
-            # Daca avem cache si nu skipam, sarim direct la pattern-ul cunoscut
             if not skip_cache and site in _url_session_cache:
                 cached_tpl, cached_sel = _url_session_cache[site]
-                if url_tpl != cached_tpl and url_tpl != "FORM_FILL":
+                if url_tpl != cached_tpl:
                     continue
-
-            if url_tpl == "FORM_FILL":
-                try:
-                    page.goto("https://www.pcgarage.ro/", timeout=PAGE_TIMEOUT_MS, wait_until="domcontentloaded")
-                    _dismiss_cookie(page, site)
-                    search_el = page.wait_for_selector("input[name='search_query']", timeout=5000)
-                    search_el.fill(query)
-                    search_el.press("Enter")
-                    for sel in selectors:
-                        try:
-                            page.wait_for_selector(sel, timeout=8000)
-                            logger.debug("[%s] FORM_FILL ok | sel: %s", site, sel)
-                            _url_session_cache[site] = ("FORM_FILL", sel)
-                            return page.url, sel
-                        except PWTimeout:
-                            continue
-                except Exception:
-                    pass
-                continue
 
             url = url_tpl.replace("{q}", q)
             try:
                 page.goto(url, timeout=PAGE_TIMEOUT_MS, wait_until="domcontentloaded")
                 _dismiss_cookie(page, site)
-                # Vexio: scroll pentru lazy-load
-                if site == "vexio":
-                    page.evaluate("window.scrollTo(0, 300)")
-                    page.wait_for_timeout(500)
                 for sel in selectors:
                     try:
                         page.wait_for_selector(sel, timeout=6000)
@@ -372,18 +730,73 @@ def _navigate_results(page, site: str, query: str) -> tuple[Optional[str], Optio
 
         return None, None
 
-    # Incearca cu cache
     page_url, card_sel = _try_patterns(skip_cache=False)
     if page_url:
         return page_url, card_sel
 
-    # Cache-ul s-a demodat — curatam si re-detectam
     if site in _url_session_cache:
         logger.debug("[%s] Pattern cacheuit nu mai functioneaza, re-detectez...", site)
         del _url_session_cache[site]
         page_url, card_sel = _try_patterns(skip_cache=True)
 
     return page_url, card_sel
+
+
+# ─────────────────────────── VITEZE SSD DIN PAGINA EMAG ──────────────────────
+
+def _extract_storage_speeds_emag(page, prod_url: str) -> tuple[Optional[int], Optional[int]]:
+    viteza_citire  = None
+    viteza_scriere = None
+
+    try:
+        page.goto(prod_url, timeout=PAGE_TIMEOUT_MS, wait_until="domcontentloaded")
+        _rand_delay(1.0, 2.5)
+
+        page_text = page.inner_text("body")
+
+        m_citire = re.search(
+            r'(?:viteza\s+(?:de\s+)?citire|read\s+speed|citire\s+secventiala)[^\d]{0,30}(\d{2,4})\s*MB',
+            page_text,
+            re.IGNORECASE,
+        )
+        if m_citire:
+            viteza_citire = int(m_citire.group(1))
+
+        m_scriere = re.search(
+            r'(?:viteza\s+(?:de\s+)?scriere|write\s+speed|scriere\s+secventiala)[^\d]{0,30}(\d{2,4})\s*MB',
+            page_text,
+            re.IGNORECASE,
+        )
+        if m_scriere:
+            viteza_scriere = int(m_scriere.group(1))
+
+        if not viteza_citire or not viteza_scriere:
+            rows = page.query_selector_all(
+                ".specifications-section dl dt, "
+                ".product-page-specs dt, "
+                "table.specifications td:first-child"
+            )
+            for row in rows:
+                label = row.inner_text().strip().lower()
+                value_el = row.evaluate(
+                    "el => el.nextElementSibling ? el.nextElementSibling.innerText : ''"
+                )
+                if not value_el:
+                    continue
+                m_val = re.search(r'(\d{2,4})', value_el)
+                if not m_val:
+                    continue
+                val = int(m_val.group(1))
+
+                if not viteza_citire and "citire" in label:
+                    viteza_citire = val
+                elif not viteza_scriere and "scriere" in label:
+                    viteza_scriere = val
+
+    except Exception as e:
+        logger.debug("Eroare extragere viteze SSD eMag (%s): %s", prod_url, e)
+
+    return viteza_citire, viteza_scriere
 
 
 # ─────────────────────────── SITE SCRAPERS ───────────────────────────────────
@@ -402,28 +815,22 @@ def scrape_emag(page, query: str) -> list[PriceResult]:
                 price_el = card.query_selector(".product-new-price")
                 if not price_el:
                     continue
-                # eMag afiseaza pretul ca "659<sup>99</sup><span>Lei</span>"
-                # Extragem partea intreaga din primul text node si zecimalele din <sup>
                 integer_part = price_el.evaluate("el => el.firstChild ? el.firstChild.nodeValue : ''").strip()
                 sup_el = price_el.query_selector("sup")
                 decimal_part = sup_el.inner_text().strip() if sup_el else "00"
                 price = _clean_price(f"{integer_part},{decimal_part}")
                 if not price:
-                    # fallback la inner_text standard
                     price = _clean_price(price_el.inner_text())
                 if not price:
                     continue
 
-                # data-availability-id="3" inseamna "in stoc" pe eMag (confirmat din API)
                 avail_id = card.get_attribute("data-availability-id")
                 in_stoc = (avail_id == "3") if avail_id else True
 
-                # Titlul si URL-ul sunt direct pe card ca atribute data-*
                 title    = card.get_attribute("data-name") or ""
                 prod_url = card.get_attribute("data-url") or ""
 
                 if not title or not prod_url:
-                    # fallback: link-ul imaginii are aria-label si href
                     link_el = card.query_selector("a.js-product-url, a[aria-label][href]")
                     if link_el:
                         if not title:
@@ -444,71 +851,11 @@ def scrape_emag(page, query: str) -> list[PriceResult]:
     return results
 
 
-def scrape_pcgarage(page, query: str) -> list[PriceResult]:
-    results = []
-    try:
-        url, card_sel = _navigate_results(page, "pcgarage", query)
-        if not url:
-            logger.debug("PCGarage: niciun URL pattern nu a functionat pentru: %s", query)
-            return results
-
-        cards = page.query_selector_all(card_sel)[:MAX_RESULTS_PER_SITE]
-        for card in cards:
-            try:
-                # Selector confirmat din DevTools: div.pb-price > p.price (text: "209,99 RON")
-                price_el = card.query_selector("div.pb-price p.price")
-                if not price_el:
-                    price_el = card.query_selector("p.price")
-                if not price_el:
-                    continue
-                price = _clean_price(price_el.inner_text())
-                if not price:
-                    continue
-
-                # Stoc confirmat din DevTools: div.product_box_availability cu clasa "instoc"
-                stoc_el = card.query_selector("div.product_box_availability")
-                stoc_class = (stoc_el.get_attribute("class") or "").lower() if stoc_el else ""
-                stoc_text  = (stoc_el.inner_text() if stoc_el else "").lower()
-                in_stoc = "instoc" in stoc_class or "stoc" in stoc_text or "disponibil" in stoc_text
-
-                # Titlul: atributul title de pe link-ul imaginii (confirmat din DOM)
-                # ex: title="Procesor AMD Ryzen 5 5600 3.5GHz Box"
-                link_el = card.query_selector("a[title][href]")
-                title = ""
-                prod_url = url
-                if link_el:
-                    title = link_el.get_attribute("title") or ""
-                    prod_url = link_el.get_attribute("href") or url
-
-                if not title:
-                    # fallback: text din primul link din card
-                    fallback = card.query_selector("a[href]")
-                    if fallback:
-                        title = fallback.inner_text().strip()
-                        prod_url = fallback.get_attribute("href") or url
-
-                if prod_url and not prod_url.startswith("http"):
-                    prod_url = "https://www.pcgarage.ro" + prod_url
-
-                results.append(PriceResult("PCGarage", price, in_stoc, prod_url, title))
-            except Exception:
-                continue
-    except PWTimeout:
-        logger.debug("PCGarage timeout pentru: %s", query)
-        if 'url' in dir():
-            logger.debug("  URL: %s", url)
-    except Exception as e:
-        logger.debug("PCGarage eroare: %s", e)
-    return results
-
-
 def scrape_altex(page, query: str) -> list[PriceResult]:
     results = []
     try:
-        # URL corect confirmat din browser (nu /search/ ci /cauta/?q=)
         url = f"https://altex.ro/cauta/?q={query.replace(' ', '%20')}"
         page.goto(url, timeout=PAGE_TIMEOUT_MS, wait_until="domcontentloaded")
-        # Dismiss cookie popup (blocheaza networkidle prin tracking scripts)
         try:
             btn = page.wait_for_selector("button:has-text('Acceptati tot')", timeout=3000)
             if btn:
@@ -516,14 +863,11 @@ def scrape_altex(page, query: str) -> list[PriceResult]:
                 page.wait_for_timeout(300)
         except Exception:
             pass
-        # Card confirmat din DevTools: div.Product (Tailwind, nu clase semantice)
         page.wait_for_selector("div.Product", timeout=15000)
 
         cards = page.query_selector_all("div.Product")[:MAX_RESULTS_PER_SITE]
         for card in cards:
             try:
-                # Altex: "2.599<sup>99</sup> lei"
-                # sup trebuie cautat in parintele span.Price-int, nu in tot cardul
                 price_int_el = card.query_selector("span.Price-int")
                 if price_int_el:
                     int_part = price_int_el.inner_text().strip()
@@ -536,11 +880,9 @@ def scrape_altex(page, query: str) -> list[PriceResult]:
                 if not price:
                     continue
 
-                # Stoc: "stoc epuizat" sau "indisponibil" in textul cardului = indisponibil
                 card_text = card.inner_text().lower()
                 in_stoc = "stoc epuizat" not in card_text and "indisponibil" not in card_text
 
-                # Titlul: span.Product-name (confirmat din DOM)
                 title    = ""
                 prod_url = url
                 title_el = card.query_selector("span.Product-name")
@@ -566,62 +908,11 @@ def scrape_altex(page, query: str) -> list[PriceResult]:
     return results
 
 
-
-def scrape_vexio(page, query: str) -> list[PriceResult]:
-    results = []
-    try:
-        url, card_sel = _navigate_results(page, "vexio", query)
-        if not url:
-            logger.debug("Vexio: niciun URL pattern nu a functionat pentru: %s", query)
-            return results
-
-        cards = page.query_selector_all(card_sel)[:MAX_RESULTS_PER_SITE]
-        for card in cards:
-            try:
-                # Selector confirmat din DevTools: div.price > div.pull-left > strong (text: "662,99 lei")
-                price_el = card.query_selector("div.price .pull-left strong")
-                if not price_el:
-                    price_el = card.query_selector("div.price strong")
-                if not price_el:
-                    continue
-                price = _clean_price(price_el.inner_text())
-                if not price:
-                    continue
-
-                # Stoc confirmat din DevTools: div.availability cu clasa "instock"
-                stoc_el = card.query_selector("div.availability")
-                stoc_class = (stoc_el.get_attribute("class") or "").lower() if stoc_el else ""
-                in_stoc = "instock" in stoc_class
-
-                # Titlul: atribut title pe link-ul imaginii (confirmat din DOM)
-                # ex: title="AMD Procesor Ryzen 5 5600 3.50GHz, Socket AM4, Tray, fara cooler"
-                link_el = card.query_selector("a[title][href]")
-                title = ""
-                prod_url = url
-                if link_el:
-                    title    = link_el.get_attribute("title") or ""
-                    prod_url = link_el.get_attribute("href") or url
-
-                if prod_url and not prod_url.startswith("http"):
-                    prod_url = "https://www.vexio.ro" + prod_url
-
-                results.append(PriceResult("Vexio", price, in_stoc, prod_url, title))
-            except Exception:
-                continue
-    except PWTimeout:
-        logger.debug("Vexio timeout pentru: %s", query)
-    except Exception as e:
-        logger.debug("Vexio eroare: %s", e)
-    return results
-
-
 def scrape_cel(page, query: str) -> list[PriceResult]:
     results = []
     try:
-        # URL confirmat din browser: /cauta/{query}/ (query in path, nu querystring)
         url = f"https://www.cel.ro/cauta/{query.replace(' ', '+')}/"
         page.goto(url, timeout=PAGE_TIMEOUT_MS, wait_until="domcontentloaded")
-        # Dismiss cookie popup daca exista
         try:
             btn = page.wait_for_selector("button:has-text('Accept'), button:has-text('OK'), button:has-text('Accepta')", timeout=3000)
             if btn:
@@ -629,16 +920,13 @@ def scrape_cel(page, query: str) -> list[PriceResult]:
                 page.wait_for_timeout(300)
         except Exception:
             pass
-        # Card confirmat din DevTools: div.product_data (clasa completa: product_data productListing-tot)
         page.wait_for_selector("div.product_data", timeout=15000)
 
         cards = page.query_selector_all("div.product_data")[:MAX_RESULTS_PER_SITE]
         for card in cards:
             try:
-                # Selector confirmat din DevTools: span.price cu content="609"
                 price_el = card.query_selector("span.price[content]")
                 if price_el:
-                    # content= are valoarea numerica curata, fara "lei"
                     raw = price_el.get_attribute("content") or price_el.inner_text()
                 else:
                     price_el = card.query_selector("div.pret_n")
@@ -649,11 +937,9 @@ def scrape_cel(page, query: str) -> list[PriceResult]:
                 if not price:
                     continue
 
-                # "In stoc" si "In stoc furnizor" = disponibil
                 card_text = card.inner_text().lower()
                 in_stoc = "in stoc" in card_text or "disponibil" in card_text
 
-                # Titlul: h2.productTitle (confirmat din DOM)
                 title = ""
                 title_el = card.query_selector("h2.productTitle")
                 if title_el:
@@ -664,7 +950,6 @@ def scrape_cel(page, query: str) -> list[PriceResult]:
                     if img_el:
                         title = img_el.get_attribute("alt") or ""
 
-                # URL: link-ul din zona imaginii
                 link_el = card.query_selector(".productListing-poza a[href], a[href]")
                 prod_url = link_el.get_attribute("href") if link_el else url
                 if prod_url and not prod_url.startswith("http"):
@@ -687,49 +972,6 @@ SITE_SCRAPERS = [
 ]
 
 
-# ─────────────────────────── STORAGE SPEEDS ──────────────────────────────────
-
-def fetch_storage_speeds_pcgarage(page, url: str) -> tuple[Optional[int], Optional[int]]:
-    """
-    Deschide pagina produsului pe PCGarage si extrage vitezele de citire/scriere.
-    Returneaza (viteza_citire_mb_s, viteza_scriere_mb_s) sau (None, None).
-    """
-    try:
-        page.goto(url, timeout=PAGE_TIMEOUT_MS, wait_until="domcontentloaded")
-        page.wait_for_selector(
-            ".specifications, .specs, #specifications, table.spec-table, .product-specifications",
-            timeout=6000,
-        )
-        rows = page.query_selector_all(
-            ".specifications tr, .specs tr, #specifications tr, "
-            "table.spec-table tr, .product-specifications tr"
-        )
-
-        citire = scriere = None
-        for row in rows:
-            try:
-                text = row.inner_text().lower()
-                # Extragem numarul din randul respectiv (cel mai mare, minim 50 MB/s)
-                nums = [int(n) for n in re.findall(r"\d+", text) if int(n) > 50]
-                if not nums:
-                    continue
-                val = max(nums)
-
-                if any(kw in text for kw in ("citire", "read", "lectura")):
-                    citire = val
-                elif any(kw in text for kw in ("scriere", "write")):
-                    scriere = val
-            except Exception:
-                continue
-
-        return citire, scriere
-    except PWTimeout:
-        logger.debug("PCGarage speeds timeout: %s", url)
-    except Exception as e:
-        logger.debug("PCGarage speeds eroare: %s", e)
-    return None, None
-
-
 # ─────────────────────────── MAIN SEARCH LOGIC ───────────────────────────────
 
 def find_all_valid_prices(
@@ -738,19 +980,14 @@ def find_all_valid_prices(
     min_similarity: float = 0.55,
     verbose: bool = False,
 ) -> list[PriceResult]:
-    """
-    Cauta componenta pe toate site-urile.
-    Filtreaza dupa: stoc, similaritate titlu, specificatii specifice tipului.
-    Returneaza lista sortata dupa pret (cel mai mic primul).
-    """
-    query = build_query(obj)
     all_valid: list[PriceResult] = []
-
-    if verbose:
-        print(f"  Query: '{query}'")
 
     for scrape_fn in SITE_SCRAPERS:
         site_name = scrape_fn.__name__.replace("scrape_", "")
+        query = build_query(obj, site_name)
+        if verbose:
+            print(f"  Query for {site_name}: '{query}'")
+
         try:
             site_results = scrape_fn(page, query)
 
@@ -771,10 +1008,31 @@ def find_all_valid_prices(
                         print(f"    [{site_name}] RESPINS sim={sim:.2f}<{min_similarity}: {r.title[:60] or r.url[:60]}")
                     continue
 
-                if not _is_valid_title_match(match_text, obj):
+                match_result = _is_valid_title_match(match_text, obj)
+                if match_result is False:
                     if verbose:
                         print(f"    [{site_name}] RESPINS spec: {r.title[:60]}")
                     continue
+
+                if match_result is None and isinstance(obj, Motherboard):
+                    if not _verify_motherboard_details(page, r, obj):
+                        if verbose:
+                            print(f"    [{site_name}] RESPINS page details: {r.title[:60]}")
+                        continue
+
+                if isinstance(obj, RAM) and not _verify_ram_module_count(page, r, obj):
+                    if verbose:
+                        print(f"    [{site_name}] RESPINS module count: {r.title[:60]}")
+                    continue
+
+                if isinstance(obj, Storage) and r.site == "eMag" and r.url:
+                    if verbose:
+                        print(f"    [eMag] Extrag viteze SSD de pe pagina produsului...")
+                    viteza_citire, viteza_scriere = _extract_storage_speeds_emag(page, r.url)
+                    r.viteza_citire  = viteza_citire
+                    r.viteza_scriere = viteza_scriere
+                    if verbose:
+                        print(f"    [eMag] Citire: {viteza_citire} MB/s | Scriere: {viteza_scriere} MB/s")
 
                 if verbose:
                     print(f"    [{site_name}] OK {r.price:.2f} Lei | {r.title[:60]}")
@@ -793,7 +1051,7 @@ def find_all_valid_prices(
 # ─────────────────────────── COMMAND ─────────────────────────────────────────
 
 class Command(BaseCommand):
-    help = "Updateaza preturile tuturor componentelor din DB de pe eMag/PCGarage/Altex/Vexio/CEL"
+    help = "Updateaza preturile tuturor componentelor din DB de pe eMag/Altex/CEL"
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -820,9 +1078,7 @@ class Command(BaseCommand):
             help="Afiseaza detalii despre fiecare rezultat (respins/acceptat + motiv)",
         )
 
-    def handle(self, *args, **options):
-        # sync_playwright creeaza un event loop asyncio intern; Django refuza ORM sincron
-        # in acel context -> DJANGO_ALLOW_ASYNC_UNSAFE dezactiveaza verificarea pt scripturi
+   def handle(self, *args, **options):
         import os
         os.environ["DJANGO_ALLOW_ASYNC_UNSAFE"] = "true"
 
@@ -839,15 +1095,12 @@ class Command(BaseCommand):
         }
 
         self.stdout.write("=" * 65)
-        self.stdout.write("Price Updater - eMag / PCGarage / Altex / Vexio / CEL")
+        self.stdout.write("Price Updater - eMag / Altex / CEL")
         if dry_run:
             self.stdout.write("  *** DRY RUN - nu se scrie in DB ***")
         self.stdout.write("=" * 65)
 
         with sync_playwright() as pw:
-            # Profil persistent: cookies/sesiuni salvate intre rulari
-            # Prima rulare: accepta manual cookies pe fiecare site
-            # Rularile ulterioare: site-urile te recunosc ca vizitator real
             BROWSER_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
             context = pw.chromium.launch_persistent_context(
                 user_data_dir=str(BROWSER_PROFILE_DIR),
@@ -890,7 +1143,7 @@ class Command(BaseCommand):
                 self.stdout.write(f"Model: {model_class.__name__} ({count} produse)")
                 self.stdout.write("─" * 65)
 
-                to_delete = []
+                # AM STERS to_delete = []
 
                 for obj in model_class.objects.all().iterator(chunk_size=50):
                     stats["procesate"] += 1
@@ -908,39 +1161,49 @@ class Command(BaseCommand):
                         stats["eroare"] += 1
                         continue
 
+                    # ──────── LOGICA NOUA: BLACKLIST SI STERGERE ────────
                     if not valid_results:
-                        # Negasit pe niciun site -> se sterge
-                        self.stdout.write("-> NU GASIT - se sterge")
-                        to_delete.append(obj.pk)
+                        self.stdout.write("-> NU GASIT - mutat in Blacklist si sters")
+                        
+                        if not dry_run:
+                            # 1. Adaugam in Blacklist pe baza part_number-ului
+                            if obj.part_number:
+                                Blacklist.objects.get_or_create(
+                                    part_number=obj.part_number,
+                                    defaults={'nume': obj.nume}
+                                )
+                            
+                            # 2. Stergem obiectul din DB
+                            obj.delete()
+                            
                         stats["sterse"] += 1
+                    # ───────────────────────────────────────────────────
                     else:
-                        best = valid_results[0]  # sortat dupa pret, cel mai mic primul
-                        sites_found = len({r.site for r in valid_results})
+                        best = valid_results[0]
                         self.stdout.write(f"-> {best.price:.2f} Lei ({best.site})")
+
+                        if isinstance(obj, Storage):
+                            citire_str  = f"{best.viteza_citire} MB/s"  if best.viteza_citire  is not None else "N/A"
+                            scriere_str = f"{best.viteza_scriere} MB/s" if best.viteza_scriere is not None else "N/A"
+                            self.stdout.write(
+                                f"       Viteze SSD -> citire: {citire_str:<12} scriere: {scriere_str}"
+                            )
 
                         if not dry_run:
                             update_fields = ["pret", "magazin", "url_produs", "stoc"]
-
                             obj.pret       = best.price
                             obj.magazin    = best.site
                             obj.url_produs = best.url
                             obj.stoc       = True
 
-                            # Pentru Storage incercam sa luam vitezele de pe PCGarage
-                            if isinstance(obj, Storage):
-                                pcgarage_results = [r for r in valid_results if r.site == "PCGarage"]
-                                if pcgarage_results:
-                                    citire, scriere = fetch_storage_speeds_pcgarage(
-                                        page, pcgarage_results[0].url
-                                    )
-                                    if citire is not None:
-                                        obj.viteza_citire_mb_s = citire
-                                        update_fields.append("viteza_citire_mb_s")
-                                        self.stdout.write(f"       Viteza citire:  {citire} MB/s")
-                                    if scriere is not None:
-                                        obj.viteza_scriere_mb_s = scriere
-                                        update_fields.append("viteza_scriere_mb_s")
-                                        self.stdout.write(f"       Viteza scriere: {scriere} MB/s")
+                            if (
+                                isinstance(obj, Storage)
+                                and best.viteza_citire is not None
+                                and hasattr(obj, 'viteza_citire')
+                            ):
+                                obj.viteza_citire  = best.viteza_citire
+                                obj.viteza_scriere = best.viteza_scriere
+                                update_fields += ["viteza_citire", "viteza_scriere"]
 
                             with transaction.atomic():
                                 obj.save(update_fields=update_fields)
@@ -956,11 +1219,7 @@ class Command(BaseCommand):
                         )
                         time.sleep(wait)
 
-                if to_delete and not dry_run:
-                    deleted, _ = model_class.objects.filter(pk__in=to_delete).delete()
-                    self.stdout.write(f"  Sterse {deleted} produse din {model_class.__name__}")
-                elif to_delete and dry_run:
-                    self.stdout.write(f"  [DRY RUN] S-ar sterge {len(to_delete)} produse")
+                # AM STERS if to_delete: ...
 
             context.close()
 
@@ -969,6 +1228,6 @@ class Command(BaseCommand):
         self.stdout.write("=" * 65)
         self.stdout.write(f"  Procesate:   {stats['procesate']}")
         self.stdout.write(f"  Actualizate: {stats['actualizate']}")
-        self.stdout.write(f"  Sterse:      {stats['sterse']}")
+        self.stdout.write(f"  Sterse (-> Blacklist): {stats['sterse']}")
         self.stdout.write(f"  Erori:       {stats['eroare']}")
         self.stdout.write("=" * 65)

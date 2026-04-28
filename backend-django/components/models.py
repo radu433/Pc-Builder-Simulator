@@ -163,7 +163,7 @@ class SaveBuild(models.Model):
     pret_total = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     data_salvarii = models.DateTimeField(auto_now_add=True)  
 
-def save(self, *args, **kwargs):
+    def save(self, *args, **kwargs):
        
         if not self.nume:
             #numaram al catelea pc salvat este 
@@ -173,6 +173,9 @@ def save(self, *args, **kwargs):
             
         #functia de salvare in baza de date
         super().save(*args, **kwargs)
+class Blacklist(models.Model):
+     part_number = models.CharField(max_length=100, unique=True, null=True, blank=True)
+     nume = models.CharField(max_length=300)
 
 def __str__(self):
-    return f"{self.nume} - {self.user.username}"
+        return f"{self.nume} - {self.user.username}"
