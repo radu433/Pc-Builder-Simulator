@@ -10,9 +10,9 @@
           </div>
           
           <div class="user-actions">
-            <button class="text-link">Log In</button>
+            <button class="text-link" @click="currentTab = 'login'">Log In</button>
             <span class="divider"></span>
-            <button class="text-link">Register</button>
+            <button class="text-link" @click="currentTab = 'register'">Register</button>
             <span class="divider"></span>
             <button class="lang-select">
               🇷🇴 Romania <span class="arrow">▼</span>
@@ -78,6 +78,14 @@
     <main class="main-content">
       
       <BuilderView v-if="currentTab === 'builder'" />
+
+      <div v-else-if="currentTab === 'login'" class="auth-wrapper">
+        <Login />
+      </div>
+
+      <div v-else-if="currentTab === 'register'" class="auth-wrapper">
+        <Register />
+      </div>
       
       <div v-else class="page-placeholder container">
         <h2>Secțiunea: {{ currentTab.toUpperCase() }}</h2>
@@ -91,15 +99,16 @@
 
 <script setup>
 import { ref } from 'vue'
-// Asigură-te că calea către BuilderView este corectă pentru proiectul tău
 import BuilderView from './components/BuilderView.vue'
+// Importuri Noi:
+import Login from './components/Login.vue'
+import Register from './components/Register.vue'
 
-// Setăm 'builder' ca pagină implicită, exact cum face site-ul original
 const currentTab = ref('builder') 
 </script>
 
 <style scoped>
-/* Reset și setări de bază pentru a nu fi afectate de CSS-ul global */
+/* Păstrăm tot CSS-ul tău original neschimbat */
 .app-wrapper {
   display: flex;
   flex-direction: column;
@@ -113,7 +122,6 @@ button {
   cursor: pointer;
 }
 
-/* --- HEADER PRINCIPAL --- */
 .pcpp-header {
   display: flex;
   flex-direction: column;
@@ -125,9 +133,8 @@ button {
   width: 100%;
 }
 
-/* --- NIVELUL 1: TOP TIER --- */
 .top-tier {
-  background-color: #111116; /* Negru închis */
+  background-color: #111116;
   border-bottom: 1px solid #1a1b26;
 }
 
@@ -194,16 +201,15 @@ button {
   margin-left: 10px;
 }
 
-/* --- NIVELUL 2: BOTTOM TIER --- */
 .bottom-tier {
-  background-color: #1a1b26; /* Bleumarin închis / Gri închis */
+  background-color: #1a1b26;
   border-bottom: 1px solid #2a2d3e;
 }
 
 .bottom-tier-content {
   display: flex;
   justify-content: space-between;
-  align-items: stretch; /* Pentru a face butoanele să ocupe toată înălțimea */
+  align-items: stretch;
   height: 55px;
 }
 
@@ -257,13 +263,21 @@ button {
   color: #ffffff;
 }
 
-/* --- STILURI PLACEHOLDER PAGINI --- */
 .page-placeholder {
   text-align: center;
   padding: 80px 20px;
-  background-color: var(--panel-bg);
+  background-color: #1a1b26;
   border-radius: 8px;
   margin-top: 40px;
-  border: 1px solid var(--panel-border);
+  border: 1px solid #2a2d3e;
+}
+
+/* Stil nou pentru centrarea formularelor de login/register */
+.auth-wrapper {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 60px;
+  min-height: 400px;
 }
 </style>
