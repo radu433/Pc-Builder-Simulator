@@ -25,6 +25,144 @@ optima, justificata tehnic si adaptata geografic, eliminand riscul dezechilibrel
 
 ## Arhitectura Sistemului
 
+**Diagrama Arhitecturii**
+
+```mermaid
+graph TD;
+    UI[Frontend: Vue.js port 5173] -- REST API --> Django[Backend: Django port 8000];
+    Django -- Persistence --> DB[(Database: MySQL port 3306)];
+    Django -- JSON Request --> Agent[Testing Agent: FastAPI port 8002];
+    Django -- trigger --> Scraper[Scraper Service: FastAPI port 8001];
+    Agent -- prompt --> Gemini[Google Gemini AI];
+    Gemini -- raspuns --> Agent;
+    Agent -- JSON compatibilitate + sugestii --> Django;
+    Scraper -- populeaza baza de date --> DB;
+    Django -- final Data --> UI;
+```
+
+**Fluxul Testing Agent-ului**
+
+```mermaid
+graph TD;
+    A[Utilizator selecteaza componenta] --> B[Frontend trimite POST /analizeaza-build];
+    B --> C[Testing Agent];
+    C --> D{Verifica compatibilitate};
+    D -- problema detectata --> E[Returneaza erori];
+    D -- ok --> F{Calculeaza bottleneck};
+    F -- bottleneck detectat --> G[Fetch sugestii alternative din Django];
+    F -- echilibrat --> H[Genereaza analiza Gemini];
+    G --> H;
+    H --> I[Returneaza JSON catre Frontend];
+    I --> J[Frontend afiseaza popup];
+```
+**Diagrama de Clase (Modele de Date)**
+```mermaid
+classDiagram
+    class UserProfile {
+        +Integer id
+        +String username
+        +String email
+        +Float buget
+        +String locatie
+        +String rezolutie_dorita
+        +List jocuri_preferate
+    }
+
+    class CPU {
+        +Integer id
+        +String nume
+        +String brand
+        +String socket
+        +Integer nuclee
+        +Integer threaduri
+        +Float frecventa_ghz
+        +Integer consum_tdp
+        +Float pret
+        +String magazin
+        +Boolean stoc
+    }
+
+    class GPU {
+        +Integer id
+        +String nume
+        +String brand
+        +Integer vram_gb
+        +Integer consum_tdp
+        +Integer lungime_mm
+        +Float pret
+        +String magazin
+        +Boolean stoc
+    }
+
+    class Motherboard {
+        +Integer id
+        +String nume
+        +String brand
+        +String socket
+        +String tip_memorie
+        +Integer capacitate_max_ram_gb
+        +Float pret
+        +Boolean stoc
+    }
+
+    class RAM {
+        +Integer id
+        +String nume
+        +String brand
+        +String tip_memorie
+        +Integer capacitate_totala_gb
+        +Integer frecventa_mhz
+        +Float pret
+        +Boolean stoc
+    }
+
+    class PSU {
+        +Integer id
+        +String nume
+        +String brand
+        +Integer putere_w
+        +Float pret
+        +Boolean stoc
+    }
+
+    class Case {
+        +Integer id
+        +String nume
+        +String brand
+        +Integer lungime_max_gpu_mm
+        +Integer inaltime_max_cooler_mm
+        +Float pret
+        +Boolean stoc
+    }
+
+    class Cooler {
+        +Integer id
+        +String nume
+        +String brand
+        +String tip_racire
+        +List socket_suportate
+        +Integer inaltime_mm
+        +Float pret
+        +Boolean stoc
+    }
+
+    class SaveBuild {
+        +Integer id
+        +String nume_build
+        +Float pret_total
+    }
+
+    UserProfile "1" --> "0..*" SaveBuild : salveaza
+    SaveBuild "1" --> "0..1" CPU : contine
+    SaveBuild "1" --> "0..1" GPU : contine
+    SaveBuild "1" --> "0..1" Motherboard : contine
+    SaveBuild "1" --> "0..1" RAM : contine
+    SaveBuild "1" --> "0..1" PSU : contine
+    SaveBuild "1" --> "0..1" Case : contine
+    SaveBuild "1" --> "0..1" Cooler : contine
+    CPU "1" --> "1" Motherboard : socket compatibil
+```
+
 Proiectul este impartit in trei componente principale care comunica intre ele:
 
 1. **Backend (Python - Django + Django REST Framework):**
