@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import CPU, GPU, RAM, Storage, Motherboard, PSU, Case,Cooler
+from .models import CPU, GPU, RAM, Storage, Motherboard, PSU, Case,Cooler,SaveBuild
 
 class CPUSerializer(serializers.ModelSerializer):
     class Meta:
@@ -34,3 +34,8 @@ class CoolerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Cooler
         fields = '__all__'  
+class SaveBuildSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SaveBuild
+        fields = '__all__'
+        read_only_fields = ['user','nume','data_salvarii']  

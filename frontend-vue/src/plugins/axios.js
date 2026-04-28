@@ -8,5 +8,16 @@ const api = axios.create({
     'Content-Type': 'application/json',
   }
 });
-
+api.interceptors.request.use((config) => {
+  // Scoatem token-ul din localStorage
+  const token = localStorage.getItem('access_token');
+  
+  // Daca exista, il punem in header-ul cererii
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+}, (error) => {
+  return Promise.reject(error);
+});
 export default api;

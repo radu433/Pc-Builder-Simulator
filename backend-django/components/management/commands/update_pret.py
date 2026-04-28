@@ -1078,156 +1078,156 @@ class Command(BaseCommand):
             help="Afiseaza detalii despre fiecare rezultat (respins/acceptat + motiv)",
         )
 
-   def handle(self, *args, **options):
-        import os
-        os.environ["DJANGO_ALLOW_ASYNC_UNSAFE"] = "true"
+        def handle(self, *args, **options):
+            import os
+            os.environ["DJANGO_ALLOW_ASYNC_UNSAFE"] = "true"
 
-        dry_run    = options["dry_run"]
-        headless   = options["headless"]
-        only_model = options.get("model")
-        verbose    = options["verbose"]
+            dry_run    = options["dry_run"]
+            headless   = options["headless"]
+            only_model = options.get("model")
+            verbose    = options["verbose"]
 
-        stats = {
-            "procesate":   0,
-            "actualizate": 0,
-            "sterse":      0,
-            "eroare":      0,
-        }
+            stats = {
+                "procesate":   0,
+                "actualizate": 0,
+                "sterse":      0,
+                "eroare":      0,
+            }
 
-        self.stdout.write("=" * 65)
-        self.stdout.write("Price Updater - eMag / Altex / CEL")
-        if dry_run:
-            self.stdout.write("  *** DRY RUN - nu se scrie in DB ***")
-        self.stdout.write("=" * 65)
+            self.stdout.write("=" * 65)
+            self.stdout.write("Price Updater - eMag / Altex / CEL")
+            if dry_run:
+                self.stdout.write("  *** DRY RUN - nu se scrie in DB ***")
+            self.stdout.write("=" * 65)
 
-        with sync_playwright() as pw:
-            BROWSER_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
-            context = pw.chromium.launch_persistent_context(
-                user_data_dir=str(BROWSER_PROFILE_DIR),
-                headless=headless,
-                args=[
-                    "--disable-blink-features=AutomationControlled",
-                    "--no-sandbox",
-                    "--disable-dev-shm-usage",
-                ],
-                user_agent=random.choice(_USER_AGENTS),
-                viewport=random.choice(_VIEWPORTS),
-                locale="ro-RO",
-                timezone_id="Europe/Bucharest",
-                extra_http_headers=_EXTRA_HEADERS,
-            )
-            page = context.new_page()
-            if _STEALTH_AVAILABLE:
-                stealth_sync(page)
-            page.route(
-                "**/*.{png,jpg,jpeg,gif,webp,svg,ico,woff,woff2,ttf,eot}",
-                lambda route: route.abort(),
-            )
+            with sync_playwright() as pw:
+                BROWSER_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+                context = pw.chromium.launch_persistent_context(
+                    user_data_dir=str(BROWSER_PROFILE_DIR),
+                    headless=headless,
+                    args=[
+                        "--disable-blink-features=AutomationControlled",
+                        "--no-sandbox",
+                        "--disable-dev-shm-usage",
+                    ],
+                    user_agent=random.choice(_USER_AGENTS),
+                    viewport=random.choice(_VIEWPORTS),
+                    locale="ro-RO",
+                    timezone_id="Europe/Bucharest",
+                    extra_http_headers=_EXTRA_HEADERS,
+                )
+                page = context.new_page()
+                if _STEALTH_AVAILABLE:
+                    stealth_sync(page)
+                page.route(
+                    "**/*.{png,jpg,jpeg,gif,webp,svg,ico,woff,woff2,ttf,eot}",
+                    lambda route: route.abort(),
+                )
 
-            models_to_process = ALL_MODELS
-            if only_model:
-                models_to_process = [
-                    m for m in ALL_MODELS
-                    if m.__name__.lower() == only_model.lower()
-                ]
-                if not models_to_process:
-                    self.stderr.write(f"Model necunoscut: {only_model}")
-                    context.close()
-                    return
+                models_to_process = ALL_MODELS
+                if only_model:
+                    models_to_process = [
+                        m for m in ALL_MODELS
+                        if m.__name__.lower() == only_model.lower()
+                    ]
+                    if not models_to_process:
+                        self.stderr.write(f"Model necunoscut: {only_model}")
+                        context.close()
+                        return
 
-            batch_counter = 0
+                batch_counter = 0
 
-            for model_class in models_to_process:
-                count = model_class.objects.count()
-                self.stdout.write(f"\n{'─'*65}")
-                self.stdout.write(f"Model: {model_class.__name__} ({count} produse)")
-                self.stdout.write("─" * 65)
+                for model_class in models_to_process:
+                    count = model_class.objects.count()
+                    self.stdout.write(f"\n{'─'*65}")
+                    self.stdout.write(f"Model: {model_class.__name__} ({count} produse)")
+                    self.stdout.write("─" * 65)
 
-                # AM STERS to_delete = []
+                    # AM STERS to_delete = []
 
-                for obj in model_class.objects.all().iterator(chunk_size=50):
-                    stats["procesate"] += 1
-                    batch_counter += 1
+                    for obj in model_class.objects.all().iterator(chunk_size=50):
+                        stats["procesate"] += 1
+                        batch_counter += 1
 
-                    self.stdout.write(
-                        f"[{stats['procesate']:>5}] {obj.nume[:55]:<55}",
-                        ending=" ",
-                    )
-
-                    try:
-                        valid_results = find_all_valid_prices(page, obj, verbose=verbose)
-                    except Exception as e:
-                        self.stdout.write(f"EXCEPTIE: {e}")
-                        stats["eroare"] += 1
-                        continue
-
-                    # ──────── LOGICA NOUA: BLACKLIST SI STERGERE ────────
-                    if not valid_results:
-                        self.stdout.write("-> NU GASIT - mutat in Blacklist si sters")
-                        
-                        if not dry_run:
-                            # 1. Adaugam in Blacklist pe baza part_number-ului
-                            if obj.part_number:
-                                Blacklist.objects.get_or_create(
-                                    part_number=obj.part_number,
-                                    defaults={'nume': obj.nume}
-                                )
-                            
-                            # 2. Stergem obiectul din DB
-                            obj.delete()
-                            
-                        stats["sterse"] += 1
-                    # ───────────────────────────────────────────────────
-                    else:
-                        best = valid_results[0]
-                        self.stdout.write(f"-> {best.price:.2f} Lei ({best.site})")
-
-                        if isinstance(obj, Storage):
-                            citire_str  = f"{best.viteza_citire} MB/s"  if best.viteza_citire  is not None else "N/A"
-                            scriere_str = f"{best.viteza_scriere} MB/s" if best.viteza_scriere is not None else "N/A"
-                            self.stdout.write(
-                                f"       Viteze SSD -> citire: {citire_str:<12} scriere: {scriere_str}"
-                            )
-
-                        if not dry_run:
-                            update_fields = ["pret", "magazin", "url_produs", "stoc"]
-                            obj.pret       = best.price
-                            obj.magazin    = best.site
-                            obj.url_produs = best.url
-                            obj.stoc       = True
-
-                            if (
-                                isinstance(obj, Storage)
-                                and best.viteza_citire is not None
-                                and hasattr(obj, 'viteza_citire')
-                            ):
-                                obj.viteza_citire  = best.viteza_citire
-                                obj.viteza_scriere = best.viteza_scriere
-                                update_fields += ["viteza_citire", "viteza_scriere"]
-
-                            with transaction.atomic():
-                                obj.save(update_fields=update_fields)
-
-                        stats["actualizate"] += 1
-
-                    _rand_delay(*DELAY_BETWEEN_PRODUCTS)
-
-                    if batch_counter % BATCH_SIZE == 0:
-                        wait = random.randint(*DELAY_BETWEEN_BATCHES)
                         self.stdout.write(
-                            f"\n  [Pauza antibot {wait}s dupa {BATCH_SIZE} produse...]\n"
+                            f"[{stats['procesate']:>5}] {obj.nume[:55]:<55}",
+                            ending=" ",
                         )
-                        time.sleep(wait)
 
-                # AM STERS if to_delete: ...
+                        try:
+                            valid_results = find_all_valid_prices(page, obj, verbose=verbose)
+                        except Exception as e:
+                            self.stdout.write(f"EXCEPTIE: {e}")
+                            stats["eroare"] += 1
+                            continue
 
-            context.close()
+                        # ──────── LOGICA NOUA: BLACKLIST SI STERGERE ────────
+                        if not valid_results:
+                            self.stdout.write("-> NU GASIT - mutat in Blacklist si sters")
+                            
+                            if not dry_run:
+                                # 1. Adaugam in Blacklist pe baza part_number-ului
+                                if obj.part_number:
+                                    Blacklist.objects.get_or_create(
+                                        part_number=obj.part_number,
+                                        defaults={'nume': obj.nume}
+                                    )
+                                
+                                # 2. Stergem obiectul din DB
+                                obj.delete()
+                                
+                            stats["sterse"] += 1
+                        # ───────────────────────────────────────────────────
+                        else:
+                            best = valid_results[0]
+                            self.stdout.write(f"-> {best.price:.2f} Lei ({best.site})")
 
-        self.stdout.write("\n" + "=" * 65)
-        self.stdout.write("RAPORT FINAL")
-        self.stdout.write("=" * 65)
-        self.stdout.write(f"  Procesate:   {stats['procesate']}")
-        self.stdout.write(f"  Actualizate: {stats['actualizate']}")
-        self.stdout.write(f"  Sterse (-> Blacklist): {stats['sterse']}")
-        self.stdout.write(f"  Erori:       {stats['eroare']}")
-        self.stdout.write("=" * 65)
+                            if isinstance(obj, Storage):
+                                citire_str  = f"{best.viteza_citire} MB/s"  if best.viteza_citire  is not None else "N/A"
+                                scriere_str = f"{best.viteza_scriere} MB/s" if best.viteza_scriere is not None else "N/A"
+                                self.stdout.write(
+                                    f"       Viteze SSD -> citire: {citire_str:<12} scriere: {scriere_str}"
+                                )
+
+                            if not dry_run:
+                                update_fields = ["pret", "magazin", "url_produs", "stoc"]
+                                obj.pret       = best.price
+                                obj.magazin    = best.site
+                                obj.url_produs = best.url
+                                obj.stoc       = True
+
+                                if (
+                                    isinstance(obj, Storage)
+                                    and best.viteza_citire is not None
+                                    and hasattr(obj, 'viteza_citire')
+                                ):
+                                    obj.viteza_citire  = best.viteza_citire
+                                    obj.viteza_scriere = best.viteza_scriere
+                                    update_fields += ["viteza_citire", "viteza_scriere"]
+
+                                with transaction.atomic():
+                                    obj.save(update_fields=update_fields)
+
+                            stats["actualizate"] += 1
+
+                        _rand_delay(*DELAY_BETWEEN_PRODUCTS)
+
+                        if batch_counter % BATCH_SIZE == 0:
+                            wait = random.randint(*DELAY_BETWEEN_BATCHES)
+                            self.stdout.write(
+                                f"\n  [Pauza antibot {wait}s dupa {BATCH_SIZE} produse...]\n"
+                            )
+                            time.sleep(wait)
+
+                    # AM STERS if to_delete: ...
+
+                context.close()
+
+            self.stdout.write("\n" + "=" * 65)
+            self.stdout.write("RAPORT FINAL")
+            self.stdout.write("=" * 65)
+            self.stdout.write(f"  Procesate:   {stats['procesate']}")
+            self.stdout.write(f"  Actualizate: {stats['actualizate']}")
+            self.stdout.write(f"  Sterse (-> Blacklist): {stats['sterse']}")
+            self.stdout.write(f"  Erori:       {stats['eroare']}")
+            self.stdout.write("=" * 65)
