@@ -17,18 +17,21 @@
       </div>
       
       <div class="build-list">
-        <div v-if="loading" class="loading">Se încarcă componentele...</div>
-        <div v-else-if="totalPartsLoaded === 0" class="empty-state">
-          Nu s-a încărcat nicio componentă de la API. Verifică backend-ul și consola browserului.
+        <div v-if="!loading && totalPartsLoaded === 0" class="api-warning">
+          ⚠️ Backend-ul nu este pornit sau e gol. Nu vei putea alege piese reale momentan.
         </div>
+        
         <div 
-          v-else
           v-for="category in categories" 
           :key="category.id" 
           class="build-row"
           :class="{ 'has-part': category.selectedPart }"
         >
-          <div class="category-icon">{{ category.icon }}</div>
+          <div class="category-icon">
+            <img v-if="category.image" :src="category.image" :alt="category.name" class="custom-icon" />
+            <span v-else>{{ category.icon }}</span>
+          </div>
+          
           <div class="category-info">
             <div class="category-name">{{ category.name }}</div>
             <div v-if="category.selectedPart" class="selected-name">
@@ -43,7 +46,8 @@
           
           <div class="actions">
             <button class="btn btn-outline" @click="openPartSelector(category.id)">
-              {{ openCategoryId === category.id ? 'Închide' : '+ Alege' }} ({{ category.parts.length }} disponibile)
+              {{ openCategoryId === category.id ? 'Închide' : '+ Alege' }} 
+              <span style="font-size: 0.8rem;" v-if="category.parts">({{ category.parts.length }})</span>
             </button>
             <button v-if="category.selectedPart" class="btn-remove" @click="removePart(category.id)">
               🗑️
@@ -51,8 +55,8 @@
           </div>
 
           <div v-if="openCategoryId === category.id" class="parts-list">
-            <div v-if="category.parts.length === 0" class="empty-state">
-              Nu s-au găsit componente în această categorie.
+            <div v-if="!category.parts || category.parts.length === 0" class="empty-state">
+              Nu s-au găsit componente în această categorie în baza de date.
             </div>
             <div v-for="part in category.parts" :key="part.id" class="part-row" @click="selectPart(category.id, part)">
               <div class="part-name">{{ displayPartName(part) }}</div>
@@ -60,6 +64,7 @@
             </div>
           </div>
         </div>
+
       </div>
     </div>
 
@@ -261,6 +266,24 @@ onMounted(() => {
 .part-row:hover {
   background-color: rgba(255,255,255,0.08);
   transform: translateX(4px);
+}
+
+.custom-icon {
+  width: 35px;
+  height: 35px;
+  object-fit: contain;
+}
+
+/* Stil pentru bannerul de avertizare backend */
+.api-warning {
+  background-color: rgba(255, 71, 87, 0.1);
+  color: #ff4757;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid #ff4757;
+  margin-bottom: 15px;
+  text-align: center;
+  font-weight: 600;
 }
 .part-name { color: white; }
 .part-price { color: var(--accent-color); font-weight: 600; }

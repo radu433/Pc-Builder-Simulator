@@ -10,15 +10,9 @@
           </div>
           
           <div class="user-actions">
-<<<<<<< HEAD
-            <button class="text-link">Log In</button>
-            <span class="divider"></span>
-            <button class="text-link">Register</button>
-=======
             <button class="text-link" @click="currentTab = 'login'">Log In</button>
             <span class="divider"></span>
             <button class="text-link" @click="currentTab = 'register'">Register</button>
->>>>>>> origin/radu
             <span class="divider"></span>
             <button class="lang-select">
               🇷🇴 Romania <span class="arrow">▼</span>
@@ -84,8 +78,6 @@
     <main class="main-content">
       
       <BuilderView v-if="currentTab === 'builder'" />
-<<<<<<< HEAD
-=======
 
       <div v-else-if="currentTab === 'login'" class="auth-wrapper">
         <Login />
@@ -94,7 +86,6 @@
       <div v-else-if="currentTab === 'register'" class="auth-wrapper">
         <Register />
       </div>
->>>>>>> origin/radu
       
       <div v-else class="page-placeholder container">
         <h2>Secțiunea: {{ currentTab.toUpperCase() }}</h2>
@@ -108,27 +99,16 @@
 
 <script setup>
 import { ref } from 'vue'
-<<<<<<< HEAD
-// Asigură-te că calea către BuilderView este corectă pentru proiectul tău
-import BuilderView from './components/BuilderView.vue'
-
-// Setăm 'builder' ca pagină implicită, exact cum face site-ul original
-=======
 import BuilderView from './components/BuilderView.vue'
 // Importuri Noi:
 import Login from './components/Login.vue'
 import Register from './components/Register.vue'
 
->>>>>>> origin/radu
 const currentTab = ref('builder') 
 </script>
 
 <style scoped>
-<<<<<<< HEAD
-/* Reset și setări de bază pentru a nu fi afectate de CSS-ul global */
-=======
 /* Păstrăm tot CSS-ul tău original neschimbat */
->>>>>>> origin/radu
 .app-wrapper {
   display: flex;
   flex-direction: column;
@@ -142,10 +122,6 @@ button {
   cursor: pointer;
 }
 
-<<<<<<< HEAD
-/* --- HEADER PRINCIPAL --- */
-=======
->>>>>>> origin/radu
 .pcpp-header {
   display: flex;
   flex-direction: column;
@@ -157,14 +133,8 @@ button {
   width: 100%;
 }
 
-<<<<<<< HEAD
-/* --- NIVELUL 1: TOP TIER --- */
-.top-tier {
-  background-color: #111116; /* Negru închis */
-=======
 .top-tier {
   background-color: #111116;
->>>>>>> origin/radu
   border-bottom: 1px solid #1a1b26;
 }
 
@@ -231,25 +201,15 @@ button {
   margin-left: 10px;
 }
 
-<<<<<<< HEAD
-/* --- NIVELUL 2: BOTTOM TIER --- */
-.bottom-tier {
-  background-color: #1a1b26; /* Bleumarin închis / Gri închis */
-=======
 .bottom-tier {
   background-color: #1a1b26;
->>>>>>> origin/radu
   border-bottom: 1px solid #2a2d3e;
 }
 
 .bottom-tier-content {
   display: flex;
   justify-content: space-between;
-<<<<<<< HEAD
-  align-items: stretch; /* Pentru a face butoanele să ocupe toată înălțimea */
-=======
   align-items: stretch;
->>>>>>> origin/radu
   height: 55px;
 }
 
@@ -303,16 +263,6 @@ button {
   color: #ffffff;
 }
 
-<<<<<<< HEAD
-/* --- STILURI PLACEHOLDER PAGINI --- */
-.page-placeholder {
-  text-align: center;
-  padding: 80px 20px;
-  background-color: var(--panel-bg);
-  border-radius: 8px;
-  margin-top: 40px;
-  border: 1px solid var(--panel-border);
-=======
 .page-placeholder {
   text-align: center;
   padding: 80px 20px;
@@ -329,6 +279,28 @@ button {
   align-items: flex-start;
   padding-top: 60px;
   min-height: 400px;
->>>>>>> origin/radu
+}
+.page-placeholder {
+  text-align: center;
+  padding: 80px 20px;
+  background-color: var(--panel-bg);
+  border-radius: 8px;
+  margin-top: 40px;
+  border: 1px solid var(--panel-border);
+  color: #ffffff; /* Face textul general alb */
+}
+
+/* Forțăm titlul secțiunii să fie alb și să iasă în evidență */
+.page-placeholder h2 {
+  color: #ffffff; 
+  font-size: 2rem;
+  margin-bottom: 15px;
+}
+
+/* Facem paragraful un gri deschis, ca să arate modern */
+.page-placeholder p {
+  color: #b0b3c6; 
+  font-size: 1.1rem;
+  margin-bottom: 30px;
 }
 </style>
