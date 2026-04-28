@@ -3,11 +3,11 @@
     
     <div class="main-panel">
       <div class="header-section">
-        <h2>🛠️ Configurează-ți PC-ul</h2>
+        <h2 style="text-align: center; color: #000000;">🛠️ Configurează-ți PC-ul</h2>
         
         <div class="progress-container">
           <div class="progress-info">
-            <span>Progres Build</span>
+            <span>Piese selectate</span>
             <span>{{ selectedPartsCount }} / {{ categories.length }} piese</span>
           </div>
           <div class="progress-bar-bg">
@@ -23,7 +23,10 @@
           class="build-row"
           :class="{ 'has-part': category.selectedPart }"
         >
-          <div class="category-icon">{{ category.icon }}</div>
+          <div class="category-icon">
+            <img v-if="category.image" :src="category.image" :alt="category.name" class="custom-icon" />
+            <span v-else>{{ category.icon }}</span>
+         </div>
           <div class="category-info">
             <div class="category-name">{{ category.name }}</div>
             <div v-if="category.selectedPart" class="selected-name">
@@ -76,16 +79,16 @@
 <script setup>
 import { ref, computed } from 'vue'
 
-// Am adăugat iconițe pentru fiecare categorie
+
 const categories = ref([
-  { id: 'cpu', name: 'Procesor', icon: '🧠', selectedPart: null },
-  { id: 'cooler', name: 'Cooler', icon: '❄️', selectedPart: null },
-  { id: 'motherboard', name: 'Placă de bază', icon: '🛹', selectedPart: null },
-  { id: 'ram', name: 'Memorie RAM', icon: '📟', selectedPart: null },
-  { id: 'storage', name: 'Stocare', icon: '💾', selectedPart: null },
-  { id: 'gpu', name: 'Placă Video', icon: '🎮', selectedPart: null },
-  { id: 'case', name: 'Carcasă', icon: '🗄️', selectedPart: null },
-  { id: 'psu', name: 'Sursă', icon: '🔌', selectedPart: null }
+  { id: 'cpu', name: 'Procesor', image: '/cpu.png', selectedPart: null },
+  { id: 'cooler', name: 'Cooler', image: '/aio.png', selectedPart: null },
+  { id: 'motherboard', name: 'Placă de bază', image: '/mobo.png', selectedPart: null },
+  { id: 'ram', name: 'Memorie RAM', image: '/ram.png', selectedPart: null },
+  { id: 'storage', name: 'Stocare', image: '/ssd.png', selectedPart: null },
+  { id: 'gpu', name: 'Placă Video', image: '/gpu.png', selectedPart: null },
+  { id: 'case', name: 'Carcasă', image: '/case.png', selectedPart: null },
+  { id: 'psu', name: 'Sursă', image: '/psu.png', selectedPart: null }
 ])
 
 // --- LOGICA PENTRU BARĂ DE PROGRES ---
@@ -132,6 +135,13 @@ const totalWattage = computed(() => {
   grid-template-columns: 3fr 1fr;
   gap: 30px;
   margin-top: 20px;
+}
+
+
+.custom-icon {
+  width: 40px;
+  height: 40px;
+  object-fit: contain; 
 }
 
 .main-panel, .summary-panel {
