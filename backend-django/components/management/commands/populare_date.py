@@ -16,7 +16,7 @@ try:
 except ImportError:
     raise ImportError("Ruleaza: pip install requests beautifulsoup4")
 
-from components.models import CPU,GPU, Motherboard, RAM, PSU, Case, Cooler, Storage
+from components.models import CPU,GPU, Motherboard, RAM, PSU, Case, Cooler, Storage, Blacklist
 
 BASE_URL = "https://www.pc-kombo.com"
 
@@ -1114,6 +1114,13 @@ def run_import(stdout, session, model_class, list_path, product_keyword, scrape_
                 stats["sarit"] += 1
                 continue
 
+            # ──────── LOGICA NOUA: VERIFICARE BLACKLIST ────────
+            if Blacklist.objects.filter(part_number=part_number).exists():
+                stdout.write("         -> SARIT (Aflat in Blacklist)")
+                stats["sarit"] += 1
+                continue
+            # ───────────────────────────────────────────────────
+
             _, created = model_class.objects.update_or_create(
                 part_number=part_number,
                 defaults=data,
@@ -1129,7 +1136,6 @@ def run_import(stdout, session, model_class, list_path, product_keyword, scrape_
         random_delay()
 
     return stats
-
 
 # ─────────────────────────── COMMAND ─────────────────────────────────────────
 

@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import CPU, GPU, Motherboard, RAM, PSU, Case, Cooler, Storage, Monitor, Fan, NetworkAdapter, SaveBuild
+from .models import CPU, GPU, Motherboard, RAM, PSU, Case, Cooler, Storage, Monitor, Fan, NetworkAdapter, SaveBuild,Blacklist
 
 # 1. Configurare pentru PLĂCI VIDEO
 @admin.register(GPU)
@@ -83,3 +83,8 @@ class SaveBuildAdmin(admin.ModelAdmin):
     search_fields = ('nume', 'user__username')
     list_filter = ('data_salvarii',)
     readonly_fields = ('data_salvarii',)
+@admin.register(Blacklist)
+class BlacklistAdmin(admin.ModelAdmin):
+    list_display = ('nume', 'part_number')
+    search_fields = ('nume', 'part_number')
+    list_filter = ('nume',)

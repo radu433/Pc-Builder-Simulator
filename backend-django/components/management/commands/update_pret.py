@@ -23,7 +23,7 @@ from typing import Optional
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
-from components.models import CPU, GPU, Motherboard, RAM, PSU, Case, Cooler, Storage
+from components.models import CPU, GPU, Motherboard, RAM, PSU, Case, Cooler, Storage, Blacklist
 
 try:
     from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
@@ -131,7 +131,8 @@ def _clean_price(text: str) -> Optional[Decimal]:
     try:
         return Decimal(cleaned)
     except Exception:
-        return None
+        pass
+    
     """Extrage primul numar dintr-un string de pret. '1.299,99 Lei' -> 1299.99"""
     if not text:
         return None
@@ -267,22 +268,15 @@ def build_query(obj, site: str = None) -> str:
         return re.sub(r'\s+', ' ', query)
 
     # ───────── MOTHERBOARD ─────────
-    # FIX: Query mai scurt și mai curat — primele 4 cuvinte din nume + socket
-    # Nu mai includem chipset, format, bluetooth în query (prea mult zgomot)
-    # WiFi rămâne dacă există (ajută la diferențiere)
     elif isinstance(obj, Motherboard):
         socket_str = obj.socket if obj.socket else ""
         wifi_str   = "WiFi" if obj.are_wifi else ""
 
-        # Primele 4 cuvinte din nume sunt suficiente pentru identificare
-        # Ex: "ASUS TUF GAMING B850M-PLUS WIFI Socket AM5 DDR5" → "ASUS TUF GAMING B850M-PLUS"
         short_name = " ".join(obj.nume.split()[:4])
 
         if site == "cel":
-            # CEL preferă socket-ul primul în query
             query = f"{prefix} {socket_str} {short_name} {wifi_str}"
         else:
-            # eMag și Altex: model primul, socket după
             query = f"{prefix} {short_name} {socket_str} {wifi_str}"
 
         return re.sub(r'\s+', ' ', query.strip())
@@ -292,6 +286,30 @@ def build_query(obj, site: str = None) -> str:
         prefix = _STORAGE_PREFIX.get(obj.tip, "SSD")
         cap = f"{obj.capacitate_gb // 1000}TB" if obj.capacitate_gb >= 1000 else f"{obj.capacitate_gb}GB"
         return f"{prefix} {obj.brand} {cap}".strip()
+
+    # ───────── CARCASE ─────────
+    elif isinstance(obj, Case):
+        nume_curat = obj.nume.lower()
+
+        # 1. Ștergem cuvintele de umplutură care strică search-ul pe eMag/Altex/CEL
+        fluff = [
+            "tempered glass", "window", "midi-tower", "mid-tower", "midi tower", "mid tower",
+            "full-tower", "full tower", "mini-tower", "mini tower", "micro-atx", "e-atx", "atx",
+            "tg", "fara sursa", "cu sursa", "usb 3.0", "usb 3.1"
+        ]
+        for f in fluff:
+            nume_curat = nume_curat.replace(f, " ")
+
+        # 2. Ștergem culorile de la coadă (ex: "- white", "- blue/black") 
+        nume_curat = re.sub(r'-\s*(white|black|blue|red|yellow|pink|alb|negru).*', '', nume_curat)
+
+        # 3. Extragem primele 3-4 cuvinte relevante (Ex: "Corsair 4000D Airflow")
+        cuvinte = [w for w in nume_curat.split() if len(w) > 1]
+        short_name = " ".join(cuvinte[:4])
+
+        # Formăm query-ul curat
+        query = f"Carcasa {short_name}"
+        return re.sub(r'\s+', ' ', query).strip()
 
     # ───────── FALLBACK PENTRU RESTUL ─────────
     base = " ".join(obj.nume.split()[:4])
@@ -442,47 +460,23 @@ def _is_valid_title_match(title: str, obj) -> Optional[bool]:
         return True
 
     # ───────── MOTHERBOARD ─────────
-    # FIX: Verificăm în titlu DOAR ce apare garantat acolo.
-    # Bluetooth și chipset NU apar în titlurile din listing pe niciun site RO.
-    # Acestea se verifică exclusiv în _verify_motherboard_details (pagina produsului).
     elif isinstance(obj, Motherboard):
-
-        # SOCKET — apare mereu în titlu (ex: "Socket AM5", "Socket 1700")
-        # Dacă socket-ul nu e în titlu → produs greșit, respins direct
         if obj.socket:
             if obj.socket.lower() not in title_lower:
                 return False
 
-        # WiFi — apare în titlu când există (ca "Wi-Fi" sau "WIFI")
-        # Logică:
-        #   - Placa NU are WiFi, dar titlul zice că are → altă placă, respins
-        #   - Placa ARE WiFi, dar nu e în titlu → ambiguu, mergem pe pagina produsului
-        #   - Placa ARE WiFi și e în titlu → confirmat, continuăm
-        #   - Placa NU are WiFi și nu e în titlu → ok, continuăm
         has_wifi_in_title = "wifi" in title_tokens or "wi-fi" in title_lower
         if not obj.are_wifi and has_wifi_in_title:
-            return False   # Vrem fără WiFi, titlul zice că are → respins
+            return False
         if obj.are_wifi and not has_wifi_in_title:
-            return None    # Vrem cu WiFi, nu e clar din titlu → verifică pagina
+            return None
 
-        # FORMAT (mATX / ATX / Mini-ITX) — uneori apare în titlu, alteori nu
-        # Dacă apare și se potrivește → confirmat
-        # Dacă apare și NU se potrivește → respins
-        # Dacă NU apare → ambiguu, verificăm pagina produsului
         if obj.format:
             format_lower = obj.format.lower()
             if format_lower in title_lower:
-                pass    # Confirmat din titlu
+                pass
             else:
-                return None  # Nu e clar → verifică pagina produsului
-
-        # BLUETOOTH — NU verificăm în titlu
-        # Niciun site RO nu pune "Bluetooth" în titlul din listing.
-        # Se verifică exclusiv în _verify_motherboard_details.
-
-        # CHIPSET — NU verificăm în titlu
-        # Titlurile scurte din listing rareori includ chipset-ul explicit.
-        # Se verifică exclusiv în _verify_motherboard_details.
+                return None
 
         return True
 
@@ -496,6 +490,54 @@ def _is_valid_title_match(title: str, obj) -> Optional[bool]:
             gb = str(obj.capacitate_gb)
             if not ((gb + "gb") in title_tokens or gb in title_tokens):
                 return False
+
+    # ───────── CARCASE ─────────
+    elif isinstance(obj, Case):
+        name_lower = obj.nume.lower()
+        
+        # 1. Verificare Strictă Model (Căutăm coduri cu cifre ex: 4000d, 500dx, gt301)
+        model_identifiers = re.findall(r'\b[a-z]*\d+[a-z]*\b', name_lower)
+        for identifier in model_identifiers:
+            # Ignorăm versiunile și porturile USB din seria principală
+            if identifier in ["v1", "v2", "30", "31"]: 
+                continue
+            if identifier not in title_lower:
+                return False
+
+        # 2. Verificare Culoare (Alb vs Negru)
+        db_is_white = "white" in name_lower or "alb" in name_lower
+        db_is_black = "black" in name_lower or "negru" in name_lower
+
+        title_is_white = "white" in title_lower or "alb" in title_lower
+        title_is_black = "black" in title_lower or "negru" in title_lower
+
+        # Respingem carcasele negre dacă noi căutăm alb
+        if db_is_white and title_is_black and not title_is_white:
+            return False
+        # Respingem carcasele albe dacă noi căutăm negru
+        if db_is_black and title_is_white and not title_is_black:
+            return False
+
+        # 3. Verificare "Airflow" (Sunt structuri fizice diferite)
+        if "airflow" in name_lower and "airflow" not in title_lower:
+            return False
+        if "airflow" not in name_lower and "airflow" in title_lower:
+            return False
+
+        # 4. Verificare RGB/ARGB
+        db_has_rgb = "rgb" in name_lower # Prinde și 'argb'
+        title_has_rgb = "rgb" in title_lower
+        # Respingem dacă varianta listată are RGB, dar baza noastră de date cere una simplă (RGB-ul e mereu mai scump)
+        if not db_has_rgb and title_has_rgb:
+            return False
+
+        # 5. Verificare Versiune (V2)
+        if "v2" in name_lower and "v2" not in title_lower:
+            return False
+        if "v2" not in name_lower and "v2" in title_lower:
+            return False
+
+        return True
 
     return True
 
@@ -554,19 +596,6 @@ def _get_page_text(page, url: str) -> Optional[str]:
 
 
 def _verify_motherboard_details(page, result: PriceResult, obj: Motherboard) -> bool:
-    """
-    Intră pe pagina produsului și verifică atributele care NU apar în titlul
-    din listing: chipset, format (dacă lipsea din titlu), WiFi și Bluetooth.
-
-    Strategia:
-    - Chipset  → apare garantat în specificații (ex: "B850", "X670E")
-    - Format   → apare în specificații (ex: "mATX", "ATX")
-    - WiFi     → apare ca "wireless" / "wi-fi" / "wifi" în specificații
-    - Bluetooth → apare ca "bluetooth" în specificații
-                  SINGURUL LOC unde îl verificăm — nu e niciodată în titlu
-
-    Returnează True dacă produsul se potrivește cu obj din DB, False altfel.
-    """
     if not result.url:
         return False
 
@@ -575,21 +604,14 @@ def _verify_motherboard_details(page, result: PriceResult, obj: Motherboard) -> 
         _rand_delay(0.5, 1.5)
         page_text = page.inner_text("body").lower()
 
-        # ── CHIPSET ──────────────────────────────────────────────────────────
-        # Ex: "B850", "X670E", "Z790" — apare garantat în specificații
         if obj.chipset:
             if obj.chipset.lower() not in page_text:
                 return False
 
-        # ── FORMAT ───────────────────────────────────────────────────────────
-        # Ex: "mATX", "ATX", "Mini-ITX" — apare în specificații
         if obj.format:
             if obj.format.lower() not in page_text:
                 return False
 
-        # ── WiFi ─────────────────────────────────────────────────────────────
-        # Pe pagina produsului apare ca "wireless", "wi-fi" sau "wifi"
-        # Nu facem ramuri per site — toate site-urile RO folosesc acești termeni
         has_wifi = (
             "wifi"     in page_text or
             "wi-fi"    in page_text or
@@ -598,9 +620,6 @@ def _verify_motherboard_details(page, result: PriceResult, obj: Motherboard) -> 
         if obj.are_wifi != has_wifi:
             return False
 
-        # ── BLUETOOTH ────────────────────────────────────────────────────────
-        # Verificăm EXCLUSIV aici — nu apare niciodată în titlul din listing
-        # pe eMag, Altex sau CEL
         has_bluetooth = "bluetooth" in page_text
         if obj.are_bluetooth != has_bluetooth:
             return False
@@ -1059,7 +1078,7 @@ class Command(BaseCommand):
             help="Afiseaza detalii despre fiecare rezultat (respins/acceptat + motiv)",
         )
 
-    def handle(self, *args, **options):
+   def handle(self, *args, **options):
         import os
         os.environ["DJANGO_ALLOW_ASYNC_UNSAFE"] = "true"
 
@@ -1124,7 +1143,7 @@ class Command(BaseCommand):
                 self.stdout.write(f"Model: {model_class.__name__} ({count} produse)")
                 self.stdout.write("─" * 65)
 
-                to_delete = []
+                # AM STERS to_delete = []
 
                 for obj in model_class.objects.all().iterator(chunk_size=50):
                     stats["procesate"] += 1
@@ -1142,10 +1161,23 @@ class Command(BaseCommand):
                         stats["eroare"] += 1
                         continue
 
+                    # ──────── LOGICA NOUA: BLACKLIST SI STERGERE ────────
                     if not valid_results:
-                        self.stdout.write("-> NU GASIT - se sterge")
-                        to_delete.append(obj.pk)
+                        self.stdout.write("-> NU GASIT - mutat in Blacklist si sters")
+                        
+                        if not dry_run:
+                            # 1. Adaugam in Blacklist pe baza part_number-ului
+                            if obj.part_number:
+                                Blacklist.objects.get_or_create(
+                                    part_number=obj.part_number,
+                                    defaults={'nume': obj.nume}
+                                )
+                            
+                            # 2. Stergem obiectul din DB
+                            obj.delete()
+                            
                         stats["sterse"] += 1
+                    # ───────────────────────────────────────────────────
                     else:
                         best = valid_results[0]
                         self.stdout.write(f"-> {best.price:.2f} Lei ({best.site})")
@@ -1187,8 +1219,7 @@ class Command(BaseCommand):
                         )
                         time.sleep(wait)
 
-                if to_delete:
-                    self.stdout.write(f"  [STERS DEZACTIVAT] {len(to_delete)} produse negasite: nu se sterg")
+                # AM STERS if to_delete: ...
 
             context.close()
 
@@ -1197,6 +1228,6 @@ class Command(BaseCommand):
         self.stdout.write("=" * 65)
         self.stdout.write(f"  Procesate:   {stats['procesate']}")
         self.stdout.write(f"  Actualizate: {stats['actualizate']}")
-        self.stdout.write(f"  Sterse:      {stats['sterse']}")
+        self.stdout.write(f"  Sterse (-> Blacklist): {stats['sterse']}")
         self.stdout.write(f"  Erori:       {stats['eroare']}")
         self.stdout.write("=" * 65)

@@ -173,6 +173,9 @@ class SaveBuild(models.Model):
             
         #functia de salvare in baza de date
         super().save(*args, **kwargs)
+class Blacklist(models.Model):
+     part_number = models.CharField(max_length=100, unique=True, null=True, blank=True)
+     nume = models.CharField(max_length=300)
 
-    def __str__(self):
+def __str__(self):
         return f"{self.nume} - {self.user.username}"
