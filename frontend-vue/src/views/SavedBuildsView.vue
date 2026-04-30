@@ -5,8 +5,11 @@
     <div v-if="loading" class="loading">Se încarcă lista...</div>
     
     <div v-else-if="builds.length === 0" class="empty-state">
-      <p>Nu ai salvat nicio configurație până acum.</p>
-      <router-link to="/pc-builder" class="btn btn-primary">Creează primul Build</router-link>
+      <div class="empty-icon">📁</div>
+      <h3>Niciun build salvat</h3>
+      <p>Nu ai salvat nicio configurație până acum. Creează una nouă și va apărea aici.</p>
+      <!-- Am schimbat to="/pc-builder" in to="/" -->
+      <router-link to="/" class="btn-create-build">Creează primul tău Build</router-link>
     </div>
 
     <div v-else class="builds-grid">
@@ -44,16 +47,30 @@ const loading = ref(true)
 const router = useRouter()
 
 const fetchSavedBuilds = async () => {
-  loading.value = true
   try {
-    const response = await api.get('saved-builds/')
-    builds.value = response.data.results || response.data
-  } catch (err) {
-    console.error("Eroare la preluarea build-urilor:", err)
+    const token = localStorage.getItem('access_token'); 
+
+    if (!token) {
+      console.error("Nu s-a găsit niciun token.");
+      router.push('/login');
+      return;
+    }
+
+    // REPARARE: Folosim 'api' în loc de 'axios' nespecificat[cite: 2]
+    // Instanța 'api' are deja URL-ul de bază configurat
+    const response = await api.get('saved-builds/', {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    builds.value = response.data;
+  } catch (error) {
+    console.error("Eroare la preluarea build-urilor:", error);
   } finally {
-    loading.value = false
+    loading.value = false;
   }
-}
+};
 
 const deleteBuild = async (id) => {
   if (confirm("Sigur vrei să ștergi această configurație?")) {
@@ -90,4 +107,50 @@ onMounted(fetchSavedBuilds)
 .build-actions { display: flex; gap: 10px; margin-top: 20px; }
 .btn-edit { background: #3b82f6; color: white; border: none; padding: 8px 15px; border-radius: 6px; cursor: pointer; flex: 1; }
 .btn-delete { background: #f43f5e; color: white; border: none; padding: 8px 15px; border-radius: 6px; cursor: pointer; }
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  background: #1a1b26;
+  border: 2px dashed #2a2d3e; /* Chenar punctat */
+  border-radius: 12px;
+  margin-top: 30px;
+  text-align: center;
+}
+
+.empty-icon {
+  font-size: 3.5rem;
+  margin-bottom: 15px;
+}
+
+.empty-state h3 {
+  color: white;
+  margin-bottom: 10px;
+  font-size: 1.5rem;
+}
+
+.empty-state p {
+  color: #94a3b8;
+  margin-bottom: 25px;
+  max-width: 400px;
+  line-height: 1.5;
+}
+
+.btn-create-build {
+  background: #3b82f6; /* Albastrul temei */
+  color: white;
+  padding: 12px 24px;
+  border-radius: 8px;
+  text-decoration: none; /* Scoate sublinierea link-ului */
+  font-weight: 600;
+  transition: all 0.2s ease;
+  display: inline-block;
+}
+
+.btn-create-build:hover {
+  background: #2563eb; /* Un albastru un pic mai închis la hover */
+  transform: translateY(-2px); /* Se ridică puțin când pui mouse-ul */
+}
 </style>

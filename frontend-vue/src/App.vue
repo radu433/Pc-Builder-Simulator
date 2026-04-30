@@ -10,9 +10,12 @@
           </router-link>
           
           <div class="user-actions">
-            <button class="text-link">Log In</button>
+            <router-link to="/login" class="text-link">Log In</router-link>
+            
             <span class="divider"></span>
-            <button class="text-link">Register</button>
+            
+            <router-link to="/register" class="text-link">Register</router-link>
+            
             <span class="divider"></span>
             <button class="lang-select">
               🇷🇴 Romania <span class="arrow">▼</span>
@@ -25,11 +28,7 @@
       <div class="bottom-tier">
         <div class="container bottom-tier-content">
           <nav class="main-nav">
-            <router-link 
-              to="/" 
-              class="nav-button" 
-              active-class="active-nav"
-            >
+            <router-link to="/" class="nav-button" active-class="active-nav">
               <span class="icon">🔧</span> Builder
             </router-link>
 
@@ -41,11 +40,7 @@
               <span class="icon">📝</span> Guides <span class="arrow">▼</span>
             </button>
 
-            <router-link 
-              to="/completed-builds" 
-              class="nav-button" 
-              active-class="active-nav"
-            >
+            <router-link to="/completed-builds" class="nav-button" active-class="active-nav">
               <span class="icon">✅</span> Completed Builds
             </router-link>
           </nav>
@@ -71,11 +66,11 @@
 </template>
 
 <script setup>
-// Nu mai avem nevoie de variabila currentTab, Router-ul se ocupă de tot!
+// Nu avem nevoie de logica suplimentară aici, router-ul gestionează totul
 </script>
 
 <style>
-/* Stilurile tale originale rămân identice */
+/* Reset și stiluri globale */
 * {
   margin: 0;
   padding: 0;
@@ -94,6 +89,7 @@ body {
   padding: 0 15px;
 }
 
+/* Header Styles */
 .pcpp-header {
   width: 100%;
 }
@@ -142,6 +138,7 @@ body {
   gap: 15px;
 }
 
+/* Link-urile din header (Login/Register) */
 .text-link {
   background: none;
   border: none;
@@ -149,6 +146,8 @@ body {
   font-size: 0.85rem;
   cursor: pointer;
   font-weight: 500;
+  text-decoration: none;
+  transition: color 0.2s;
 }
 
 .text-link:hover {
@@ -171,11 +170,6 @@ body {
   cursor: pointer;
 }
 
-.arrow {
-  font-size: 0.6rem;
-  margin-left: 4px;
-}
-
 .theme-toggle {
   background-color: #232533;
   border: none;
@@ -184,6 +178,7 @@ body {
   cursor: pointer;
 }
 
+/* Bottom Tier / Navigation */
 .bottom-tier {
   background-color: #1a1b26;
   border-bottom: 1px solid #2a2d3e;
@@ -201,7 +196,6 @@ body {
   height: 100%;
 }
 
-/* Modificat pentru router-link (care este un tag <a>) */
 .nav-button {
   color: #e2e8f0;
   font-size: 0.9rem;
@@ -214,7 +208,7 @@ body {
   border-right: 1px solid #2a2d3e;
   background: transparent;
   cursor: pointer;
-  text-decoration: none; /* Important pentru router-link */
+  text-decoration: none;
   transition: background-color 0.2s;
 }
 
@@ -226,18 +220,13 @@ body {
   background-color: #232533;
 }
 
-/* Clasa de activare pentru router-link */
 .active-nav {
   background-color: #232533;
   color: #3b82f6 !important;
   border-bottom: 3px solid #3b82f6;
 }
 
-.main-nav .icon {
-  font-size: 1.1rem;
-  opacity: 0.8;
-}
-
+/* Search bar */
 .search-bar {
   display: flex;
   align-items: center;
@@ -261,10 +250,12 @@ body {
   color: #64748b;
 }
 
+/* Content Area */
 .main-content {
   min-height: calc(100vh - 160px);
 }
 
+/* Footer */
 .footer {
   background-color: #1a1b26;
   border-top: 1px solid #2a2d3e;

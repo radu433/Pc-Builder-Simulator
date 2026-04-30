@@ -115,6 +115,7 @@ AUTH_PASSWORD_VALIDATORS = [
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.AllowAny',
@@ -124,8 +125,8 @@ REST_FRAMEWORK = {
         'rest_framework.throttling.UserRateThrottle',
     ],
     'DEFAULT_THROTTLE_RATES': {
-        'anon': '10/minute', # 10 cerere/minut non autentificat
-        'user': '100/minute',# 100 cerere/minut autentificat
+        'anon': '1000/minute', # 10 cerere/minut non autentificat
+        'user': '10000/minute',# 100 cerere/minut autentificat
     },
 
 }

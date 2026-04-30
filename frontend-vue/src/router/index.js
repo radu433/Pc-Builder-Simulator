@@ -1,6 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import BuilderView from '../views/BuilderView.vue'
 import SavedBuildsView from '../views/SavedBuildsView.vue' 
+import LoginView from '../views/LogInView.vue'
+import RegisterView from '../views/RegisterView.vue'
 
 const routes = [
   {
@@ -12,7 +14,14 @@ const routes = [
     path: '/completed-builds',
     name: 'CompletedBuilds',
     component: SavedBuildsView
-  }
+  },
+  { path: '/login', 
+    name: 'Login', 
+    component: LoginView },
+    
+  { path: '/register', 
+    name: 'Register', 
+    component: RegisterView }
 ]
 
 const router = createRouter({
@@ -20,5 +29,5 @@ const router = createRouter({
   routes
 })
 
-// ACEASTA ESTE LINIA CARE ÎȚI LIPSEȘTE:
+
 export default router
