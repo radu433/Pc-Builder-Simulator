@@ -42,6 +42,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '../plugins/axios'
+import { showToast } from '../toast'
 
 // Variabila generică pentru username sau email
 const identifier = ref('')
@@ -60,12 +61,12 @@ const handleLogin = async () => {
     const realToken = response.data.access; 
     localStorage.setItem('access_token', realToken);
     
-    alert("Logat cu succes!");
+    showToast("Te-ai conectat cu succes!", "success");
     router.push('/');
     
   } catch (error) {
     console.error(error);
-    alert("Date de logare incorecte!");
+    showToast("Date de logare incorecte!", "error");
   }
 }
 </script>

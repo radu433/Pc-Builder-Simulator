@@ -261,7 +261,26 @@ const progressPercentage = computed(() => (selectedPartsCount.value / categories
 const displayPartName = (part) => part.nume || part.model || 'Componentă'
 const displayPartPrice = (part) => part.pret || '0.00'
 
-onMounted(fetchParts)
+onMounted(async () => {
+  await fetchParts()
+  
+  const saved = sessionStorage.getItem('loadBuild')
+  if (saved) {
+    const parts = JSON.parse(saved)
+    for (const slot of categories.value) {
+      const key = slot.id === 'cpus' ? 'cpu'
+        : slot.id === 'gpus' ? 'gpu'
+        : slot.id === 'motherboards' ? 'motherboard'
+        : slot.id === 'rams' ? 'ram'
+        : slot.id === 'storages' ? 'storage'
+        : slot.id === 'psus' ? 'psu'
+        : slot.id === 'cases' ? 'case'
+        : slot.id === 'coolers' ? 'cooler' : null
+      if (key && parts[key]) slot.selectedPart = parts[key]
+    }
+    sessionStorage.removeItem('loadBuild')
+  }
+})
 
 </script>
 

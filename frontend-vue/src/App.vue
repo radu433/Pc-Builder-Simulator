@@ -62,11 +62,16 @@
         <p>&copy; 2024 PC Builder Simulator - Proiect MDS</p>
       </div>
     </footer>
+    <div v-if="toastMessage" :class="['custom-toast', toastType]">
+      <span v-if="toastType === 'success'">✅</span>
+      <span v-if="toastType === 'error'">❌</span>
+      {{ toastMessage }}
+    </div>
   </div>
 </template>
 
 <script setup>
-// Nu avem nevoie de logica suplimentară aici, router-ul gestionează totul
+import { toastMessage, toastType } from './toast'
 </script>
 
 <style>
@@ -263,5 +268,36 @@ body {
   text-align: center;
   color: #64748b;
   font-size: 0.85rem;
+}
+// pop up
+.custom-toast {
+  position: fixed;
+  bottom: 30px;
+  right: 30px;
+  padding: 15px 25px;
+  border-radius: 8px;
+  color: white;
+  font-weight: 600;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.4);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  animation: slideIn 0.3s ease-out;
+}
+
+.custom-toast.success {
+  background-color: #1a1b26; /* Fundal inchis elegant */
+  border: 1px solid #10b981; /* Margine verde */
+}
+
+.custom-toast.error {
+  background-color: #1a1b26;
+  border: 1px solid #f43f5e; /* Margine rosie */
+}
+
+@keyframes slideIn {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
 }
 </style>

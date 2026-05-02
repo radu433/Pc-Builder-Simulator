@@ -25,3 +25,4 @@ venv/
 .venv/
 scraper-service/venv/
 __pycache__/
+.env
