@@ -99,25 +99,62 @@
       </div>
 
       <div class="info-box">
-        <h4>💡 Sfat AI</h4>
-        <div v-if="selectedPartsCount === 0">
-          <p>Începe prin a alege un <strong>Procesor</strong>. Acesta este inima sistemului tău.</p>
-        </div>
-        <div v-else-if="totalPrice > 5000">
-          <p>Ai ales componente performante! Asigură-te că ai o sursă (PSU) de cel puțin 750W.</p>
-        </div>
-        <div v-else>
-          <p>Configurația ta curentă este echilibrată. Continuă selecția!</p>
+  <h4>🤖 Analiză AI</h4>
+
+  <div v-if="selectedPartsCount === 0">
+    <p>Începe prin a alege un <strong>Procesor</strong>. Acesta este inima sistemului tău.</p>
+  </div>
+
+  <div v-else>
+    <button class="btn btn-analyze" :disabled="agentLoading" @click="analizeazaBuild">
+      {{ agentLoading ? '⏳ Se analizează...' : '🔍 Analizează Build-ul' }}
+    </button>
+
+    <div v-if="agentError" class="agent-error">⚠️ {{ agentError }}</div>
+
+    <div v-if="agentResult" class="agent-result">
+      <div class="agent-badge" :class="'badge-' + agentResult.severitate">
+        {{ agentResult.severitate === 'ok' ? '✅ Compatibil' : agentResult.severitate === 'warning' ? '⚠️ Atenție' : '❌ Probleme' }}
+      </div>
+
+      <div v-if="agentResult.probleme?.length > 0" class="agent-section">
+        <strong>Probleme:</strong>
+        <ul><li v-for="p in agentResult.probleme" :key="p">{{ p }}</li></ul>
+      </div>
+
+      <div v-if="agentResult.bottleneck?.are_bottleneck" class="agent-section">
+        <strong>Bottleneck:</strong>
+        <p>{{ agentResult.bottleneck.componenta_limitatoare }} limitează {{ agentResult.bottleneck.componenta_limitata }} cu {{ agentResult.bottleneck.procentaj_bottleneck }}%</p>
+      </div>
+
+      <div v-if="agentResult.analiza_ai" class="agent-section">
+        <strong>Feedback AI:</strong>
+        <p>{{ agentResult.analiza_ai }}</p>
+      </div>
+
+      <div v-if="Object.keys(agentResult.sugestii || {}).length > 0" class="agent-section">
+        <strong>Sugestii:</strong>
+        <div v-for="(lista, tip) in agentResult.sugestii" :key="tip">
+          <em>{{ tip.toUpperCase() }}:</em>
+          <div v-for="s in lista" :key="s.id" class="sugestie-item">{{ s.nume || s.model }} — {{ s.pret }} RON</div>
         </div>
       </div>
+    </div>
+  </div>
+</div>
     </div>
   </div>
 </template>
 
 <script setup>
+
 import { ref, computed, onMounted } from 'vue'
 import axios from 'axios' // Importat pentru citire (fără token)
 import api from '../plugins/axios.js' // Importat pentru salvare (cu token)
+
+const agentLoading = ref(false)
+const agentResult = ref(null)
+const agentError = ref(null)
 
 const loading = ref(true)
 const openCategoryId = ref(null)
@@ -192,6 +229,30 @@ const salveazaPC = async () => {
   }
 }
 
+
+const analizeazaBuild = async () => {
+  agentLoading.value = true
+  agentError.value = null
+  agentResult.value = null
+  try {
+    const payload = {
+      cpu:         categories.value.find(c => c.id === 'cpus')?.selectedPart || null,
+      gpu:         categories.value.find(c => c.id === 'gpus')?.selectedPart || null,
+      motherboard: categories.value.find(c => c.id === 'motherboards')?.selectedPart || null,
+      ram:         categories.value.find(c => c.id === 'rams')?.selectedPart || null,
+      psu:         categories.value.find(c => c.id === 'psus')?.selectedPart || null,
+      case:        categories.value.find(c => c.id === 'cases')?.selectedPart || null,
+      cooler:      categories.value.find(c => c.id === 'coolers')?.selectedPart || null,
+      storage:     categories.value.find(c => c.id === 'storages')?.selectedPart || null,
+    }
+    const response = await axios.post('http://127.0.0.1:8002/analizeaza-build', payload)
+    agentResult.value = response.data
+  } catch (err) {
+    agentError.value = 'Nu s-a putut contacta agentul. Verifică dacă rulează pe portul 8002.'
+  } finally {
+    agentLoading.value = false
+  }
+}
 // Helpers
 const selectedPartsCount = computed(() => categories.value.filter(cat => cat.selectedPart).length)
 const totalPartsLoaded = computed(() => categories.value.reduce((acc, cat) => acc + (cat.parts?.length || 0), 0))
@@ -201,6 +262,7 @@ const displayPartName = (part) => part.nume || part.model || 'Componentă'
 const displayPartPrice = (part) => part.pret || '0.00'
 
 onMounted(fetchParts)
+
 </script>
 
 <style scoped>
