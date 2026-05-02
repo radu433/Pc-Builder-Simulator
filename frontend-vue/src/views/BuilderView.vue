@@ -36,12 +36,24 @@
               <div class="category-name">{{ category.name }}</div>
               <div v-if="category.selectedPart" class="selected-name">
                 {{ displayPartName(category.selectedPart) }}
+                <span v-if="category.incompatibil" class="incompatibil-warning">
+                  ⚠️ Incompatibil cu selecția curentă
+                </span>
               </div>
-              <div v-else class="empty-state">Nicio componentă selectată</div>
+              <div v-else class="no-part">
+                <span v-if="category.filterLocked" class="filter-hint">
+                  {{ category.filterHint }}
+                </span>
+                <span v-else>Nicio componentă selectată</span>
+              </div>
             </div>
 
             <div class="price-section">
               <span v-if="category.selectedPart">{{ displayPartPrice(category.selectedPart) }} RON</span>
+            </div>
+
+            <div v-if="category.activeFilter" class="filter-tag">
+              🔗 {{ category.activeFilter }}
             </div>
 
             <div class="actions">
@@ -55,7 +67,11 @@
           </div>
 
           <div v-if="openCategoryId === category.id" class="parts-selector-box">
-            <div v-if="category.parts.length === 0" class="mini-loading">Nu există piese disponibile în această categorie.</div>
+            <div v-if="category.parts.length === 0" class="mini-loading">
+              {{ category.filterLocked
+                ? 'Nicio piesă compatibilă găsită pentru filtrul activ.'
+                : 'Nu există piese disponibile în această categorie.' }}
+            </div>
             <div 
               v-else
               v-for="part in category.parts" 
@@ -99,94 +115,186 @@
       </div>
 
       <div class="info-box">
-  <h4>🤖 Analiză AI</h4>
+        <h4>🤖 Analiză AI</h4>
 
-  <div v-if="selectedPartsCount === 0">
-    <p>Începe prin a alege un <strong>Procesor</strong>. Acesta este inima sistemului tău.</p>
-  </div>
+        <div v-if="selectedPartsCount === 0">
+          <p>Începe prin a alege un <strong>Procesor</strong>. Acesta este inima sistemului tău.</p>
+        </div>
 
-  <div v-else>
-    <button class="btn btn-analyze" :disabled="agentLoading" @click="analizeazaBuild">
-      {{ agentLoading ? '⏳ Se analizează...' : '🔍 Analizează Build-ul' }}
-    </button>
+        <div v-else>
+          <button class="btn btn-analyze" :disabled="agentLoading" @click="analizeazaBuild">
+            {{ agentLoading ? '⏳ Se analizează...' : '🔍 Analizează Build-ul' }}
+          </button>
 
-    <div v-if="agentError" class="agent-error">⚠️ {{ agentError }}</div>
+          <div v-if="agentError" class="agent-error">⚠️ {{ agentError }}</div>
 
-    <div v-if="agentResult" class="agent-result">
-      <div class="agent-badge" :class="'badge-' + agentResult.severitate">
-        {{ agentResult.severitate === 'ok' ? '✅ Compatibil' : agentResult.severitate === 'warning' ? '⚠️ Atenție' : '❌ Probleme' }}
-      </div>
+          <div v-if="agentResult" class="agent-result">
+            <div class="agent-badge" :class="'badge-' + agentResult.severitate">
+              {{ agentResult.severitate === 'ok' ? '✅ Compatibil' : agentResult.severitate === 'warning' ? '⚠️ Atenție' : '❌ Probleme' }}
+            </div>
 
-      <div v-if="agentResult.probleme?.length > 0" class="agent-section">
-        <strong>Probleme:</strong>
-        <ul><li v-for="p in agentResult.probleme" :key="p">{{ p }}</li></ul>
-      </div>
+            <div v-if="agentResult.probleme?.length > 0" class="agent-section">
+              <strong>Probleme:</strong>
+              <ul><li v-for="p in agentResult.probleme" :key="p">{{ p }}</li></ul>
+            </div>
 
-      <div v-if="agentResult.bottleneck?.are_bottleneck" class="agent-section">
-        <strong>Bottleneck:</strong>
-        <p>{{ agentResult.bottleneck.componenta_limitatoare }} limitează {{ agentResult.bottleneck.componenta_limitata }} cu {{ agentResult.bottleneck.procentaj_bottleneck }}%</p>
-      </div>
+            <div v-if="agentResult.bottleneck?.are_bottleneck" class="agent-section">
+              <strong>Bottleneck:</strong>
+              <p>{{ agentResult.bottleneck.componenta_limitatoare }} limitează {{ agentResult.bottleneck.componenta_limitata }} cu {{ agentResult.bottleneck.procentaj_bottleneck }}%</p>
+            </div>
 
-      <div v-if="agentResult.analiza_ai" class="agent-section">
-        <strong>Feedback AI:</strong>
-        <p>{{ agentResult.analiza_ai }}</p>
-      </div>
+            <div v-if="agentResult.analiza_ai" class="agent-section">
+              <strong>Feedback AI:</strong>
+              <p>{{ agentResult.analiza_ai }}</p>
+            </div>
 
-      <div v-if="Object.keys(agentResult.sugestii || {}).length > 0" class="agent-section">
-        <strong>Sugestii:</strong>
-        <div v-for="(lista, tip) in agentResult.sugestii" :key="tip">
-          <em>{{ tip.toUpperCase() }}:</em>
-          <div v-for="s in lista" :key="s.id" class="sugestie-item">{{ s.nume || s.model }} — {{ s.pret }} RON</div>
+            <div v-if="Object.keys(agentResult.sugestii || {}).length > 0" class="agent-section">
+              <strong>Sugestii:</strong>
+              <div v-for="(lista, tip) in agentResult.sugestii" :key="tip">
+                <em>{{ tip.toUpperCase() }}:</em>
+                <div v-for="s in lista" :key="s.id" class="sugestie-item">{{ s.nume || s.model }} — {{ s.pret }} RON</div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
-  </div>
-</div>
     </div>
   </div>
 </template>
 
 <script setup>
-
 import { ref, computed, onMounted } from 'vue'
-import axios from 'axios' // Importat pentru citire (fără token)
-import api from '../plugins/axios.js' // Importat pentru salvare (cu token)
+import axios from 'axios'
+import api from '../plugins/axios.js'
 
 const agentLoading = ref(false)
 const agentResult = ref(null)
 const agentError = ref(null)
-
 const loading = ref(true)
 const openCategoryId = ref(null)
 
-// ID-urile trebuie să fie la plural pentru a se potrivi cu rutele tale Django (/api/cpus/)
 const categories = ref([
-  { id: 'cpus', name: 'Procesor', icon: '🧠', parts: [], selectedPart: null },
-  { id: 'motherboards', name: 'Placă de Bază', icon: '🛹', parts: [], selectedPart: null },
-  { id: 'gpus', name: 'Placă Video', icon: '🎮', parts: [], selectedPart: null },
-  { id: 'rams', name: 'Memorie RAM', icon: '⚡', parts: [], selectedPart: null },
-  { id: 'storages', name: 'Stocare', icon: '💾', parts: [], selectedPart: null },
-  { id: 'psus', name: 'Sursă', icon: '🔌', parts: [], selectedPart: null },
-  { id: 'cases', name: 'Carcasă', icon: '📦', parts: [], selectedPart: null },
-  { id: 'coolers', name: 'Cooler CPU', icon: '❄️', parts: [], selectedPart: null },
+  { id: 'cpus',         name: 'Procesor',      icon: '🧠', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false, filterHint: '',                            incompatibil: false },
+  { id: 'motherboards', name: 'Placă de Bază', icon: '🛹', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false, filterHint: 'Alege mai întâi un Procesor', incompatibil: false },
+  { id: 'gpus',         name: 'Placă Video',   icon: '🎮', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false, filterHint: '',                            incompatibil: false },
+  { id: 'rams',         name: 'Memorie RAM',   icon: '⚡', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false, filterHint: 'Alege mai întâi o Placă de Bază', incompatibil: false },
+  { id: 'storages',     name: 'Stocare',       icon: '💾', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false, filterHint: '',                            incompatibil: false },
+  { id: 'psus',         name: 'Sursă',         icon: '🔌', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false, filterHint: '',                            incompatibil: false },
+  { id: 'cases',        name: 'Carcasă',       icon: '📦', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false, filterHint: '',                            incompatibil: false },
+  { id: 'coolers',      name: 'Cooler CPU',    icon: '❄️', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false, filterHint: '',                            incompatibil: false },
 ])
 
-// FUNCȚIA DE ÎNCĂRCARE REPARATĂ
+// ── Fetch ─────────────────────────────────────────────────
 const fetchParts = async () => {
   loading.value = true
   try {
     for (const category of categories.value) {
-      // Folosim axios simplu pentru a evita eroarea 401
       const response = await axios.get(`http://127.0.0.1:8000/api/${category.id}/`)
-      
-      // Verificăm dacă datele sunt în .results (paginare) sau direct array
-      category.parts = response.data.results || response.data
-      console.log(`✅ Încărcat ${category.id}: ${category.parts.length} piese`);
+      const parts = response.data.results || response.data
+      category.allParts = parts        // copie completă, niciodată modificată
+      category.parts = [...parts]      // lista afișată, poate fi filtrată
+      console.log(`✅ Încărcat ${category.id}: ${parts.length} piese`)
     }
   } catch (err) {
-    console.error("Eroare la citirea bazei de date:", err)
+    console.error('Eroare la citirea bazei de date:', err)
   } finally {
     loading.value = false
+  }
+}
+
+// ── Select cu filtre în cascadă ───────────────────────────
+const selectPart = (categoryId, part) => {
+  const category = categories.value.find(c => c.id === categoryId)
+  category.selectedPart = part
+  openCategoryId.value = null
+  agentResult.value = null
+  agentError.value = null
+
+  // CPU selectat → filtrează Plăcile de Bază după socket, avertizează dacă incompatibil
+  if (categoryId === 'cpus') {
+    const socket = part.socket
+    const moboCat = categories.value.find(c => c.id === 'motherboards')
+
+    if (socket) {
+      moboCat.parts = moboCat.allParts.filter(m => m.socket === socket)
+      moboCat.activeFilter = `Socket ${socket}`
+      moboCat.filterLocked = true
+
+      if (moboCat.selectedPart && moboCat.selectedPart.socket !== socket) {
+        moboCat.incompatibil = true
+      } else {
+        moboCat.incompatibil = false
+      }
+    } else {
+      moboCat.parts = [...moboCat.allParts]
+      moboCat.activeFilter = null
+      moboCat.filterLocked = false
+      moboCat.incompatibil = false
+    }
+
+    // Reset RAM doar dacă mobo incompatibil sau nicio mobo selectată
+    const ramCat = categories.value.find(c => c.id === 'rams')
+    ramCat.parts = [...ramCat.allParts]
+    ramCat.activeFilter = null
+    ramCat.filterLocked = false
+    ramCat.incompatibil = false
+  }
+
+  // Placă de Bază selectată → filtrează RAM după tip_ram, avertizează dacă incompatibil
+  if (categoryId === 'motherboards') {
+    const tipRam = part.tip_ram
+    const ramCat = categories.value.find(c => c.id === 'rams')
+
+    if (tipRam) {
+      ramCat.parts = ramCat.allParts.filter(r => r.tip === tipRam)
+      ramCat.activeFilter = tipRam
+      ramCat.filterLocked = true
+
+      if (ramCat.selectedPart && ramCat.selectedPart.tip !== tipRam) {
+        ramCat.incompatibil = true
+      } else {
+        ramCat.incompatibil = false
+      }
+    } else {
+      ramCat.parts = [...ramCat.allParts]
+      ramCat.activeFilter = null
+      ramCat.filterLocked = false
+      ramCat.incompatibil = false
+    }
+  }
+}
+
+// ── Remove cu reset filtre ────────────────────────────────
+const removePart = (categoryId) => {
+  const category = categories.value.find(c => c.id === categoryId)
+  if (!category) return
+  category.selectedPart = null
+  category.incompatibil = false
+  agentResult.value = null
+  agentError.value = null
+
+  // La ștergerea CPU → resetează filtrele pe mobo și RAM (dar păstrează selecțiile)
+  if (categoryId === 'cpus') {
+    const moboCat = categories.value.find(c => c.id === 'motherboards')
+    moboCat.parts = [...moboCat.allParts]
+    moboCat.activeFilter = null
+    moboCat.filterLocked = false
+    moboCat.incompatibil = false
+
+    const ramCat = categories.value.find(c => c.id === 'rams')
+    ramCat.parts = [...ramCat.allParts]
+    ramCat.activeFilter = null
+    ramCat.filterLocked = false
+    ramCat.incompatibil = false
+  }
+
+  // La ștergerea Plăcii de Bază → resetează filtrul RAM (dar păstrează selecția RAM)
+  if (categoryId === 'motherboards') {
+    const ramCat = categories.value.find(c => c.id === 'rams')
+    ramCat.parts = [...ramCat.allParts]
+    ramCat.activeFilter = null
+    ramCat.filterLocked = false
+    ramCat.incompatibil = false
   }
 }
 
@@ -194,42 +302,29 @@ const openPartSelector = (categoryId) => {
   openCategoryId.value = openCategoryId.value === categoryId ? null : categoryId
 }
 
-const selectPart = (categoryId, part) => {
-  const category = categories.value.find(c => c.id === categoryId)
-  if (category) {
-    category.selectedPart = part
-    openCategoryId.value = null
-  }
-}
-
-const removePart = (categoryId) => {
-  const category = categories.value.find(c => c.id === categoryId)
-  if (category) category.selectedPart = null
-}
-
+// ── Salvare ───────────────────────────────────────────────
 const salveazaPC = async () => {
   try {
     const payload = {
-      cpu: categories.value.find(c => c.id === 'cpus')?.selectedPart?.id || null,
-      gpu: categories.value.find(c => c.id === 'gpus')?.selectedPart?.id || null,
+      cpu:         categories.value.find(c => c.id === 'cpus')?.selectedPart?.id || null,
+      gpu:         categories.value.find(c => c.id === 'gpus')?.selectedPart?.id || null,
       motherboard: categories.value.find(c => c.id === 'motherboards')?.selectedPart?.id || null,
-      ram: categories.value.find(c => c.id === 'rams')?.selectedPart?.id || null,
-      storage: categories.value.find(c => c.id === 'storages')?.selectedPart?.id || null,
-      psu: categories.value.find(c => c.id === 'psus')?.selectedPart?.id || null,
-      case: categories.value.find(c => c.id === 'cases')?.selectedPart?.id || null,
-      cooler: categories.value.find(c => c.id === 'coolers')?.selectedPart?.id || null,
-      pret_total: totalPrice.value
-    };
-
-    const response = await api.post('saved-builds/', payload);
-    alert(`Build salvat cu succes sub numele: ${response.data.nume}`);
+      ram:         categories.value.find(c => c.id === 'rams')?.selectedPart?.id || null,
+      storage:     categories.value.find(c => c.id === 'storages')?.selectedPart?.id || null,
+      psu:         categories.value.find(c => c.id === 'psus')?.selectedPart?.id || null,
+      case:        categories.value.find(c => c.id === 'cases')?.selectedPart?.id || null,
+      cooler:      categories.value.find(c => c.id === 'coolers')?.selectedPart?.id || null,
+      pret_total:  totalPrice.value
+    }
+    const response = await api.post('saved-builds/', payload)
+    alert(`Build salvat cu succes sub numele: ${response.data.nume}`)
   } catch (error) {
-    console.error("Eroare la salvare:", error);
-    alert(error.response?.status === 401 ? "Loghează-te pentru a salva!" : "Eroare server.");
+    console.error('Eroare la salvare:', error)
+    alert(error.response?.status === 401 ? 'Loghează-te pentru a salva!' : 'Eroare server.')
   }
 }
 
-
+// ── Agent AI ──────────────────────────────────────────────
 const analizeazaBuild = async () => {
   agentLoading.value = true
   agentError.value = null
@@ -253,7 +348,8 @@ const analizeazaBuild = async () => {
     agentLoading.value = false
   }
 }
-// Helpers
+
+// ── Helpers ───────────────────────────────────────────────
 const selectedPartsCount = computed(() => categories.value.filter(cat => cat.selectedPart).length)
 const totalPartsLoaded = computed(() => categories.value.reduce((acc, cat) => acc + (cat.parts?.length || 0), 0))
 const totalPrice = computed(() => categories.value.reduce((sum, cat) => sum + parseFloat(cat.selectedPart?.pret || 0), 0))
@@ -261,9 +357,10 @@ const progressPercentage = computed(() => (selectedPartsCount.value / categories
 const displayPartName = (part) => part.nume || part.model || 'Componentă'
 const displayPartPrice = (part) => part.pret || '0.00'
 
+// ── Mount + încarcă din sessionStorage (din SavedBuilds) ──
 onMounted(async () => {
   await fetchParts()
-  
+
   const saved = sessionStorage.getItem('loadBuild')
   if (saved) {
     const parts = JSON.parse(saved)
@@ -281,11 +378,9 @@ onMounted(async () => {
     sessionStorage.removeItem('loadBuild')
   }
 })
-
 </script>
 
 <style scoped>
-/* Layout principal */
 .builder-layout { 
   display: grid; 
   grid-template-columns: 1fr 350px; 
@@ -301,7 +396,6 @@ onMounted(async () => {
   padding: 25px; 
 }
 
-/* Rândul de categorie */
 .build-row { 
   display: flex; 
   align-items: center; 
@@ -314,16 +408,15 @@ onMounted(async () => {
   border-bottom: 1px solid #232533; 
 }
 
-/* --- ALINIEREA BUTOANELOR LA CAPĂT --- */
 .category-info { 
-  flex: 1; /* Ocupă tot spațiul disponibil, împingând restul elementelor la dreapta */
+  flex: 1;
   display: flex; 
   flex-direction: column; 
   margin-left: 15px;
 }
 
 .price-section { 
-  margin-left: auto; /* Magnet pentru aliniere la dreapta */
+  margin-left: auto;
   margin-right: 25px; 
   min-width: 120px; 
   text-align: right; 
@@ -335,9 +428,35 @@ onMounted(async () => {
   display: flex; 
   justify-content: flex-end; 
 }
-/* -------------------------------------- */
 
-/* Stil pentru listele de piese (Dropdown) */
+.no-part {
+  font-size: 0.8rem;
+  color: #475569;
+}
+
+.filter-hint {
+  color: #f59e0b;
+  font-size: 0.78rem;
+}
+
+.incompatibil-warning {
+  display: block;
+  font-size: 0.75rem;
+  color: #f43f5e;
+  margin-top: 3px;
+}
+
+.filter-tag {
+  font-size: 0.7rem;
+  color: #475569;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid #2a2d3e;
+  border-radius: 20px;
+  padding: 2px 10px;
+  margin-right: 12px;
+  white-space: nowrap;
+}
+
 .parts-selector-box {
   background-color: #16161e;
   max-height: 350px;
@@ -365,7 +484,6 @@ onMounted(async () => {
 .p-name { font-weight: 500; color: #a9b1d6; }
 .p-price { color: #10b981; font-weight: bold; }
 
-/* Butoane */
 .btn { 
   padding: 8px 18px; 
   border-radius: 6px; 
@@ -404,7 +522,8 @@ onMounted(async () => {
   opacity: 0.5;
 }
 
-/* Sidebar & Sumar */
+.btn-block { width: 100%; }
+
 .summary-card { 
   background: #1a1b26; 
   border: 1px solid #2a2d3e; 
@@ -430,12 +549,62 @@ onMounted(async () => {
   margin-bottom: 10px; 
 }
 
-/* Scrollbar personalizat pentru lista de piese */
-.parts-selector-box::-webkit-scrollbar {
-  width: 6px;
+.btn-analyze {
+  width: 100%;
+  padding: 10px;
+  background: #6366f1;
+  border: none;
+  color: white;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  margin-bottom: 12px;
+  transition: 0.2s;
 }
-.parts-selector-box::-webkit-scrollbar-thumb {
-  background: #334155;
-  border-radius: 10px;
+.btn-analyze:hover:not(:disabled) { background: #4f46e5; }
+.btn-analyze:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.agent-error {
+  background: rgba(239,68,68,0.1);
+  border: 1px solid #ef4444;
+  color: #fca5a5;
+  padding: 10px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+
+.agent-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+.badge-ok      { background: rgba(16,185,129,0.2); color: #10b981; }
+.badge-warning { background: rgba(245,158,11,0.2);  color: #f59e0b; }
+.badge-error   { background: rgba(239,68,68,0.2);   color: #ef4444; }
+
+.agent-section { margin-top: 10px; font-size: 0.85rem; color: #a9b1d6; }
+.agent-section ul { margin: 4px 0 0 16px; }
+.agent-section p { margin-top: 4px; line-height: 1.5; }
+.sugestie-item { padding: 2px 0 2px 8px; color: #7aa2f7; font-size: 0.8rem; }
+
+.parts-selector-box::-webkit-scrollbar { width: 6px; }
+.parts-selector-box::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+.btn-remove {
+  background: transparent;
+  border: 1px solid #ef4444;
+  color: #ef4444;
+  padding: 8px 18px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: 0.2s;
+}
+
+.btn-remove:hover {
+  background: #ef4444;
+  color: white;
 }
 </style>

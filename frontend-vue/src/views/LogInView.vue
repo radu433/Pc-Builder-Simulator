@@ -44,29 +44,26 @@ import { useRouter } from 'vue-router'
 import api from '../plugins/axios'
 import { showToast } from '../toast'
 
-// Variabila generică pentru username sau email
 const identifier = ref('')
 const password = ref('')
 const router = useRouter()
 
 const handleLogin = async () => {
   try {
-    // 1. Facem cererea la adresa ta corectă de JWT
     const response = await api.post('login/', { 
       username: identifier.value,
       password: password.value
-    });
+    })
 
-    // 2. JWT returnează "access" în loc de "token"
-    const realToken = response.data.access; 
-    localStorage.setItem('access_token', realToken);
-    
-    showToast("Te-ai conectat cu succes!", "success");
-    router.push('/');
-    
+    localStorage.setItem('access_token', response.data.access)
+    localStorage.setItem('username', identifier.value)
+
+    showToast(`Bun venit, ${identifier.value}!`, 'success')
+    router.push('/')
+
   } catch (error) {
-    console.error(error);
-    showToast("Date de logare incorecte!", "error");
+    console.error(error)
+    showToast('Date de logare incorecte!', 'error')
   }
 }
 </script>
@@ -74,15 +71,11 @@ const handleLogin = async () => {
 <style scoped>
 .login-container {
   display: flex;
-  justify-content: center; /* Centrează pe orizontală */
-  align-items: center;     /* Centrează pe verticală */
-  
-  /* Calculăm înălțimea: 100vh (toată înălțimea ecranului) 
-     minus înălțimea aproximativă a header-ului și footer-ului */
-  min-height: calc(100vh - 160px); 
-  
+  justify-content: center;
+  align-items: center;
+  min-height: calc(100vh - 160px);
   padding: 20px;
-  background-color: #0f111a; /* Opțional: fundalul paginii */
+  background-color: #0f111a;
 }
 
 .login-card {
@@ -93,12 +86,9 @@ const handleLogin = async () => {
   width: 100%;
   max-width: 400px;
   box-shadow: 0 10px 25px rgba(0,0,0,0.5);
-  
-  /* Ne asigurăm că nu "fuge" cardul dacă e ecranul foarte mic */
-  margin: auto; 
+  margin: auto;
 }
 
-/* Restul stilurilor rămân la fel */
 .login-header { text-align: center; margin-bottom: 30px; }
 .logo-box { background: #3b82f6; padding: 10px; border-radius: 8px; display: inline-block; margin-bottom: 15px; }
 h2 { color: white; margin-bottom: 5px; }
