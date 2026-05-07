@@ -361,6 +361,7 @@ const displayPartPrice = (part) => part.pret || '0.00'
 onMounted(async () => {
   await fetchParts()
 
+  // 1. Încărcare din Saved Builds (Logica ta existentă)
   const saved = sessionStorage.getItem('loadBuild')
   if (saved) {
     const parts = JSON.parse(saved)
@@ -376,6 +377,52 @@ onMounted(async () => {
       if (key && parts[key]) slot.selectedPart = parts[key]
     }
     sessionStorage.removeItem('loadBuild')
+  }
+
+  // 2. NOU: Încărcare din AI PC Architect
+  const pendingAiBuild = localStorage.getItem('pending_ai_build')
+  if (pendingAiBuild) {
+    try {
+      const buildRecomandat = JSON.parse(pendingAiBuild)
+      
+      // Selectăm piesele folosind datele trimise de AI
+      // Căutăm piesa completă în allParts pe baza ID-ului trimis de AI
+      
+      if (buildRecomandat.cpu) {
+         const cpuCat = categories.value.find(c => c.id === 'cpus')
+         const cpuPart = cpuCat.allParts.find(p => p.id === buildRecomandat.cpu.id)
+         if (cpuPart) selectPart('cpus', cpuPart)
+      }
+      
+      if (buildRecomandat.gpu) {
+         const gpuCat = categories.value.find(c => c.id === 'gpus')
+         const gpuPart = gpuCat.allParts.find(p => p.id === buildRecomandat.gpu.id)
+         if (gpuPart) selectPart('gpus', gpuPart)
+      }
+      
+      if (buildRecomandat.motherboard) {
+         const moboCat = categories.value.find(c => c.id === 'motherboards')
+         const moboPart = moboCat.allParts.find(p => p.id === buildRecomandat.motherboard.id)
+         if (moboPart) selectPart('motherboards', moboPart)
+      }
+      
+      if (buildRecomandat.ram) {
+         const ramCat = categories.value.find(c => c.id === 'rams')
+         const ramPart = ramCat.allParts.find(p => p.id === buildRecomandat.ram.id)
+         if (ramPart) selectPart('rams', ramPart)
+      }
+
+      // Curățăm localStorage-ul după ce am încărcat piesele
+      localStorage.removeItem('pending_ai_build')
+      
+      // Oprim eventualele erori sau analize vechi
+      agentError.value = null
+      agentResult.value = null
+
+    } catch (error) {
+      console.error('Eroare la parsarea build-ului AI:', error)
+      localStorage.removeItem('pending_ai_build')
+    }
   }
 })
 </script>
