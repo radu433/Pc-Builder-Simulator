@@ -4,6 +4,7 @@ import SavedBuildsView from '../views/SavedBuildsView.vue'
 import LoginView from '../views/LogInView.vue'
 import RegisterView from '../views/RegisterView.vue'
 import ProfileView from '../views/ProfileView.vue'
+import DocumentatiiView from '../views/DocumentatieView.vue'
 
 const routes = [
   {
@@ -26,7 +27,22 @@ const routes = [
     component: LoginView },
   { path: '/register', 
     name: 'Register', 
-    component: RegisterView }
+    component: RegisterView },
+  {
+      path: '/documentatii',
+      name: 'documentatii',
+      component: DocumentatiiView 
+    },
+    {
+      path: '/ghid/:id',
+      name: 'ghid-detaliu',
+      component: () => import('../views/GhidView.vue')
+},
+{
+  path: '/chat-ai',
+  name: 'chat-ai',
+  component: () => import('../views/ChatAIView.vue')
+}
 ]
 
 const router = createRouter({
