@@ -184,6 +184,12 @@ const categories = ref([
   { id: 'coolers',      name: 'Cooler CPU',    icon: '❄️', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false, filterHint: '',                            incompatibil: false },
 ])
 
+const catToKeyMap = {
+  'cpus': 'cpu', 'gpus': 'gpu', 'motherboards': 'motherboard',
+  'rams': 'ram', 'storages': 'storage', 'psus': 'psu',
+  'cases': 'case', 'coolers': 'cooler'
+}
+
 // ── Fetch ─────────────────────────────────────────────────
 const fetchParts = async () => {
   loading.value = true
@@ -191,8 +197,8 @@ const fetchParts = async () => {
     for (const category of categories.value) {
       const response = await axios.get(`http://127.0.0.1:8000/api/${category.id}/`)
       const parts = response.data.results || response.data
-      category.allParts = parts        // copie completă, niciodată modificată
-      category.parts = [...parts]      // lista afișată, poate fi filtrată
+      category.allParts = parts        
+      category.parts = [...parts]      
       console.log(`✅ Încărcat ${category.id}: ${parts.length} piese`)
     }
   } catch (err) {
@@ -210,7 +216,11 @@ const selectPart = (categoryId, part) => {
   agentResult.value = null
   agentError.value = null
 
-  // CPU selectat → filtrează Plăcile de Bază după socket, avertizează dacă incompatibil
+  const key = catToKeyMap[categoryId] || categoryId
+  const currentBuild = JSON.parse(localStorage.getItem('current_build') || '{}')
+  currentBuild[key] = part
+  localStorage.setItem('current_build', JSON.stringify(currentBuild))
+
   if (categoryId === 'cpus') {
     const socket = part.socket
     const moboCat = categories.value.find(c => c.id === 'motherboards')
@@ -232,7 +242,6 @@ const selectPart = (categoryId, part) => {
       moboCat.incompatibil = false
     }
 
-    // Reset RAM doar dacă mobo incompatibil sau nicio mobo selectată
     const ramCat = categories.value.find(c => c.id === 'rams')
     ramCat.parts = [...ramCat.allParts]
     ramCat.activeFilter = null
@@ -240,7 +249,6 @@ const selectPart = (categoryId, part) => {
     ramCat.incompatibil = false
   }
 
-  // Placă de Bază selectată → filtrează RAM după tip_ram, avertizează dacă incompatibil
   if (categoryId === 'motherboards') {
     const tipRam = part.tip_ram
     const ramCat = categories.value.find(c => c.id === 'rams')
@@ -273,7 +281,11 @@ const removePart = (categoryId) => {
   agentResult.value = null
   agentError.value = null
 
-  // La ștergerea CPU → resetează filtrele pe mobo și RAM (dar păstrează selecțiile)
+  const key = catToKeyMap[categoryId] || categoryId
+  const currentBuild = JSON.parse(localStorage.getItem('current_build') || '{}')
+  delete currentBuild[key]
+  localStorage.setItem('current_build', JSON.stringify(currentBuild))
+
   if (categoryId === 'cpus') {
     const moboCat = categories.value.find(c => c.id === 'motherboards')
     moboCat.parts = [...moboCat.allParts]
@@ -288,7 +300,6 @@ const removePart = (categoryId) => {
     ramCat.incompatibil = false
   }
 
-  // La ștergerea Plăcii de Bază → resetează filtrul RAM (dar păstrează selecția RAM)
   if (categoryId === 'motherboards') {
     const ramCat = categories.value.find(c => c.id === 'rams')
     ramCat.parts = [...ramCat.allParts]
@@ -357,36 +368,24 @@ const progressPercentage = computed(() => (selectedPartsCount.value / categories
 const displayPartName = (part) => part.nume || part.model || 'Componentă'
 const displayPartPrice = (part) => part.pret || '0.00'
 
-// ── Mount + încarcă din sessionStorage (din SavedBuilds) ──
+// ── Mount + încarcă din sesiuni/storage ──
 onMounted(async () => {
   await fetchParts()
 
-  // 1. Încărcare din Saved Builds (Logica ta existentă)
   const saved = sessionStorage.getItem('loadBuild')
   if (saved) {
     const parts = JSON.parse(saved)
     for (const slot of categories.value) {
-      const key = slot.id === 'cpus' ? 'cpu'
-        : slot.id === 'gpus' ? 'gpu'
-        : slot.id === 'motherboards' ? 'motherboard'
-        : slot.id === 'rams' ? 'ram'
-        : slot.id === 'storages' ? 'storage'
-        : slot.id === 'psus' ? 'psu'
-        : slot.id === 'cases' ? 'case'
-        : slot.id === 'coolers' ? 'cooler' : null
+      const key = catToKeyMap[slot.id]
       if (key && parts[key]) slot.selectedPart = parts[key]
     }
     sessionStorage.removeItem('loadBuild')
   }
 
-  // 2. NOU: Încărcare din AI PC Architect
   const pendingAiBuild = localStorage.getItem('pending_ai_build')
   if (pendingAiBuild) {
     try {
       const buildRecomandat = JSON.parse(pendingAiBuild)
-      
-      // Selectăm piesele folosind datele trimise de AI
-      // Căutăm piesa completă în allParts pe baza ID-ului trimis de AI
       
       if (buildRecomandat.cpu) {
          const cpuCat = categories.value.find(c => c.id === 'cpus')
@@ -412,16 +411,31 @@ onMounted(async () => {
          if (ramPart) selectPart('rams', ramPart)
       }
 
-      // Curățăm localStorage-ul după ce am încărcat piesele
       localStorage.removeItem('pending_ai_build')
-      
-      // Oprim eventualele erori sau analize vechi
       agentError.value = null
       agentResult.value = null
 
     } catch (error) {
       console.error('Eroare la parsarea build-ului AI:', error)
       localStorage.removeItem('pending_ai_build')
+    }
+  }
+
+  const currentBuildStr = localStorage.getItem('current_build')
+  if (currentBuildStr && !pendingAiBuild && !saved) {
+    try {
+      const currentBuild = JSON.parse(currentBuildStr)
+      for (const slot of categories.value) {
+        const key = catToKeyMap[slot.id]
+        if (key && currentBuild[key]) {
+           const part = slot.allParts.find(p => p.id === currentBuild[key].id)
+           if (part) {
+               selectPart(slot.id, part) 
+           }
+        }
+      }
+    } catch (e) {
+      console.error("Eroare la încărcarea current_build:", e)
     }
   }
 })

@@ -66,9 +66,40 @@
               <span class="icon spark-icon">✨</span> Build AI
             </router-link>
 
-            <button class="nav-button">
-              <span class="icon">🪪</span> Products <span class="arrow">▼</span>
-            </button>
+            <div class="nav-item-dropdown">
+  <button class="nav-button">
+    <span class="icon">🪪</span> Products <span class="arrow">▼</span>
+  </button>
+  
+                <div class="nav-submenu products-mega-menu">
+                  <div class="mega-menu-grid">
+                    <router-link to="/products/cpus" class="submenu-item">
+                      <span class="icon">🧠</span> Procesoare (CPU)
+                    </router-link>
+                    <router-link to="/products/gpus" class="submenu-item">
+                      <span class="icon">🎮</span> Plăci Video (GPU)
+                    </router-link>
+                    <router-link to="/products/motherboards" class="submenu-item">
+                      <span class="icon">🛹</span> Plăci de bază
+                    </router-link>
+                    <router-link to="/products/rams" class="submenu-item">
+                      <span class="icon">⚡</span> Memorie RAM
+                    </router-link>
+                    <router-link to="/products/storages" class="submenu-item">
+                      <span class="icon">💾</span> Stocare
+                    </router-link>
+                    <router-link to="/products/psus" class="submenu-item">
+                      <span class="icon">🔌</span> Surse (PSU)
+                    </router-link>
+                    <router-link to="/products/cases" class="submenu-item">
+                      <span class="icon">🖥️</span> Carcase
+                    </router-link>
+                    <router-link to="/products/coolers" class="submenu-item">
+                      <span class="icon">❄️</span> Coolere
+                    </router-link>
+                  </div>
+                </div>
+              </div>
             <div class="nav-item-dropdown">
               <button class="nav-button">
                 <span class="icon">📝</span> Guides <span class="arrow">▼</span>
@@ -112,16 +143,27 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { toastMessage, toastType } from './toast'
 
 const router = useRouter()
+const route = useRoute()
 const dropdownOpen = ref(false)
 const accountMenuRef = ref(null)
 
-const isLoggedIn = computed(() => !!localStorage.getItem('access_token'))
-const username = computed(() => localStorage.getItem('username') || 'Cont')
+// ✅ ref reactiv în loc de computed direct pe localStorage
+const accessToken = ref(localStorage.getItem('access_token'))
+const usernameStored = ref(localStorage.getItem('username'))
+
+// ✅ Se actualizează la fiecare schimbare de rută
+watch(route, () => {
+  accessToken.value = localStorage.getItem('access_token')
+  usernameStored.value = localStorage.getItem('username')
+})
+
+const isLoggedIn = computed(() => !!accessToken.value)
+const username = computed(() => usernameStored.value || 'Cont')
 const userInitial = computed(() => username.value.charAt(0).toUpperCase())
 
 const toggleDropdown = () => {
@@ -131,11 +173,12 @@ const toggleDropdown = () => {
 const logout = () => {
   localStorage.removeItem('access_token')
   localStorage.removeItem('username')
+  accessToken.value = null
+  usernameStored.value = null
   dropdownOpen.value = false
   router.push('/login')
 }
 
-// Închide dropdown la click în afară
 const handleClickOutside = (e) => {
   if (accountMenuRef.value && !accountMenuRef.value.contains(e.target)) {
     dropdownOpen.value = false
@@ -539,5 +582,26 @@ body {
 @keyframes slideIn {
   from { transform: translateX(100%); opacity: 0; }
   to   { transform: translateX(0); opacity: 1; }
+}
+.products-mega-menu {
+  min-width: 450px; /* Mai lat ca să încapă 2 coloane confortabil */
+  padding: 10px;
+}
+
+.mega-menu-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr; /* Împarte meniul în 2 coloane egale */
+  gap: 5px;
+}
+
+.mega-menu-grid .submenu-item {
+  border-bottom: none; /* Scoatem linia de dedesubt ca să arate ca niște butoane */
+  border-radius: 6px;
+  padding: 10px 15px;
+}
+
+/* Culoare fundal la hover pentru fiecare item din grid */
+.mega-menu-grid .submenu-item:hover {
+  background: #232533;
 }
 </style>

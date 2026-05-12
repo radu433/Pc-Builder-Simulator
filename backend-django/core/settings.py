@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django_filters',
     'rest_framework',
     'rest_framework_simplejwt',
     'corsheaders',
@@ -128,6 +129,8 @@ REST_FRAMEWORK = {
         'anon': '1000/minute', # 10 cerere/minut non autentificat
         'user': '10000/minute',# 100 cerere/minut autentificat
     },
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 50,
 
 }
 
