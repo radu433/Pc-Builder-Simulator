@@ -84,11 +84,16 @@ WSGI_APPLICATION = 'core.wsgi.application'
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+   'default': {
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': os.getenv('DB_NAME', 'pc_builder_sim'),
+        'USER': os.getenv('DB_USER', 'radupcb'),
+        'PASSWORD': os.getenv('DB_PASSWORD', 'rm123456'),
+        'HOST': os.getenv('DB_HOST', '192.168.0.15'),
+        'PORT': os.getenv('DB_PORT', '3306'),
     }
 }
+
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators

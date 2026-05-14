@@ -177,22 +177,26 @@ const categoryFiltersMap = {
   ],
   gpus: [
     { key: 'producator_chipset', label: 'Producător Chipset', type: 'select', options: ['NVIDIA', 'AMD', 'Intel'] },
-    { key: 'memorie', label: 'Capacitate VRAM', type: 'text', placeholder: 'ex: 8, 12, 16' }
+    { key: 'memorie', label: 'Capacitate VRAM', type: 'number', placeholder: 'ex: 8, 12, 16' }
   ],
   rams: [
     { key: 'tip', label: 'Tip Memorie', type: 'select', options: ['DDR4', 'DDR5'] },
-    { key: 'capacitate', label: 'Capacitate', type: 'text', placeholder: 'ex: 16GB, 32GB' }
+    { key: 'capacitate', label: 'Capacitate (GB)', type: 'number', placeholder: 'ex: 16, 32' }
   ],
   storages: [
-    { key: 'tip', label: 'Tip Stocare', type: 'select', options: ['SSD', 'HDD'] },
-    { key: 'capacitate', label: 'Capacitate', type: 'text', placeholder: 'ex: 1TB, 500GB' }
+    { key: 'tip', label: 'Tip Stocare', type: 'select', options: ['SSD', 'HDD', 'NVME'] },
+    { key: 'capacitate', label: 'Capacitate (GB)', type: 'number', placeholder: 'ex: 500, 1000' }
   ],
   psus: [
     { key: 'putere', label: 'Putere (W)', type: 'number', placeholder: 'ex: 750, 850' },
     { key: 'certificare', label: 'Certificare 80+', type: 'select', options: ['White', 'Bronze', 'Gold', 'Platinum', 'Titanium'] }
   ],
   cases: [
-    { key: 'format', label: 'Format', type: 'select', options: ['ATX Mid Tower', 'Micro ATX', 'Mini ITX', 'Full Tower'] }
+    { key: 'tip_carcasa', label: 'Tip Carcasă', type: 'select', options: ['MID', 'FULL', 'MINI', 'SFF', 'AQ'] }
+  ],
+  coolers: [
+    { key: 'socket', label: 'Socket', type: 'checkbox-group', options: ['AM4', 'AM5', 'LGA 1700', 'LGA 1200', 'LGA 1151', 'LGA 1851'] },
+    { key: 'tip_racire', label: 'Tip Răcire', type: 'select', options: ['Air', 'AIO 120mm', 'AIO 240mm', 'AIO 280mm', 'AIO 360mm'] }
   ]
 }
 
