@@ -42,17 +42,12 @@ class BaseComponentFilter(django_filters.FilterSet):
 # --- FILTRELE PE CATEGORII ---
 
 class CPUFilter(BaseComponentFilter):
-    producator = django_filters.CharFilter(method='filter_producator')
+    producator = django_filters.CharFilter(field_name="brand", lookup_expr='iexact')
     socket = CharInFilter(field_name="socket") # Va folosi filtrul de mai sus
 
     class Meta:
         model = CPU
-        fields = [] 
-
-    def filter_producator(self, queryset, name, value):
-        if value:
-            return queryset.filter(Q(nume__icontains=value) | Q(brand__icontains=value))
-        return queryset
+        fields = []
 
 
 class MotherboardFilter(BaseComponentFilter):
@@ -66,48 +61,30 @@ class MotherboardFilter(BaseComponentFilter):
 
 
 class GPUFilter(BaseComponentFilter):
-    producator_chipset = django_filters.CharFilter(method='filter_chipset')
+    producator_chipset = django_filters.CharFilter(field_name="brand", lookup_expr='iexact')
     memorie = django_filters.NumberFilter(field_name="vram_gb") 
 
     class Meta:
         model = GPU
         fields = []
 
-    def filter_chipset(self, queryset, name, value):
-        if value:
-            return queryset.filter(Q(nume__icontains=value) | Q(brand__icontains=value))
-        return queryset
-
 
 class RAMFilter(BaseComponentFilter):
     tip = django_filters.CharFilter(field_name="tip_memorie", lookup_expr='icontains')
-    capacitate = django_filters.CharFilter(method='filter_capacitate')
+    capacitate = django_filters.NumberFilter(field_name="capacitate_totala_gb")
 
     class Meta:
         model = RAM
         fields = []
-        
-    def filter_capacitate(self, queryset, name, value):
-        if value:
-            valoare_numerica = ''.join(filter(str.isdigit, value)) 
-            if valoare_numerica:
-                return queryset.filter(capacitate_totala_gb=int(valoare_numerica))
-            return queryset.filter(nume__icontains=value)
-        return queryset
 
 
 class StorageFilter(BaseComponentFilter):
     tip = django_filters.CharFilter(field_name="tip", lookup_expr='icontains')
-    capacitate = django_filters.CharFilter(method='filter_capacitate')
+    capacitate = django_filters.NumberFilter(field_name="capacitate_gb")
 
     class Meta:
         model = Storage
         fields = []
-        
-    def filter_capacitate(self, queryset, name, value):
-        if value:
-            return queryset.filter(nume__icontains=value)
-        return queryset
 
 
 class PSUFilter(BaseComponentFilter):
@@ -120,19 +97,17 @@ class PSUFilter(BaseComponentFilter):
 
 
 class CaseFilter(BaseComponentFilter):
-    format = django_filters.CharFilter(method='filter_format_suportat')
+    tip_carcasa = django_filters.CharFilter(field_name="tip_carcasa", lookup_expr='iexact')
 
     class Meta:
         model = Case
         fields = []
-        
-    def filter_format_suportat(self, queryset, name, value):
-        if value:
-            return queryset.filter(nume__icontains=value)
-        return queryset
 
 
 class CoolerFilter(BaseComponentFilter):
+    socket = CharInFilter(field_name="socket_suportate")
+    tip_racire = django_filters.CharFilter(field_name="tip_racire", lookup_expr='icontains')
+
     class Meta:
         model = Cooler
         fields = []
