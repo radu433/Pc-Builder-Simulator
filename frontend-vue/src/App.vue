@@ -11,7 +11,6 @@
           
           <div class="user-actions">
 
-            <!-- Nelogat -->
             <template v-if="!isLoggedIn">
               <router-link to="/login" class="text-link">Log In</router-link>
               <span class="divider"></span>
@@ -20,7 +19,6 @@
               <button class="lang-select">🇷🇴 Romania <span class="arrow">▼</span></button>
             </template>
 
-            <!-- Logat -->
             <template v-else>
               <div class="account-menu" @click="toggleDropdown" ref="accountMenuRef">
                 <div class="account-btn">
@@ -63,12 +61,25 @@
             <router-link to="/" class="nav-button" active-class="active-nav">
               <span class="icon">🔧</span> Builder
             </router-link>
+            
+            <router-link to="/chat-ai" class="nav-button ai-nav-button" active-class="active-nav-ai">
+              <span class="icon spark-icon">✨</span> Build AI
+            </router-link>
+
             <button class="nav-button">
               <span class="icon">🪪</span> Products <span class="arrow">▼</span>
             </button>
-            <button class="nav-button">
-              <span class="icon">📝</span> Guides <span class="arrow">▼</span>
-            </button>
+            <div class="nav-item-dropdown">
+              <button class="nav-button">
+                <span class="icon">📝</span> Guides <span class="arrow">▼</span>
+              </button>
+              
+              <div class="nav-submenu">
+                <router-link to="/documentatii" class="submenu-item">
+                  📄 Documentații
+                </router-link>
+                </div>
+            </div>
             <router-link to="/completed-builds" class="nav-button" active-class="active-nav">
               <span class="icon">✅</span> Completed Builds
             </router-link>
@@ -386,6 +397,91 @@ body {
   background-color: #232533;
   color: #3b82f6 !important;
   border-bottom: 3px solid #3b82f6;
+}
+
+/* ── Butonul special AI ── */
+.ai-nav-button {
+  color: #c084fc; 
+  font-weight: 700;
+  position: relative;
+  overflow: hidden;
+}
+
+.ai-nav-button:hover {
+  background-color: rgba(168, 85, 247, 0.1) !important;
+  color: #d8b4fe;
+}
+
+.active-nav-ai {
+  background-color: rgba(168, 85, 247, 0.15) !important;
+  color: #c084fc !important;
+  border-bottom: 3px solid #a855f7 !important;
+}
+
+.spark-icon {
+  animation: pulse-spark 2s infinite;
+}
+
+@keyframes pulse-spark {
+  0% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.2); opacity: 1; text-shadow: 0 0 10px rgba(168, 85, 247, 0.8); }
+  100% { transform: scale(1); opacity: 0.8; }
+}
+
+/* ── Dropdown Navigare (Guides) ── */
+.nav-item-dropdown {
+  position: relative;
+  display: flex;
+  height: 100%;
+}
+
+.nav-submenu {
+  display: none;
+  position: absolute;
+  top: 100%; /* Fix sub buton */
+  left: 0;
+  background: #1a1b26;
+  border: 1px solid #2a2d3e;
+  border-top: none; /* Se lipește vizual de bara de navigație */
+  min-width: 200px;
+  z-index: 1000;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  border-bottom-left-radius: 8px;
+  border-bottom-right-radius: 8px;
+  overflow: hidden;
+}
+
+/* Când pui mouse-ul pe zona butonului, apare submeniul */
+.nav-item-dropdown:hover .nav-submenu {
+  display: block;
+  animation: fadeDown 0.15s ease-out;
+}
+
+/* Menține butonul 'Guides' luminat cât timp ești cu mouse-ul în submeniu */
+.nav-item-dropdown:hover .nav-button {
+  background-color: #232533;
+}
+
+.submenu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 20px;
+  color: #a9b1d6;
+  text-decoration: none;
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: background 0.15s, color 0.15s;
+  border-bottom: 1px solid #2a2d3e;
+}
+
+.submenu-item:last-child {
+  border-bottom: none;
+}
+
+.submenu-item:hover {
+  background: #232533;
+  color: #3b82f6; /* Se face albastru la hover, ca un link real */
 }
 
 .search-bar {
