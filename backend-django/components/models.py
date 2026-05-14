@@ -19,6 +19,7 @@ class ComponentaBase(models.Model):
 class GPU(ComponentaBase):
     serie = models.CharField(max_length=200)
     model_chipset = models.CharField(max_length=200)
+    chipset_brand = models.CharField(max_length=50, default='Unknown')  # NVIDIA, AMD, Intel
     vram_gb = models.IntegerField()
     tip_vram = models.CharField(max_length=50, null=True, blank=True)
     consum_tdp = models.IntegerField()

@@ -332,19 +332,31 @@ def scrape_gpu(session, url):
     height   = extract_spec(soup, "Height", "Slot Width", "Thickness")
     chipset  = extract_spec(soup, "GPU Chip", "Chipset", "Graphics Processor", "GPU")
 
-    brand = producer or (
+    # Detectează producătorul chipset-ului (NVIDIA, AMD, Intel)
+    chipset_brand = (
         "NVIDIA" if any(x in name.upper() for x in ["RTX", "GTX", "QUADRO", "TITAN"]) else
         "AMD"    if any(x in name.upper() for x in ["RX ", "RADEON"]) else
         "Intel"  if "ARC" in name.upper() else
         "Unknown"
     )
 
+    # Detectează producătorul plăcii (ASUS, MSI, Gigabyte, etc.)
+    card_brand = producer or (
+        "ASUS"     if "asus" in name.lower() else
+        "MSI"      if "msi" in name.lower() else
+        "Gigabyte" if "gigabyte" in name.lower() or "aorus" in name.lower() else
+        "ASRock"   if "asrock" in name.lower() else
+        "EVGA"     if "evga" in name.lower() else
+        "Unknown"
+    )
+
     return {
         "part_number":   mpn or ean,
         "nume":          name,
-        "brand":         brand,
+        "brand":         card_brand,  # Producătorul plăcii
         "serie":         detect_gpu_serie(name),
         "model_chipset": chipset or detect_gpu_serie(name),
+        "chipset_brand": chipset_brand,  # Producătorul chipset-ului
         "vram_gb":       parse_int(vram) or 0,
         "consum_tdp":    parse_int(tdp) or 0,
         "lungime_mm":    parse_int(length) or 0,

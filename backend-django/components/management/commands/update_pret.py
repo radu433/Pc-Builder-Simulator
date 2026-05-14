@@ -106,6 +106,7 @@ class PriceResult:
     title:          str           = field(default="")
     viteza_citire:  Optional[int] = field(default=None)  # MB/s
     viteza_scriere: Optional[int] = field(default=None)  # MB/s
+    poza_url:       Optional[str] = field(default=None)  # URL poza produs
 
 
 # ─────────────────────────── HELPERS ─────────────────────────────────────────
@@ -841,7 +842,18 @@ def scrape_emag(page, query: str) -> list[PriceResult]:
                 if prod_url and not prod_url.startswith("http"):
                     prod_url = "https://www.emag.ro" + prod_url
 
-                results.append(PriceResult("eMag", price, in_stoc, prod_url or url, title))
+                # Extrage URL poza din card
+                poza_url = None
+                try:
+                    img_el = card.query_selector("img.bg-onaccent")
+                    if img_el:
+                        src = img_el.get_attribute("src") or ""
+                        # Luam varianta mai mare din URL-ul akamaized (inlocuim res_70 cu res_200)
+                        poza_url = re.sub(r"/res_\d+c\d+f\d+", "", src) if src else src
+                except Exception:
+                    pass
+
+                results.append(PriceResult("eMag", price, in_stoc, prod_url or url, title, poza_url=poza_url))
             except Exception:
                 continue
     except PWTimeout:
@@ -1204,6 +1216,17 @@ class Command(BaseCommand):
                                     obj.viteza_citire  = best.viteza_citire
                                     obj.viteza_scriere = best.viteza_scriere
                                     update_fields += ["viteza_citire", "viteza_scriere"]
+
+                                # ──── POZA: salveaza URL daca nu exista deja ────
+                                if (
+                                    hasattr(obj, 'poza')
+                                    and not obj.poza
+                                    and best.poza_url
+                                ):
+                                    obj.poza = best.poza_url
+                                    update_fields.append("poza")
+                                    self.stdout.write(f"       Poza salvata: {best.poza_url[:60]}...")
+                                # ───────────────────────────────────────────────
 
                                 with transaction.atomic():
                                     obj.save(update_fields=update_fields)

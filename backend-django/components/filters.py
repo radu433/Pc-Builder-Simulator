@@ -61,7 +61,8 @@ class MotherboardFilter(BaseComponentFilter):
 
 
 class GPUFilter(BaseComponentFilter):
-    producator_chipset = django_filters.CharFilter(field_name="brand", lookup_expr='iexact')
+    producator = django_filters.CharFilter(field_name="brand", lookup_expr='iexact')
+    producator_chipset = django_filters.CharFilter(field_name="chipset_brand", lookup_expr='iexact')
     memorie = django_filters.NumberFilter(field_name="vram_gb") 
 
     class Meta:
