@@ -842,14 +842,18 @@ def scrape_emag(page, query: str) -> list[PriceResult]:
                 if prod_url and not prod_url.startswith("http"):
                     prod_url = "https://www.emag.ro" + prod_url
 
-                # Extrage URL poza din card
+                # Extrage URL poza din card (imaginile sunt blocate, citim data-src / data-original)
                 poza_url = None
                 try:
                     img_el = card.query_selector("img.bg-onaccent")
                     if img_el:
-                        src = img_el.get_attribute("src") or ""
-                        # Luam varianta mai mare din URL-ul akamaized (inlocuim res_70 cu res_200)
-                        poza_url = re.sub(r"/res_\d+c\d+f\d+", "", src) if src else src
+                        src = (
+                            img_el.get_attribute("data-src") or
+                            img_el.get_attribute("data-original") or
+                            img_el.get_attribute("src") or ""
+                        )
+                        # Scoatem sufixul de rezolutie mica (res_70cXXfXX) ca sa luam originalul
+                        poza_url = re.sub(r"/res_\d+c\d+f\d+", "", src) if src else None
                 except Exception:
                     pass
 
@@ -910,7 +914,20 @@ def scrape_altex(page, query: str) -> list[PriceResult]:
                 if prod_url and not prod_url.startswith("http"):
                     prod_url = "https://altex.ro" + prod_url
 
-                results.append(PriceResult("Altex", price, in_stoc, prod_url, title))
+                # Extrage URL poza - Altex foloseste swiper-zoom-container
+                poza_url = None
+                try:
+                    img_el = card.query_selector("div.swiper-zoom-container img, img.ProductImage, img[itemprop='image']")
+                    if img_el:
+                        poza_url = (
+                            img_el.get_attribute("data-src") or
+                            img_el.get_attribute("data-original") or
+                            img_el.get_attribute("src") or None
+                        )
+                except Exception:
+                    pass
+
+                results.append(PriceResult("Altex", price, in_stoc, prod_url, title, poza_url=poza_url))
             except Exception:
                 continue
     except PWTimeout:
@@ -967,7 +984,25 @@ def scrape_cel(page, query: str) -> list[PriceResult]:
                 if prod_url and not prod_url.startswith("http"):
                     prod_url = "https://www.cel.ro" + prod_url
 
-                results.append(PriceResult("CEL", price, in_stoc, prod_url or url, title))
+                if prod_url and not prod_url.startswith("http"):
+                    prod_url = "https://www.cel.ro" + prod_url
+
+                # Extrage URL poza - CEL foloseste img.acxmf_poza sau img.acxmf_mobile
+                poza_url = None
+                try:
+                    img_el = card.query_selector("img.acxmf_poza, img.acxmf_mobile, .productListing-poza img")
+                    if img_el:
+                        poza_url = (
+                            img_el.get_attribute("data-src") or
+                            img_el.get_attribute("data-original") or
+                            img_el.get_attribute("src") or None
+                        )
+                        if poza_url and poza_url.startswith("/"):
+                            poza_url = "https://www.cel.ro" + poza_url
+                except Exception:
+                    pass
+
+                results.append(PriceResult("CEL", price, in_stoc, prod_url or url, title, poza_url=poza_url))
             except Exception:
                 continue
     except PWTimeout:
@@ -1217,15 +1252,15 @@ class Command(BaseCommand):
                                     obj.viteza_scriere = best.viteza_scriere
                                     update_fields += ["viteza_citire", "viteza_scriere"]
 
-                                # ──── POZA: salveaza URL daca nu exista deja ────
+                                # ──── Poza: salveaza URL imagine daca nu exista deja ────
                                 if (
-                                    hasattr(obj, 'poza')
-                                    and not obj.poza
+                                    hasattr(obj, 'imagine_url')
+                                    and not obj.imagine_url
                                     and best.poza_url
                                 ):
-                                    obj.poza = best.poza_url
-                                    update_fields.append("poza")
-                                    self.stdout.write(f"       Poza salvata: {best.poza_url[:60]}...")
+                                    obj.imagine_url = best.poza_url
+                                    update_fields.append("imagine_url")
+                                    self.stdout.write(f"       URL imagine salvat: {best.poza_url[:60]}...")
                                 # ───────────────────────────────────────────────
 
                                 with transaction.atomic():
