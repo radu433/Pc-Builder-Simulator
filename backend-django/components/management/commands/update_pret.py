@@ -1,17 +1,3 @@
-"""
-Scraper preturi pentru PC Builder Simulator.
-Copiaza in: components/management/commands/update_prices.py
-Ruleaza cu: python manage.py update_prices
-
-Dependinte extra fata de ce ai deja:
-    pip install playwright
-    playwright install chromium
-
-Cauta fiecare componenta din DB pe: eMag, PCGarage, Altex, Vexio, CEL
-Ia primele 5 rezultate, verifica stoc, compara preturi, updateaza DB.
-Daca nu e gasit pe niciun site -> sterge din DB.
-"""
-
 import re
 import time
 import random
@@ -19,6 +5,7 @@ import logging
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Optional
+from urllib.parse import quote, quote_plus, urljoin
 
 from django.core.management.base import BaseCommand
 from django.db import transaction
@@ -120,31 +107,20 @@ def _clean_price(text: str) -> Optional[Decimal]:
         return None
 
     cleaned = re.sub(r"[^\d,.]", "", text)
-
-    # Romanian format: 1.299,99
-    if "," in cleaned:
-        cleaned = cleaned.replace(".", "").replace(",", ".")
-    else:
-        parts = cleaned.split(".")
-        if len(parts) > 1 and len(parts[-1]) == 3:
-            cleaned = "".join(parts)
-
-    try:
-        return Decimal(cleaned)
-    except Exception:
-        pass
-    
-    """Extrage primul numar dintr-un string de pret. '1.299,99 Lei' -> 1299.99"""
-    if not text:
+    if not cleaned:
         return None
-    cleaned = re.sub(r"[^\d,.]", "", text)
+
+    if "." in cleaned and "," not in cleaned:
+        parts = cleaned.split(".")
+        if len(parts) == 2 and len(parts[1]) >= 4:
+            numar_fara_puncte = parts[0] + parts[1]
+            cleaned = numar_fara_puncte[:-2] + "." + numar_fara_puncte[-2:]
+            return Decimal(cleaned)
+
     if re.search(r"\d{1,3}\.\d{3},\d{2}$", cleaned):
         cleaned = cleaned.replace(".", "").replace(",", ".")
     elif re.search(r"\d{1,3},\d{3}\.\d{2}$", cleaned):
         cleaned = cleaned.replace(",", "")
-    elif re.search(r"^\d{1,3},\d{3},\d{2}$", cleaned):
-        parts = cleaned.split(",")
-        cleaned = parts[0] + parts[1] + "." + parts[2]
     elif "," in cleaned and "." not in cleaned:
         parts = cleaned.split(",")
         if len(parts[-1]) == 3:
@@ -155,6 +131,7 @@ def _clean_price(text: str) -> Optional[Decimal]:
         parts = cleaned.split(".")
         if len(parts[-1]) == 3:
             cleaned = cleaned.replace(".", "")
+
     m = re.search(r"\d+(\.\d+)?", cleaned)
     try:
         return Decimal(m.group()) if m else None
@@ -207,7 +184,6 @@ _STORAGE_PREFIX = {
 def build_query(obj, site: str = None) -> str:
     prefix = _CATEGORY_PREFIX.get(type(obj), "")
 
-    # ───────── RAM: prefix diferit per site ─────────
     if isinstance(obj, RAM):
         ram_prefixes = {
             "altex": "Memorie desktop",
@@ -216,7 +192,6 @@ def build_query(obj, site: str = None) -> str:
         }
         prefix = ram_prefixes.get(site, "Kit RAM") if site else "Kit RAM"
 
-    # ───────── GPU ─────────
     if isinstance(obj, GPU):
         brand = str(obj.brand).strip()
         name_lower = obj.nume.lower()
@@ -252,7 +227,6 @@ def build_query(obj, site: str = None) -> str:
         query = f"{prefix} {brand} {chipset_curat} {vram_curat} {variant} {oc_str}".strip()
         return re.sub(r'\s+', ' ', query)
 
-    # ───────── CPU ─────────
     elif isinstance(obj, CPU):
         brand = str(obj.brand).strip()
         name_lower = obj.nume.lower()
@@ -268,7 +242,6 @@ def build_query(obj, site: str = None) -> str:
         query = f"{prefix} {brand} {serie_curata}".strip()
         return re.sub(r'\s+', ' ', query)
 
-    # ───────── MOTHERBOARD ─────────
     elif isinstance(obj, Motherboard):
         socket_str = obj.socket if obj.socket else ""
         wifi_str   = "WiFi" if obj.are_wifi else ""
@@ -282,17 +255,14 @@ def build_query(obj, site: str = None) -> str:
 
         return re.sub(r'\s+', ' ', query.strip())
 
-    # ───────── STORAGE ─────────
     elif isinstance(obj, Storage):
         prefix = _STORAGE_PREFIX.get(obj.tip, "SSD")
         cap = f"{obj.capacitate_gb // 1000}TB" if obj.capacitate_gb >= 1000 else f"{obj.capacitate_gb}GB"
         return f"{prefix} {obj.brand} {cap}".strip()
 
-    # ───────── CARCASE ─────────
     elif isinstance(obj, Case):
         nume_curat = obj.nume.lower()
 
-        # 1. Ștergem cuvintele de umplutură care strică search-ul pe eMag/Altex/CEL
         fluff = [
             "tempered glass", "window", "midi-tower", "mid-tower", "midi tower", "mid tower",
             "full-tower", "full tower", "mini-tower", "mini tower", "micro-atx", "e-atx", "atx",
@@ -301,18 +271,14 @@ def build_query(obj, site: str = None) -> str:
         for f in fluff:
             nume_curat = nume_curat.replace(f, " ")
 
-        # 2. Ștergem culorile de la coadă (ex: "- white", "- blue/black") 
         nume_curat = re.sub(r'-\s*(white|black|blue|red|yellow|pink|alb|negru).*', '', nume_curat)
 
-        # 3. Extragem primele 3-4 cuvinte relevante (Ex: "Corsair 4000D Airflow")
         cuvinte = [w for w in nume_curat.split() if len(w) > 1]
         short_name = " ".join(cuvinte[:4])
 
-        # Formăm query-ul curat
         query = f"Carcasa {short_name}"
         return re.sub(r'\s+', ' ', query).strip()
 
-    # ───────── FALLBACK PENTRU RESTUL ─────────
     base = " ".join(obj.nume.split()[:4])
     if isinstance(obj, RAM):
         kit_name = obj.nume.strip()
@@ -354,7 +320,6 @@ def _is_valid_title_match(title: str, obj) -> Optional[bool]:
     name_lower = reference_str
     name_tokens = _tokenize(reference_str)
 
-    # ───────── BRAND CHECK ─────────
     cuvinte_iertate = ["radeon", "geforce", "amd", "nvidia", "intel", "rtx", "rx", "core"]
 
     if hasattr(obj, 'brand') and obj.brand:
@@ -363,7 +328,6 @@ def _is_valid_title_match(title: str, obj) -> Optional[bool]:
             if brand_real not in title_lower:
                 return False
 
-    # ───────── MODEL STRICT ─────────
     db_numbers = re.findall(r"\d{3,4}", name_lower)
     title_numbers = re.findall(r"\d{3,4}", title_lower)
     
@@ -371,9 +335,7 @@ def _is_valid_title_match(title: str, obj) -> Optional[bool]:
         if num not in title_numbers:
             return False
 
-    # ───────── GPU ─────────
     if isinstance(obj, GPU):
-
         if obj.vram_gb:
             vram = str(obj.vram_gb)
             if not ((vram + "gb") in title_tokens or (vram + "g") in title_tokens):
@@ -417,7 +379,6 @@ def _is_valid_title_match(title: str, obj) -> Optional[bool]:
             if variant in name_lower and variant not in title_lower:
                 return False
 
-    # ───────── CPU ─────────
     elif isinstance(obj, CPU):
         cpu_suffixes = ["x", "xt", "k", "kf", "f", "g", "ge"]
 
@@ -425,7 +386,6 @@ def _is_valid_title_match(title: str, obj) -> Optional[bool]:
             if re.search(rf"\b{suf}\b", name_lower) and not re.search(rf"\b{suf}\b", title_lower):
                 return False
 
-    # ───────── RAM ─────────
     elif isinstance(obj, RAM):
         if hasattr(obj, 'capacitate_totala_gb') and obj.capacitate_totala_gb:
             cap = str(obj.capacitate_totala_gb)
@@ -440,7 +400,6 @@ def _is_valid_title_match(title: str, obj) -> Optional[bool]:
         if not (("cl" + cl) in title_tokens or (cl in title_tokens and "cl" in title_tokens)):
             return False
 
-    # ───────── PSU ─────────
     elif isinstance(obj, PSU):
         if getattr(obj, 'putere_w', None):
             power_token = f"{obj.putere_w}w"
@@ -460,7 +419,6 @@ def _is_valid_title_match(title: str, obj) -> Optional[bool]:
 
         return True
 
-    # ───────── MOTHERBOARD ─────────
     elif isinstance(obj, Motherboard):
         if obj.socket:
             if obj.socket.lower() not in title_lower:
@@ -481,7 +439,6 @@ def _is_valid_title_match(title: str, obj) -> Optional[bool]:
 
         return True
 
-    # ───────── STORAGE ─────────
     elif isinstance(obj, Storage):
         if obj.capacitate_gb >= 1000:
             tb = str(obj.capacitate_gb // 1000)
@@ -492,47 +449,37 @@ def _is_valid_title_match(title: str, obj) -> Optional[bool]:
             if not ((gb + "gb") in title_tokens or gb in title_tokens):
                 return False
 
-    # ───────── CARCASE ─────────
     elif isinstance(obj, Case):
         name_lower = obj.nume.lower()
         
-        # 1. Verificare Strictă Model (Căutăm coduri cu cifre ex: 4000d, 500dx, gt301)
         model_identifiers = re.findall(r'\b[a-z]*\d+[a-z]*\b', name_lower)
         for identifier in model_identifiers:
-            # Ignorăm versiunile și porturile USB din seria principală
             if identifier in ["v1", "v2", "30", "31"]: 
                 continue
             if identifier not in title_lower:
                 return False
 
-        # 2. Verificare Culoare (Alb vs Negru)
         db_is_white = "white" in name_lower or "alb" in name_lower
         db_is_black = "black" in name_lower or "negru" in name_lower
 
         title_is_white = "white" in title_lower or "alb" in title_lower
         title_is_black = "black" in title_lower or "negru" in title_lower
 
-        # Respingem carcasele negre dacă noi căutăm alb
         if db_is_white and title_is_black and not title_is_white:
             return False
-        # Respingem carcasele albe dacă noi căutăm negru
         if db_is_black and title_is_white and not title_is_black:
             return False
 
-        # 3. Verificare "Airflow" (Sunt structuri fizice diferite)
         if "airflow" in name_lower and "airflow" not in title_lower:
             return False
         if "airflow" not in name_lower and "airflow" in title_lower:
             return False
 
-        # 4. Verificare RGB/ARGB
-        db_has_rgb = "rgb" in name_lower # Prinde și 'argb'
+        db_has_rgb = "rgb" in name_lower
         title_has_rgb = "rgb" in title_lower
-        # Respingem dacă varianta listată are RGB, dar baza noastră de date cere una simplă (RGB-ul e mereu mai scump)
         if not db_has_rgb and title_has_rgb:
             return False
 
-        # 5. Verificare Versiune (V2)
         if "v2" in name_lower and "v2" not in title_lower:
             return False
         if "v2" not in name_lower and "v2" in title_lower:
@@ -702,7 +649,10 @@ def _dismiss_cookie(page, site: str):
 
 
 def _navigate_results(page, site: str, query: str) -> tuple[Optional[str], Optional[str]]:
-    q = query.replace(" ", "+")
+    if site == "altex":
+        q = quote(query, safe="")
+    else:
+        q = query.replace(" ", "%20")
 
     def _try_patterns(skip_cache=False):
         patterns = _SEARCH_URL_PATTERNS.get(site, [])
@@ -816,12 +766,16 @@ def scrape_emag(page, query: str) -> list[PriceResult]:
                 price_el = card.query_selector(".product-new-price")
                 if not price_el:
                     continue
-                integer_part = price_el.evaluate("el => el.firstChild ? el.firstChild.nodeValue : ''").strip()
-                sup_el = price_el.query_selector("sup")
-                decimal_part = sup_el.inner_text().strip() if sup_el else "00"
-                price = _clean_price(f"{integer_part},{decimal_part}")
+
+                raw_price_text = price_el.inner_text().strip()
+                price = None
+                if raw_price_text:
+                    digits = re.sub(r"[^0-9]", "", raw_price_text)
+                    if len(digits) >= 3:
+                        # eMag price card includes two decimal digits as cents.
+                        price = Decimal(digits[:-2] + "." + digits[-2:])
                 if not price:
-                    price = _clean_price(price_el.inner_text())
+                    price = _clean_price(raw_price_text)
                 if not price:
                     continue
 
@@ -842,17 +796,11 @@ def scrape_emag(page, query: str) -> list[PriceResult]:
                 if prod_url and not prod_url.startswith("http"):
                     prod_url = "https://www.emag.ro" + prod_url
 
-                # Extrage URL poza din card (imaginile sunt blocate, citim data-src / data-original)
                 poza_url = None
                 try:
-                    img_el = card.query_selector("img.bg-onaccent")
+                    img_el = card.query_selector("img")
                     if img_el:
-                        src = (
-                            img_el.get_attribute("data-src") or
-                            img_el.get_attribute("data-original") or
-                            img_el.get_attribute("src") or ""
-                        )
-                        # Scoatem sufixul de rezolutie mica (res_70cXXfXX) ca sa luam originalul
+                        src = img_el.get_attribute("data-src") or img_el.get_attribute("src") or ""
                         poza_url = re.sub(r"/res_\d+c\d+f\d+", "", src) if src else None
                 except Exception:
                     pass
@@ -870,7 +818,7 @@ def scrape_emag(page, query: str) -> list[PriceResult]:
 def scrape_altex(page, query: str) -> list[PriceResult]:
     results = []
     try:
-        url = f"https://altex.ro/cauta/?q={query.replace(' ', '%20')}"
+        url = f"https://altex.ro/cauta/?q={quote(query, safe='')}"
         page.goto(url, timeout=PAGE_TIMEOUT_MS, wait_until="domcontentloaded")
         try:
             btn = page.wait_for_selector("button:has-text('Acceptati tot')", timeout=3000)
@@ -886,11 +834,20 @@ def scrape_altex(page, query: str) -> list[PriceResult]:
             try:
                 price_int_el = card.query_selector("span.Price-int")
                 if price_int_el:
-                    int_part = price_int_el.inner_text().strip()
-                    dec_part = price_int_el.evaluate(
-                        "el => el.parentElement?.querySelector('sup')?.innerText || '00'"
-                    ).strip()
-                    price = _clean_price(f"{int_part},{dec_part}")
+                    raw_int = price_int_el.inner_text() or ""
+                    raw_dec = price_int_el.evaluate(
+                        "el => el.parentElement?.querySelector('sup')?.innerText || ''"
+                    ) or ""
+                    int_part = re.sub(r"\D", "", raw_int)
+                    dec_part = re.sub(r"\D", "", raw_dec)
+                    if int_part and dec_part:
+                        if len(dec_part) > 2:
+                            dec_part = dec_part[:2]
+                        price = Decimal(f"{int_part}.{dec_part.ljust(2, '0')}")
+                    elif int_part:
+                        price = _clean_price(int_part)
+                    else:
+                        price = None
                 else:
                     price = None
                 if not price:
@@ -911,19 +868,16 @@ def scrape_altex(page, query: str) -> list[PriceResult]:
                         title = link_el.get_attribute("title") or ""
                     prod_url = link_el.get_attribute("href") or url
 
-                if prod_url and not prod_url.startswith("http"):
-                    prod_url = "https://altex.ro" + prod_url
+                if prod_url:
+                    prod_url = urljoin("https://altex.ro", prod_url)
+                else:
+                    prod_url = url
 
-                # Extrage URL poza - Altex foloseste swiper-zoom-container
                 poza_url = None
                 try:
-                    img_el = card.query_selector("div.swiper-zoom-container img, img.ProductImage, img[itemprop='image']")
+                    img_el = card.query_selector("img")
                     if img_el:
-                        poza_url = (
-                            img_el.get_attribute("data-src") or
-                            img_el.get_attribute("data-original") or
-                            img_el.get_attribute("src") or None
-                        )
+                        poza_url = img_el.get_attribute("src") or img_el.get_attribute("data-src") or None
                 except Exception:
                     pass
 
@@ -984,21 +938,17 @@ def scrape_cel(page, query: str) -> list[PriceResult]:
                 if prod_url and not prod_url.startswith("http"):
                     prod_url = "https://www.cel.ro" + prod_url
 
-                if prod_url and not prod_url.startswith("http"):
-                    prod_url = "https://www.cel.ro" + prod_url
-
-                # Extrage URL poza - CEL foloseste img.acxmf_poza sau img.acxmf_mobile
                 poza_url = None
                 try:
-                    img_el = card.query_selector("img.acxmf_poza, img.acxmf_mobile, .productListing-poza img")
-                    if img_el:
-                        poza_url = (
-                            img_el.get_attribute("data-src") or
-                            img_el.get_attribute("data-original") or
-                            img_el.get_attribute("src") or None
-                        )
-                        if poza_url and poza_url.startswith("/"):
-                            poza_url = "https://www.cel.ro" + poza_url
+                    a_img_el = card.query_selector("a.thumbPreview, a[data-class='Big'], .productListing-poza a")
+                    if a_img_el:
+                        poza_url = a_img_el.get_attribute("href")
+                    if not poza_url:
+                        img_el = card.query_selector("img#main-product-image, img.acxmf_poza, img")
+                        if img_el:
+                            poza_url = img_el.get_attribute("data-src") or img_el.get_attribute("src") or None
+                    if poza_url and poza_url.startswith("/"):
+                        poza_url = "https://www.cel.ro" + poza_url
                 except Exception:
                     pass
 
@@ -1125,167 +1075,152 @@ class Command(BaseCommand):
             help="Afiseaza detalii despre fiecare rezultat (respins/acceptat + motiv)",
         )
 
-        def handle(self, *args, **options):
-            import os
-            os.environ["DJANGO_ALLOW_ASYNC_UNSAFE"] = "true"
+    def handle(self, *args, **options):
+        import os
+        os.environ["DJANGO_ALLOW_ASYNC_UNSAFE"] = "true"
 
-            dry_run    = options["dry_run"]
-            headless   = options["headless"]
-            only_model = options.get("model")
-            verbose    = options["verbose"]
+        dry_run    = options["dry_run"]
+        headless   = options["headless"]
+        only_model = options.get("model")
+        verbose    = options["verbose"]
 
-            stats = {
-                "procesate":   0,
-                "actualizate": 0,
-                "sterse":      0,
-                "eroare":      0,
-            }
+        stats = {
+            "procesate":   0,
+            "actualizate": 0,
+            "sterse":      0,
+            "eroare":      0,
+        }
 
-            self.stdout.write("=" * 65)
-            self.stdout.write("Price Updater - eMag / Altex / CEL")
-            if dry_run:
-                self.stdout.write("  *** DRY RUN - nu se scrie in DB ***")
-            self.stdout.write("=" * 65)
+        self.stdout.write("=" * 65)
+        self.stdout.write("Price Updater - eMag / Altex / CEL")
+        if dry_run:
+            self.stdout.write("  *** DRY RUN - nu se scrie in DB ***")
+        self.stdout.write("=" * 65)
 
-            with sync_playwright() as pw:
-                BROWSER_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
-                context = pw.chromium.launch_persistent_context(
-                    user_data_dir=str(BROWSER_PROFILE_DIR),
-                    headless=headless,
-                    args=[
-                        "--disable-blink-features=AutomationControlled",
-                        "--no-sandbox",
-                        "--disable-dev-shm-usage",
-                    ],
-                    user_agent=random.choice(_USER_AGENTS),
-                    viewport=random.choice(_VIEWPORTS),
-                    locale="ro-RO",
-                    timezone_id="Europe/Bucharest",
-                    extra_http_headers=_EXTRA_HEADERS,
-                )
-                page = context.new_page()
-                if _STEALTH_AVAILABLE:
-                    stealth_sync(page)
-                page.route(
-                    "**/*.{png,jpg,jpeg,gif,webp,svg,ico,woff,woff2,ttf,eot}",
-                    lambda route: route.abort(),
-                )
+        with sync_playwright() as pw:
+            BROWSER_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+            context = pw.chromium.launch_persistent_context(
+                user_data_dir=str(BROWSER_PROFILE_DIR),
+                headless=headless,
+                args=[
+                    "--disable-blink-features=AutomationControlled",
+                    "--no-sandbox",
+                    "--disable-dev-shm-usage",
+                ],
+                user_agent=random.choice(_USER_AGENTS),
+                viewport=random.choice(_VIEWPORTS),
+                locale="ro-RO",
+                timezone_id="Europe/Bucharest",
+                extra_http_headers=_EXTRA_HEADERS,
+            )
+            page = context.new_page()
+            if _STEALTH_AVAILABLE:
+                stealth_sync(page)
+            
+            models_to_process = ALL_MODELS
+            if only_model:
+                models_to_process = [
+                    m for m in ALL_MODELS
+                    if m.__name__.lower() == only_model.lower()
+                ]
+                if not models_to_process:
+                    self.stderr.write(f"Model necunoscut: {only_model}")
+                    context.close()
+                    return
 
-                models_to_process = ALL_MODELS
-                if only_model:
-                    models_to_process = [
-                        m for m in ALL_MODELS
-                        if m.__name__.lower() == only_model.lower()
-                    ]
-                    if not models_to_process:
-                        self.stderr.write(f"Model necunoscut: {only_model}")
-                        context.close()
-                        return
+            batch_counter = 0
 
-                batch_counter = 0
+            for model_class in models_to_process:
+                count = model_class.objects.count()
+                self.stdout.write(f"\n{'─'*65}")
+                self.stdout.write(f"Model: {model_class.__name__} ({count} produse)")
+                self.stdout.write("─" * 65)
 
-                for model_class in models_to_process:
-                    count = model_class.objects.count()
-                    self.stdout.write(f"\n{'─'*65}")
-                    self.stdout.write(f"Model: {model_class.__name__} ({count} produse)")
-                    self.stdout.write("─" * 65)
+                for obj in model_class.objects.all().iterator(chunk_size=50):
+                    stats["procesate"] += 1
+                    batch_counter += 1
 
-                    # AM STERS to_delete = []
+                    self.stdout.write(
+                        f"[{stats['procesate']:>5}] {obj.nume[:55]:<55}",
+                        ending=" ",
+                    )
 
-                    for obj in model_class.objects.all().iterator(chunk_size=50):
-                        stats["procesate"] += 1
-                        batch_counter += 1
+                    try:
+                        valid_results = find_all_valid_prices(page, obj, verbose=verbose)
+                    except Exception as e:
+                        self.stdout.write(f"EXCEPTIE: {e}")
+                        stats["eroare"] += 1
+                        continue
 
-                        self.stdout.write(
-                            f"[{stats['procesate']:>5}] {obj.nume[:55]:<55}",
-                            ending=" ",
-                        )
-
-                        try:
-                            valid_results = find_all_valid_prices(page, obj, verbose=verbose)
-                        except Exception as e:
-                            self.stdout.write(f"EXCEPTIE: {e}")
-                            stats["eroare"] += 1
-                            continue
-
-                        # ──────── LOGICA NOUA: BLACKLIST SI STERGERE ────────
-                        if not valid_results:
-                            self.stdout.write("-> NU GASIT - mutat in Blacklist si sters")
-                            
-                            if not dry_run:
-                                # 1. Adaugam in Blacklist pe baza part_number-ului
-                                if obj.part_number:
-                                    Blacklist.objects.get_or_create(
-                                        part_number=obj.part_number,
-                                        defaults={'nume': obj.nume}
-                                    )
-                                
-                                # 2. Stergem obiectul din DB
-                                obj.delete()
-                                
-                            stats["sterse"] += 1
-                        # ───────────────────────────────────────────────────
-                        else:
-                            best = valid_results[0]
-                            self.stdout.write(f"-> {best.price:.2f} Lei ({best.site})")
-
-                            if isinstance(obj, Storage):
-                                citire_str  = f"{best.viteza_citire} MB/s"  if best.viteza_citire  is not None else "N/A"
-                                scriere_str = f"{best.viteza_scriere} MB/s" if best.viteza_scriere is not None else "N/A"
-                                self.stdout.write(
-                                    f"       Viteze SSD -> citire: {citire_str:<12} scriere: {scriere_str}"
+                    if not valid_results:
+                        self.stdout.write("-> NU GASIT - mutat in Blacklist si sters")
+                        
+                        if not dry_run:
+                            if obj.part_number:
+                                Blacklist.objects.get_or_create(
+                                    part_number=obj.part_number,
+                                    defaults={'nume': obj.nume}
                                 )
+                            obj.delete()
+                            
+                        stats["sterse"] += 1
+                    else:
+                        best = valid_results[0]
+                        self.stdout.write(f"-> {best.price:.2f} Lei ({best.site})")
 
-                            if not dry_run:
-                                update_fields = ["pret", "magazin", "url_produs", "stoc"]
-                                obj.pret       = best.price
-                                obj.magazin    = best.site
-                                obj.url_produs = best.url
-                                obj.stoc       = True
-
-                                if (
-                                    isinstance(obj, Storage)
-                                    and best.viteza_citire is not None
-                                    and hasattr(obj, 'viteza_citire')
-                                ):
-                                    obj.viteza_citire  = best.viteza_citire
-                                    obj.viteza_scriere = best.viteza_scriere
-                                    update_fields += ["viteza_citire", "viteza_scriere"]
-
-                                # ──── Poza: salveaza URL imagine daca nu exista deja ────
-                                if (
-                                    hasattr(obj, 'imagine_url')
-                                    and not obj.imagine_url
-                                    and best.poza_url
-                                ):
-                                    obj.imagine_url = best.poza_url
-                                    update_fields.append("imagine_url")
-                                    self.stdout.write(f"       URL imagine salvat: {best.poza_url[:60]}...")
-                                # ───────────────────────────────────────────────
-
-                                with transaction.atomic():
-                                    obj.save(update_fields=update_fields)
-
-                            stats["actualizate"] += 1
-
-                        _rand_delay(*DELAY_BETWEEN_PRODUCTS)
-
-                        if batch_counter % BATCH_SIZE == 0:
-                            wait = random.randint(*DELAY_BETWEEN_BATCHES)
+                        if isinstance(obj, Storage):
+                            citire_str  = f"{best.viteza_citire} MB/s"  if best.viteza_citire  is not None else "N/A"
+                            scriere_str = f"{best.viteza_scriere} MB/s" if best.viteza_scriere is not None else "N/A"
                             self.stdout.write(
-                                f"\n  [Pauza antibot {wait}s dupa {BATCH_SIZE} produse...]\n"
+                                f"       Viteze SSD -> citire: {citire_str:<12} scriere: {scriere_str}"
                             )
-                            time.sleep(wait)
 
-                    # AM STERS if to_delete: ...
+                        if not dry_run:
+                            update_fields = ["pret", "magazin", "url_produs", "stoc"]
+                            obj.pret       = best.price
+                            obj.magazin    = best.site
+                            obj.url_produs = best.url
+                            obj.stoc       = True
 
-                context.close()
+                            if (
+                                isinstance(obj, Storage)
+                                and best.viteza_citire is not None
+                                and hasattr(obj, 'viteza_citire')
+                            ):
+                                obj.viteza_citire  = best.viteza_citire
+                                obj.viteza_scriere = best.viteza_scriere
+                                update_fields += ["viteza_citire", "viteza_scriere"]
 
-            self.stdout.write("\n" + "=" * 65)
-            self.stdout.write("RAPORT FINAL")
-            self.stdout.write("=" * 65)
-            self.stdout.write(f"  Procesate:   {stats['procesate']}")
-            self.stdout.write(f"  Actualizate: {stats['actualizate']}")
-            self.stdout.write(f"  Sterse (-> Blacklist): {stats['sterse']}")
-            self.stdout.write(f"  Erori:       {stats['eroare']}")
-            self.stdout.write("=" * 65)
+                            if (
+                                hasattr(obj, 'imagine_url')
+                                and not obj.imagine_url
+                                and best.poza_url
+                            ):
+                                obj.imagine_url = best.poza_url
+                                update_fields.append("imagine_url")
+                                self.stdout.write(f"       URL imagine salvat: {best.poza_url[:60]}...")
+
+                            with transaction.atomic():
+                                obj.save(update_fields=update_fields)
+
+                        stats["actualizate"] += 1
+
+                    _rand_delay(*DELAY_BETWEEN_PRODUCTS)
+
+                    if batch_counter % BATCH_SIZE == 0:
+                        wait = random.randint(*DELAY_BETWEEN_BATCHES)
+                        self.stdout.write(
+                            f"\n  [Pauza antibot {wait}s dupa {BATCH_SIZE} produse...]\n"
+                        )
+                        time.sleep(wait)
+
+            context.close()
+
+        self.stdout.write("\n" + "=" * 65)
+        self.stdout.write("RAPORT FINAL")
+        self.stdout.write("=" * 65)
+        self.stdout.write(f"  Procesate:   {stats['procesate']}")
+        self.stdout.write(f"  Actualizate: {stats['actualizate']}")
+        self.stdout.write(f"  Sterse (-> Blacklist): {stats['sterse']}")
+        self.stdout.write(f"  Erori:       {stats['eroare']}")
+        self.stdout.write("=" * 65)
