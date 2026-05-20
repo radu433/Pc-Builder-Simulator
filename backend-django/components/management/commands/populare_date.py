@@ -330,15 +330,17 @@ def scrape_gpu(session, url):
     length   = extract_spec(soup, "Length", "Card Length")
     width    = extract_spec(soup, "Width", "Card Width")
     height   = extract_spec(soup, "Height", "Slot Width", "Thickness")
-    chipset  = extract_spec(soup, "GPU Chip", "Chipset", "Graphics Processor", "GPU")
 
-    # Detectează producătorul chipset-ului (NVIDIA, AMD, Intel)
-    chipset_brand = (
-        "NVIDIA" if any(x in name.upper() for x in ["RTX", "GTX", "QUADRO", "TITAN"]) else
-        "AMD"    if any(x in name.upper() for x in ["RX ", "RADEON"]) else
-        "Intel"  if "ARC" in name.upper() else
-        "Unknown"
-    )
+    # Detectează producătorul chipset-ului (NVIDIA, AMD, Intel) din nume
+    name_upper = name.upper()
+    if any(x in name_upper for x in ["RTX", "GTX", "GEFORCE", "NVIDIA", "TITAN", "QUADRO"]):
+        chipset_brand = "NVIDIA"
+    elif any(x in name_upper for x in ["RX ", "RADEON", "AMD"]):
+        chipset_brand = "AMD"
+    elif any(x in name_upper for x in ["ARC", "INTEL"]):
+        chipset_brand = "Intel"
+    else:
+        chipset_brand = "Unknown"
 
     # Detectează producătorul plăcii (ASUS, MSI, Gigabyte, etc.)
     card_brand = producer or (
@@ -350,12 +352,14 @@ def scrape_gpu(session, url):
         "Unknown"
     )
 
+    gpu_serie = detect_gpu_serie(name)
+
     return {
         "part_number":   mpn or ean,
         "nume":          name,
-        "brand":         card_brand,  # Producătorul plăcii
-        "serie":         detect_gpu_serie(name),
-        "model_chipset": chipset or detect_gpu_serie(name),
+        "brand":         card_brand,      # Producătorul plăcii
+        "serie":         gpu_serie,       # Seria plăcii
+        "model_chipset": gpu_serie,       # Chipset-ul corect
         "chipset_brand": chipset_brand,  # Producătorul chipset-ului
         "vram_gb":       parse_int(vram) or 0,
         "consum_tdp":    parse_int(tdp) or 0,
@@ -1127,7 +1131,13 @@ def run_import(stdout, session, model_class, list_path, product_keyword, scrape_
                 continue
 
             # ──────── LOGICA NOUA: VERIFICARE BLACKLIST ────────
-            if Blacklist.objects.filter(part_number=part_number).exists():
+            in_blacklist = False
+            if part_number and Blacklist.objects.filter(part_number=part_number).exists():
+                in_blacklist = True
+            elif Blacklist.objects.filter(nume=data["nume"]).exists():
+                in_blacklist = True
+
+            if in_blacklist:
                 stdout.write("         -> SARIT (Aflat in Blacklist)")
                 stats["sarit"] += 1
                 continue

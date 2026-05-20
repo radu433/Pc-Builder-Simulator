@@ -1,3 +1,4 @@
+
 import re
 import time
 import random
@@ -5,7 +6,7 @@ import logging
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Optional
-from urllib.parse import quote, quote_plus, urljoin
+from urllib.parse import quote, urljoin
 
 from django.core.management.base import BaseCommand
 from django.db import transaction
@@ -13,22 +14,13 @@ from django.db import transaction
 from components.models import CPU, GPU, Motherboard, RAM, PSU, Case, Cooler, Storage, Blacklist
 
 try:
-    from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
+    from scrapling.fetchers import DynamicSession
 except ImportError:
-    raise ImportError("Ruleaza: pip install playwright && playwright install chromium")
-
-try:
-    from playwright_stealth import stealth_sync
-    _STEALTH_AVAILABLE = True
-except ImportError:
-    _STEALTH_AVAILABLE = False
-
-import os
-from pathlib import Path
+    raise ImportError(
+        "Ruleaza: pip install 'scrapling[fetchers]' && scrapling install"
+    )
 
 logger = logging.getLogger(__name__)
-
-BROWSER_PROFILE_DIR = Path.home() / ".playwright-profile"
 
 # ─────────────────────────── CONFIG ──────────────────────────────────────────
 
@@ -37,50 +29,11 @@ DELAY_BETWEEN_SITES    = (1.5, 4.0)
 DELAY_BETWEEN_BATCHES  = (15, 30)
 
 MAX_RESULTS_PER_SITE = 5
-PAGE_TIMEOUT_MS      = 20_000
+PAGE_TIMEOUT_MS      = 30_000
 BATCH_SIZE           = 20
 
 ALL_MODELS = [CPU, GPU, Motherboard, RAM, PSU, Case, Cooler, Storage]
 
-# ─────────────────────────── ANTI-BOT ────────────────────────────────────────
-
-_USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-]
-
-_VIEWPORTS = [
-    {"width": 1920, "height": 1080},
-    {"width": 1440, "height": 900},
-    {"width": 1366, "height": 768},
-    {"width": 1280, "height": 800},
-]
-
-_EXTRA_HEADERS = {
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Accept-Language": "ro-RO,ro;q=0.9,en-US;q=0.8,en;q=0.7",
-    "Upgrade-Insecure-Requests": "1",
-    "Sec-Fetch-Dest": "document",
-    "Sec-Fetch-Mode": "navigate",
-    "Sec-Fetch-Site": "none",
-    "Sec-Fetch-User": "?1",
-}
-
-
-def _new_context(browser):
-    ctx = browser.new_context(
-        user_agent=random.choice(_USER_AGENTS),
-        viewport=random.choice(_VIEWPORTS),
-        locale="ro-RO",
-        timezone_id="Europe/Bucharest",
-        extra_http_headers=_EXTRA_HEADERS,
-    )
-    return ctx
 
 # ─────────────────────────── DATA CLASSES ────────────────────────────────────
 
@@ -91,9 +44,9 @@ class PriceResult:
     in_stoc:        bool
     url:            str
     title:          str           = field(default="")
-    viteza_citire:  Optional[int] = field(default=None)  # MB/s
-    viteza_scriere: Optional[int] = field(default=None)  # MB/s
-    poza_url:       Optional[str] = field(default=None)  # URL poza produs
+    viteza_citire:  Optional[int] = field(default=None)
+    viteza_scriere: Optional[int] = field(default=None)
+    poza_url:       Optional[str] = field(default=None)
 
 
 # ─────────────────────────── HELPERS ─────────────────────────────────────────
@@ -148,11 +101,13 @@ def _normalize_text(text: str) -> str:
     text = re.sub(r"[-_/]", " ", text)
     return text
 
+
 def _tokenize(text: str) -> set[str]:
     text = _normalize_text(text)
     tokens = re.findall(r"[a-z0-9]+", text)
     stopwords = {"the", "and", "with", "for", "de", "si", "cu"}
     return {t for t in tokens if len(t) > 1 and t not in stopwords}
+
 
 def _similarity(query_name: str, result_text: str) -> float:
     q_tokens = _tokenize(query_name)
@@ -188,34 +143,44 @@ def build_query(obj, site: str = None) -> str:
         ram_prefixes = {
             "altex": "Memorie desktop",
             "emag":  "Memorie",
-            "cel":    "Kit RAM",
+            "cel":   "Kit RAM",
         }
         prefix = ram_prefixes.get(site, "Kit RAM") if site else "Kit RAM"
 
     if isinstance(obj, GPU):
         brand = str(obj.brand).strip()
         name_lower = obj.nume.lower()
-        
+
+        # detectam familia chipset-ului (RTX / RX / Arc)
+        if re.search(r'\brtx\b', name_lower):
+            chipset_prefix = "RTX"
+        elif re.search(r'\brx\b', name_lower):
+            chipset_prefix = "RX"
+        elif re.search(r'\barc\b', name_lower):
+            chipset_prefix = "Arc"
+        else:
+            chipset_prefix = ""
+
         match_model = re.search(r'(\d{3,4})\s*(ti|xtx|xt|super|gre)?', name_lower)
-        
+
         if match_model:
             baza = match_model.group(1)
             sufix = match_model.group(2) if match_model.group(2) else ""
-            chipset_curat = f"{baza} {sufix}".strip().upper()
+            chipset_curat = f"{chipset_prefix} {baza} {sufix}".strip().upper()
         else:
             chipset_curat = str(obj.model_chipset).strip()
             chipset_curat = re.sub(rf"(?i)\b{brand}\b", "", chipset_curat).strip()
 
         vram_curat = f"{obj.vram_gb}GB" if obj.vram_gb else ""
-        
+
         db_has_o_sku = bool(re.search(r"(?:-|_|\b)o\d+g\b", name_lower))
         words = re.findall(r'[a-z0-9]+', name_lower)
         is_oc = "oc" in words or db_has_o_sku
         oc_str = "OC" if is_oc else ""
-        
+
         variant_words = [
             "dual", "strix", "tuf", "gaming", "ventus",
-            "eagle", "aorus", "taichi", "challenger"
+            "eagle", "aorus", "taichi", "challenger",
         ]
 
         variant = ""
@@ -228,19 +193,7 @@ def build_query(obj, site: str = None) -> str:
         return re.sub(r'\s+', ' ', query)
 
     elif isinstance(obj, CPU):
-        brand = str(obj.brand).strip()
-        name_lower = obj.nume.lower()
-        
-        match_cpu = re.search(r'(\d{4,5})\s*([a-z0-9]{1,3})?', name_lower)
-        if match_cpu:
-            baza = match_cpu.group(1)
-            sufix = match_cpu.group(2) if match_cpu.group(2) else ""
-            serie_curata = f"{baza} {sufix}".strip().upper()
-        else:
-            serie_curata = str(obj.serie).strip()
-            
-        query = f"{prefix} {brand} {serie_curata}".strip()
-        return re.sub(r'\s+', ' ', query)
+        return f"{prefix} {obj.nume}".strip()
 
     elif isinstance(obj, Motherboard):
         socket_str = obj.socket if obj.socket else ""
@@ -266,7 +219,7 @@ def build_query(obj, site: str = None) -> str:
         fluff = [
             "tempered glass", "window", "midi-tower", "mid-tower", "midi tower", "mid tower",
             "full-tower", "full tower", "mini-tower", "mini tower", "micro-atx", "e-atx", "atx",
-            "tg", "fara sursa", "cu sursa", "usb 3.0", "usb 3.1"
+            "tg", "fara sursa", "cu sursa", "usb 3.0", "usb 3.1",
         ]
         for f in fluff:
             nume_curat = nume_curat.replace(f, " ")
@@ -305,13 +258,15 @@ def build_query(obj, site: str = None) -> str:
     return re.sub(r'\s+', ' ', f"{prefix} {base}".strip())
 
 
+# ─────────────────────────── VALIDARE TITLU ──────────────────────────────────
+
 def _is_valid_title_match(title: str, obj) -> Optional[bool]:
     title_original_lower = title.lower()
     title_lower = _normalize_text(title)
     title_tokens = _tokenize(title)
 
     reference_str = _normalize_text(f"{obj.nume} {obj.brand}")
-    
+
     if isinstance(obj, GPU) and hasattr(obj, 'model_chipset') and obj.model_chipset:
         reference_str += f" {obj.model_chipset}".lower()
     elif isinstance(obj, CPU) and hasattr(obj, 'serie') and obj.serie:
@@ -330,7 +285,7 @@ def _is_valid_title_match(title: str, obj) -> Optional[bool]:
 
     db_numbers = re.findall(r"\d{3,4}", name_lower)
     title_numbers = re.findall(r"\d{3,4}", title_lower)
-    
+
     for num in db_numbers:
         if num not in title_numbers:
             return False
@@ -354,13 +309,12 @@ def _is_valid_title_match(title: str, obj) -> Optional[bool]:
         nume_original_db = obj.nume.lower()
         db_has_o_sku = bool(re.search(r"(?:-|_|\b)o\d+g\b", nume_original_db))
         db_oc = "oc" in name_tokens or db_has_o_sku
-        
+
         title_has_o_sku = bool(re.search(r"(?:-|_|\b)o\d+g\b", title_original_lower))
         title_oc = "oc" in title_tokens or title_has_o_sku
 
         if not db_oc and title_oc:
             return False
-            
         if db_oc and not title_oc:
             return False
 
@@ -372,7 +326,7 @@ def _is_valid_title_match(title: str, obj) -> Optional[bool]:
             "pulse", "nitro",
             "merc", "qick", "swift",
             "trinity", "amp",
-            "founders"
+            "founders",
         ]
 
         for variant in gpu_variants:
@@ -451,10 +405,10 @@ def _is_valid_title_match(title: str, obj) -> Optional[bool]:
 
     elif isinstance(obj, Case):
         name_lower = obj.nume.lower()
-        
+
         model_identifiers = re.findall(r'\b[a-z]*\d+[a-z]*\b', name_lower)
         for identifier in model_identifiers:
-            if identifier in ["v1", "v2", "30", "31"]: 
+            if identifier in ["v1", "v2", "30", "31"]:
                 continue
             if identifier not in title_lower:
                 return False
@@ -490,6 +444,8 @@ def _is_valid_title_match(title: str, obj) -> Optional[bool]:
     return True
 
 
+# ─────────────────────────── RAM HELPERS ─────────────────────────────────────
+
 def _parse_ram_kit_info(text: str) -> tuple[Optional[int], Optional[int]]:
     if not text:
         return None, None
@@ -514,9 +470,9 @@ def _parse_ram_kit_info(text: str) -> tuple[Optional[int], Optional[int]]:
     if match:
         return int(match.group(1)), None
 
-    if "dual kit" in normalized or "2x" in normalized and "gb" in normalized:
+    if "dual kit" in normalized or ("2x" in normalized and "gb" in normalized):
         return 2, None
-    if "quad kit" in normalized or "4x" in normalized and "gb" in normalized:
+    if "quad kit" in normalized or ("4x" in normalized and "gb" in normalized):
         return 4, None
 
     return None, None
@@ -535,22 +491,23 @@ def _matches_ram_module_count(text: str, obj: RAM) -> Optional[bool]:
     return True
 
 
-def _get_page_text(page, url: str) -> Optional[str]:
+# ─────────────────────────── PAGE HELPERS ────────────────────────────────────
+
+def _get_page_text(session, url: str) -> Optional[str]:
     try:
-        page.goto(url, timeout=PAGE_TIMEOUT_MS, wait_until="domcontentloaded")
-        return page.inner_text("body")
+        page = session.fetch(url, network_idle=True)
+        return " ".join(page.css("body *::text").getall())
     except Exception:
         return None
 
 
-def _verify_motherboard_details(page, result: PriceResult, obj: Motherboard) -> bool:
+def _verify_motherboard_details(session, result: PriceResult, obj: Motherboard) -> bool:
     if not result.url:
         return False
-
     try:
-        page.goto(result.url, timeout=PAGE_TIMEOUT_MS, wait_until="domcontentloaded")
+        page = session.fetch(result.url, network_idle=True)
         _rand_delay(0.5, 1.5)
-        page_text = page.inner_text("body").lower()
+        page_text = " ".join(page.css("body *::text").getall()).lower()
 
         if obj.chipset:
             if obj.chipset.lower() not in page_text:
@@ -560,11 +517,7 @@ def _verify_motherboard_details(page, result: PriceResult, obj: Motherboard) -> 
             if obj.format.lower() not in page_text:
                 return False
 
-        has_wifi = (
-            "wifi"     in page_text or
-            "wi-fi"    in page_text or
-            "wireless" in page_text
-        )
+        has_wifi = "wifi" in page_text or "wi-fi" in page_text or "wireless" in page_text
         if obj.are_wifi != has_wifi:
             return False
 
@@ -573,13 +526,12 @@ def _verify_motherboard_details(page, result: PriceResult, obj: Motherboard) -> 
             return False
 
         return True
-
     except Exception as e:
         logger.debug("Eroare verificare detalii MB (%s): %s", result.url, e)
         return False
 
 
-def _verify_ram_module_count(page, result: PriceResult, obj: RAM) -> bool:
+def _verify_ram_module_count(session, result: PriceResult, obj: RAM) -> bool:
     if not hasattr(obj, 'numar_module') or not obj.numar_module:
         return True
 
@@ -591,7 +543,7 @@ def _verify_ram_module_count(page, result: PriceResult, obj: RAM) -> bool:
         return True
 
     if result.url:
-        page_text = _get_page_text(page, result.url)
+        page_text = _get_page_text(session, result.url)
         if page_text:
             page_match = _matches_ram_module_count(page_text, obj)
             if page_match is False:
@@ -601,148 +553,28 @@ def _verify_ram_module_count(page, result: PriceResult, obj: RAM) -> bool:
 
     return True
 
-#─────────── URL DISCOVERY ───────────────────────────────────
 
-_SEARCH_URL_PATTERNS: dict[str, list[str]] = {
-    "emag": [
-        "https://www.emag.ro/search/{q}",
-        "https://www.emag.ro/cautare/{q}",
-    ],
-    "altex": [
-        "https://altex.ro/cauta/?q={q}",
-        "https://altex.ro/search?q={q}",
-        "https://altex.ro/cautare/{q}/",
-    ],
-    "cel": [
-        "https://www.cel.ro/cauta/{q}/",
-        "https://www.cel.ro/search/{q}/",
-        "https://www.cel.ro/cautare/?q={q}",
-    ],
-}
-
-_CARD_SELECTORS: dict[str, list[str]] = {
-    "emag":  ["div.card-item", "div.product-card", "article.product"],
-    "altex": ["div.Product", "div.product-card", "article.product"],
-    "cel":   ["div.product_data", "div.productListing-item", "article.product"],
-}
-
-_COOKIE_BTN: dict[str, str] = {
-    "emag":  "button:has-text('Sunt de acord'), button:has-text('Accept')",
-    "altex": "button:has-text('Acceptati tot'), button:has-text('Accept all'), button:has-text('Accept')",
-    "cel":   "button:has-text('Accept'), button:has-text('OK'), button:has-text('Accepta')",
-}
-
-_url_session_cache: dict[str, tuple[str, str]] = {}
-
-
-def _dismiss_cookie(page, site: str):
-    sel = _COOKIE_BTN.get(site, "")
-    if not sel:
-        return
-    try:
-        btn = page.wait_for_selector(sel, timeout=2500)
-        if btn:
-            btn.click()
-            page.wait_for_timeout(300)
-    except Exception:
-        pass
-
-
-def _navigate_results(page, site: str, query: str) -> tuple[Optional[str], Optional[str]]:
-    if site == "altex":
-        q = quote(query, safe="")
-    else:
-        q = query.replace(" ", "%20")
-
-    def _try_patterns(skip_cache=False):
-        patterns = _SEARCH_URL_PATTERNS.get(site, [])
-        selectors = _CARD_SELECTORS.get(site, [])
-
-        for url_tpl in patterns:
-            if not skip_cache and site in _url_session_cache:
-                cached_tpl, cached_sel = _url_session_cache[site]
-                if url_tpl != cached_tpl:
-                    continue
-
-            url = url_tpl.replace("{q}", q)
-            try:
-                page.goto(url, timeout=PAGE_TIMEOUT_MS, wait_until="domcontentloaded")
-                _dismiss_cookie(page, site)
-                for sel in selectors:
-                    try:
-                        page.wait_for_selector(sel, timeout=6000)
-                        logger.debug("[%s] URL ok: %s | sel: %s", site, url_tpl, sel)
-                        _url_session_cache[site] = (url_tpl, sel)
-                        return url, sel
-                    except PWTimeout:
-                        continue
-            except Exception:
-                continue
-
-        return None, None
-
-    page_url, card_sel = _try_patterns(skip_cache=False)
-    if page_url:
-        return page_url, card_sel
-
-    if site in _url_session_cache:
-        logger.debug("[%s] Pattern cacheuit nu mai functioneaza, re-detectez...", site)
-        del _url_session_cache[site]
-        page_url, card_sel = _try_patterns(skip_cache=True)
-
-    return page_url, card_sel
-
-
-# ─────────────────────────── VITEZE SSD DIN PAGINA EMAG ──────────────────────
-
-def _extract_storage_speeds_emag(page, prod_url: str) -> tuple[Optional[int], Optional[int]]:
+def _extract_storage_speeds_emag(session, prod_url: str) -> tuple[Optional[int], Optional[int]]:
     viteza_citire  = None
     viteza_scriere = None
-
     try:
-        page.goto(prod_url, timeout=PAGE_TIMEOUT_MS, wait_until="domcontentloaded")
+        page = session.fetch(prod_url, network_idle=True)
         _rand_delay(1.0, 2.5)
-
-        page_text = page.inner_text("body")
+        page_text = " ".join(page.css("::text").getall())
 
         m_citire = re.search(
             r'(?:viteza\s+(?:de\s+)?citire|read\s+speed|citire\s+secventiala)[^\d]{0,30}(\d{2,4})\s*MB',
-            page_text,
-            re.IGNORECASE,
+            page_text, re.IGNORECASE,
         )
         if m_citire:
             viteza_citire = int(m_citire.group(1))
 
         m_scriere = re.search(
             r'(?:viteza\s+(?:de\s+)?scriere|write\s+speed|scriere\s+secventiala)[^\d]{0,30}(\d{2,4})\s*MB',
-            page_text,
-            re.IGNORECASE,
+            page_text, re.IGNORECASE,
         )
         if m_scriere:
             viteza_scriere = int(m_scriere.group(1))
-
-        if not viteza_citire or not viteza_scriere:
-            rows = page.query_selector_all(
-                ".specifications-section dl dt, "
-                ".product-page-specs dt, "
-                "table.specifications td:first-child"
-            )
-            for row in rows:
-                label = row.inner_text().strip().lower()
-                value_el = row.evaluate(
-                    "el => el.nextElementSibling ? el.nextElementSibling.innerText : ''"
-                )
-                if not value_el:
-                    continue
-                m_val = re.search(r'(\d{2,4})', value_el)
-                if not m_val:
-                    continue
-                val = int(m_val.group(1))
-
-                if not viteza_citire and "citire" in label:
-                    viteza_citire = val
-                elif not viteza_scriere and "scriere" in label:
-                    viteza_scriere = val
 
     except Exception as e:
         logger.debug("Eroare extragere viteze SSD eMag (%s): %s", prod_url, e)
@@ -752,213 +584,273 @@ def _extract_storage_speeds_emag(page, prod_url: str) -> tuple[Optional[int], Op
 
 # ─────────────────────────── SITE SCRAPERS ───────────────────────────────────
 
-def scrape_emag(page, query: str) -> list[PriceResult]:
+def _card_text(card) -> str:
+    return " ".join(card.css("::text").getall()).lower()
+
+
+def scrape_emag(session, query: str) -> list[PriceResult]:
+    """
+    Selectori verificati mai 2025 din HTML real emag.ro:
+    - Card:   div.card-item
+    - Pret:   .product-new-price::text (int, ex "685" sau "1.259") +
+              .product-new-price sup::text (zecimale, ex "90")
+    - Titlu:  a.card-v2-title::text
+    - URL:    a.card-v2-title::attr(href)
+    - Imagine: .card-v2-thumb-inner img::attr(src)
+    """
     results = []
     try:
-        url, card_sel = _navigate_results(page, "emag", query)
-        if not url:
-            logger.debug("eMag: niciun URL pattern nu a functionat pentru: %s", query)
-            return results
+        url = f"https://www.emag.ro/search/{quote(query, safe='')}"
+        page = session.fetch(url, network_idle=True)
 
-        cards = page.query_selector_all(card_sel)[:MAX_RESULTS_PER_SITE]
+        cards = page.css("div.card-item")[:MAX_RESULTS_PER_SITE]
         for card in cards:
             try:
-                price_el = card.query_selector(".product-new-price")
-                if not price_el:
+                # Pret: nodul text direct al .product-new-price = partea intreaga
+                # (ex: "685" sau "1.259" cu punct separator mii)
+                # Zecimalele sunt in <sup>: ex "90"
+                int_text = card.css(".product-new-price::text").get("").strip()
+                dec_text = card.css(".product-new-price sup::text").get("").strip()
+
+                int_part = re.sub(r"\D", "", int_text)
+                dec_part = re.sub(r"\D", "", dec_text)
+
+                if int_part and dec_part:
+                    price = Decimal(f"{int_part}.{dec_part[:2].ljust(2, '0')}")
+                elif int_part:
+                    price = Decimal(int_part)
+                else:
                     continue
 
-                raw_price_text = price_el.inner_text().strip()
-                price = None
-                if raw_price_text:
-                    digits = re.sub(r"[^0-9]", "", raw_price_text)
-                    if len(digits) >= 3:
-                        # eMag price card includes two decimal digits as cents.
-                        price = Decimal(digits[:-2] + "." + digits[-2:])
-                if not price:
-                    price = _clean_price(raw_price_text)
-                if not price:
-                    continue
+                ct = _card_text(card)
+                in_stoc = "stoc epuizat" not in ct and "indisponibil" not in ct
 
-                avail_id = card.get_attribute("data-availability-id")
-                in_stoc = (avail_id == "3") if avail_id else True
+                title = card.css(".card-v2-title::text").get("").strip()
 
-                title    = card.get_attribute("data-name") or ""
-                prod_url = card.get_attribute("data-url") or ""
-
-                if not title or not prod_url:
-                    link_el = card.query_selector("a.js-product-url, a[aria-label][href]")
-                    if link_el:
-                        if not title:
-                            title = link_el.get_attribute("aria-label") or ""
-                        if not prod_url:
-                            prod_url = link_el.get_attribute("href") or url
-
+                prod_url = card.css(".card-v2-title::attr(href)").get("").strip()
                 if prod_url and not prod_url.startswith("http"):
                     prod_url = "https://www.emag.ro" + prod_url
 
-                poza_url = None
-                try:
-                    img_el = card.query_selector("img")
-                    if img_el:
-                        src = img_el.get_attribute("data-src") or img_el.get_attribute("src") or ""
-                        poza_url = re.sub(r"/res_\d+c\d+f\d+", "", src) if src else None
-                except Exception:
-                    pass
+                img_src = card.css(".card-v2-thumb-inner img::attr(src)").get("")
+                poza_url = re.sub(r"\?.*", "", img_src) if img_src else None
 
                 results.append(PriceResult("eMag", price, in_stoc, prod_url or url, title, poza_url=poza_url))
             except Exception:
                 continue
-    except PWTimeout:
-        logger.debug("eMag timeout pentru: %s", query)
     except Exception as e:
         logger.debug("eMag eroare: %s", e)
     return results
 
 
-def scrape_altex(page, query: str) -> list[PriceResult]:
+def scrape_altex(session, query: str) -> list[PriceResult]:
+    """
+    Selectori verificati mai 2025 din HTML real altex.ro:
+    - Card:   div.Product
+    - Pret:   div.text-red-brand > span.Price-int (integer) + sup (zecimale)
+              ATENTIE: produsele cu reducere au doua span.Price-int — cel taiat (vechi)
+              si cel din div.text-red-brand (pretul real curent). Luam DOAR pe cel din
+              div.text-red-brand, altfel luam pretul gresit.
+    - Titlu:  span.Product-name
+    - URL:    a[href*='/cpd/'] (ambele ancore de pe card duc la acelasi produs)
+    - Imagine: div.Product-photoWrapper img
+    - Stoc:   div.text-green = "in stoc" | altfel text-check
+    """
     results = []
     try:
         url = f"https://altex.ro/cauta/?q={quote(query, safe='')}"
-        page.goto(url, timeout=PAGE_TIMEOUT_MS, wait_until="domcontentloaded")
-        try:
-            btn = page.wait_for_selector("button:has-text('Acceptati tot')", timeout=3000)
-            if btn:
-                btn.click()
-                page.wait_for_timeout(300)
-        except Exception:
-            pass
-        page.wait_for_selector("div.Product", timeout=15000)
+        page = session.fetch(url, network_idle=True)
 
-        cards = page.query_selector_all("div.Product")[:MAX_RESULTS_PER_SITE]
+        cards = page.css("div.Product")[:MAX_RESULTS_PER_SITE]
         for card in cards:
             try:
-                price_int_el = card.query_selector("span.Price-int")
-                if price_int_el:
-                    raw_int = price_int_el.inner_text() or ""
-                    raw_dec = price_int_el.evaluate(
-                        "el => el.parentElement?.querySelector('sup')?.innerText || ''"
-                    ) or ""
-                    int_part = re.sub(r"\D", "", raw_int)
-                    dec_part = re.sub(r"\D", "", raw_dec)
-                    if int_part and dec_part:
-                        if len(dec_part) > 2:
-                            dec_part = dec_part[:2]
-                        price = Decimal(f"{int_part}.{dec_part.ljust(2, '0')}")
-                    elif int_part:
-                        price = _clean_price(int_part)
-                    else:
-                        price = None
+                # Pretul REAL este intotdeauna in div.text-red-brand.
+                # Pretul taiat (vechi) este in div.has-line-through — il ignoram.
+                red_div = card.css("div.text-red-brand")
+                if not red_div:
+                    continue
+
+                raw_int = red_div.css("span.Price-int::text").get("").strip()
+                raw_dec = red_div.css("sup::text").get("").strip()
+
+                # raw_int poate fi "913" sau "1.259" (punct = separator mii)
+                # raw_dec este ",49" sau ",99" (virgula prefix)
+                int_part = re.sub(r"\D", "", raw_int)   # "1.259" → "1259"
+                dec_part = re.sub(r"\D", "", raw_dec)   # ",99"  → "99"
+
+                if int_part and dec_part:
+                    price = Decimal(f"{int_part}.{dec_part[:2].ljust(2, '0')}")
+                elif int_part:
+                    price = _clean_price(int_part)
                 else:
-                    price = None
+                    continue
+
                 if not price:
                     continue
 
-                card_text = card.inner_text().lower()
-                in_stoc = "stoc epuizat" not in card_text and "indisponibil" not in card_text
+                ct = _card_text(card)
+                in_stoc = "stoc epuizat" not in ct and "indisponibil" not in ct
 
-                title    = ""
-                prod_url = url
-                title_el = card.query_selector("span.Product-name")
-                if title_el:
-                    title = title_el.inner_text().strip()
+                title = card.css("span.Product-name::text").get("").strip()
 
-                link_el = card.query_selector("a[title][href]")
-                if link_el:
-                    if not title:
-                        title = link_el.get_attribute("title") or ""
-                    prod_url = link_el.get_attribute("href") or url
+                href = card.css("a[href*='/cpd/']::attr(href)").get("").strip()
+                prod_url = urljoin("https://altex.ro", href) if href else url
 
-                if prod_url:
-                    prod_url = urljoin("https://altex.ro", prod_url)
-                else:
-                    prod_url = url
-
-                poza_url = None
-                try:
-                    img_el = card.query_selector("img")
-                    if img_el:
-                        poza_url = img_el.get_attribute("src") or img_el.get_attribute("data-src") or None
-                except Exception:
-                    pass
+                poza_url = (
+                    card.css("div.Product-photoWrapper img::attr(src)").get("")
+                    or card.css("img::attr(src)").get("")
+                ) or None
 
                 results.append(PriceResult("Altex", price, in_stoc, prod_url, title, poza_url=poza_url))
             except Exception:
                 continue
-    except PWTimeout:
-        logger.debug("Altex timeout pentru: %s", query)
     except Exception as e:
         logger.debug("Altex eroare: %s", e)
     return results
 
 
-def scrape_cel(page, query: str) -> list[PriceResult]:
+def scrape_cel(session, query: str) -> list[PriceResult]:
+    """
+    Selectori verificati mai 2025 din HTML real cel.ro:
+    - Card:    div.product_data
+    - Pret:    span.price::attr(content)  (ex: "819" — valoare intreaga, fara "lei")
+    - Titlu:   h2.productTitle a span::text
+    - URL:     div.productListing-poza a::attr(href)  (URL complet)
+    - Imagine: div.productListing-poza img::attr(src)
+    - Stoc:    strong.info_stoc cu text "In stoc" sau "In stoc furnizor"
+    """
     results = []
     try:
-        url = f"https://www.cel.ro/cauta/{query.replace(' ', '+')}/"
-        page.goto(url, timeout=PAGE_TIMEOUT_MS, wait_until="domcontentloaded")
-        try:
-            btn = page.wait_for_selector("button:has-text('Accept'), button:has-text('OK'), button:has-text('Accepta')", timeout=3000)
-            if btn:
-                btn.click()
-                page.wait_for_timeout(300)
-        except Exception:
-            pass
-        page.wait_for_selector("div.product_data", timeout=15000)
+        url = f"https://www.cel.ro/cauta/{quote(query, safe='')}/"
+        page = session.fetch(url, network_idle=True)
 
-        cards = page.query_selector_all("div.product_data")[:MAX_RESULTS_PER_SITE]
+        cards = page.css("div.product_data")[:MAX_RESULTS_PER_SITE]
         for card in cards:
             try:
-                price_el = card.query_selector("span.price[content]")
-                if price_el:
-                    raw = price_el.get_attribute("content") or price_el.inner_text()
-                else:
-                    price_el = card.query_selector("div.pret_n")
-                    if not price_el:
-                        continue
-                    raw = price_el.inner_text()
+                raw = card.css("span.price::attr(content)").get("").strip()
+                if not raw:
+                    raw = card.css("div.pret_n::text").get("").strip()
                 price = _clean_price(raw)
                 if not price:
                     continue
 
-                card_text = card.inner_text().lower()
-                in_stoc = "in stoc" in card_text or "disponibil" in card_text
+                ct = _card_text(card)
+                in_stoc = "in stoc" in ct or "disponibil" in ct
 
-                title = ""
-                title_el = card.query_selector("h2.productTitle")
-                if title_el:
-                    title = title_el.inner_text().strip()
+                title = (
+                    card.css("h2.productTitle a span::text").get("")
+                    or card.css("img[alt]::attr(alt)").get("")
+                ).strip()
 
-                if not title:
-                    img_el = card.query_selector("img[alt]")
-                    if img_el:
-                        title = img_el.get_attribute("alt") or ""
-
-                link_el = card.query_selector(".productListing-poza a[href], a[href]")
-                prod_url = link_el.get_attribute("href") if link_el else url
+                prod_url = (
+                    card.css(".productListing-poza a::attr(href)").get("")
+                    or card.css("a.product_link::attr(href)").get("")
+                ).strip()
                 if prod_url and not prod_url.startswith("http"):
                     prod_url = "https://www.cel.ro" + prod_url
 
-                poza_url = None
-                try:
-                    a_img_el = card.query_selector("a.thumbPreview, a[data-class='Big'], .productListing-poza a")
-                    if a_img_el:
-                        poza_url = a_img_el.get_attribute("href")
-                    if not poza_url:
-                        img_el = card.query_selector("img#main-product-image, img.acxmf_poza, img")
-                        if img_el:
-                            poza_url = img_el.get_attribute("data-src") or img_el.get_attribute("src") or None
-                    if poza_url and poza_url.startswith("/"):
-                        poza_url = "https://www.cel.ro" + poza_url
-                except Exception:
-                    pass
+                poza_url = card.css(".productListing-poza img::attr(src)").get("") or None
 
                 results.append(PriceResult("CEL", price, in_stoc, prod_url or url, title, poza_url=poza_url))
             except Exception:
                 continue
-    except PWTimeout:
-        logger.debug("CEL timeout pentru: %s", query)
     except Exception as e:
         logger.debug("CEL eroare: %s", e)
+    return results
+
+
+def scrape_pcgarage(session, query: str) -> list[PriceResult]:
+    """
+    Selectori verificati mai 2025 din HTML real pcgarage.ro:
+    - Card:   div.product_box_parent
+    - Pret:   .pb-price .price::text  (ex: "2.699,99 RON" → _clean_price)
+              Pretul vechi (taiat) este in .pbe-price-old — il ignoram.
+    - Titlu:  .product_box_name h2 a::text
+    - URL:    .product_box_name h2 a::attr(href)
+    - Imagine: .product_box_image img::attr(src)
+    - Stoc:   .product_box_availability::attr(class) contine "instock"
+    """
+    results = []
+    try:
+        url = f"https://www.pcgarage.ro/search/?search_query={quote(query, safe='')}"
+        page = session.fetch(url, network_idle=True)
+
+        cards = page.css("div.product_box_parent")[:MAX_RESULTS_PER_SITE]
+
+        for card in cards:
+            try:
+                raw = card.css(".pb-price .price::text").get("").strip()
+                price = _clean_price(raw)
+                if not price:
+                    continue
+
+                avail_class = card.css(".product_box_availability::attr(class)").get("").lower()
+                if avail_class:
+                    in_stoc = "instock" in avail_class
+                else:
+                    ct = _card_text(card)
+                    in_stoc = "stoc epuizat" not in ct and "indisponibil" not in ct
+
+                title = card.css(".product_box_name h2 a::text").get("").strip()
+
+                href = card.css(".product_box_name h2 a::attr(href)").get("").strip()
+                prod_url = href or url
+                if prod_url and not prod_url.startswith("http"):
+                    prod_url = "https://www.pcgarage.ro" + prod_url
+
+                poza_url = card.css(".product_box_image img::attr(src)").get("") or None
+
+                results.append(PriceResult("PCGarage", price, in_stoc, prod_url, title, poza_url=poza_url))
+            except Exception:
+                continue
+    except Exception as e:
+        logger.debug("PCGarage eroare: %s", e)
+    return results
+
+
+def scrape_vexio(session, query: str) -> list[PriceResult]:
+    """
+    Selectori verificati mai 2025 din HTML real vexio.ro:
+    - Card:    article.grid-group-item
+    - Pret:    div.price strong::text  (ex: "3.299,99 lei" → _clean_price)
+               ATENTIE: produsele cu discount au si <del> cu pretul vechi —
+               div.price strong ia INTOTDEAUNA pretul curent (nu <del>).
+    - Titlu:   h2.name a::text
+    - URL:     h2.name a::attr(href)  (URL complet)
+    - Imagine: div.image img::attr(src)
+    - Stoc:    .availability::attr(class) contine "instock"
+    """
+    results = []
+    try:
+        url = f"https://www.vexio.ro/cauta/{quote(query, safe='')}/"
+        page = session.fetch(url, network_idle=True)
+
+        cards = page.css("article.grid-group-item")[:MAX_RESULTS_PER_SITE]
+
+        for card in cards:
+            try:
+                raw = card.css("div.price strong::text").get("").strip()
+                price = _clean_price(raw)
+                if not price:
+                    continue
+
+                avail_class = card.css(".availability::attr(class)").get("").lower()
+                if avail_class:
+                    in_stoc = "instock" in avail_class
+                else:
+                    ct = _card_text(card)
+                    in_stoc = "stoc epuizat" not in ct and "indisponibil" not in ct
+
+                title = card.css("h2.name a::text").get("").strip()
+                prod_url = card.css("h2.name a::attr(href)").get("").strip()
+                if prod_url and not prod_url.startswith("http"):
+                    prod_url = "https://www.vexio.ro" + prod_url
+                poza_url = card.css("div.image img::attr(src)").get("") or None
+
+                results.append(PriceResult("Vexio", price, in_stoc, prod_url or url, title, poza_url=poza_url))
+            except Exception:
+                continue
+    except Exception as e:
+        logger.debug("Vexio eroare: %s", e)
     return results
 
 
@@ -966,13 +858,15 @@ SITE_SCRAPERS = [
     scrape_emag,
     scrape_altex,
     scrape_cel,
+    scrape_pcgarage,
+    scrape_vexio,
 ]
 
 
 # ─────────────────────────── MAIN SEARCH LOGIC ───────────────────────────────
 
 def find_all_valid_prices(
-    page,
+    session,
     obj,
     min_similarity: float = 0.55,
     verbose: bool = False,
@@ -983,10 +877,10 @@ def find_all_valid_prices(
         site_name = scrape_fn.__name__.replace("scrape_", "")
         query = build_query(obj, site_name)
         if verbose:
-            print(f"  Query for {site_name}: '{query}'")
+            print(f"  [{site_name}] query: '{query}'")
 
         try:
-            site_results = scrape_fn(page, query)
+            site_results = scrape_fn(session, query)
 
             if verbose and not site_results:
                 print(f"    [{site_name}] 0 rezultate (timeout sau selector negasit)")
@@ -1002,7 +896,7 @@ def find_all_valid_prices(
 
                 if sim < min_similarity:
                     if verbose:
-                        print(f"    [{site_name}] RESPINS sim={sim:.2f}<{min_similarity}: {r.title[:60] or r.url[:60]}")
+                        print(f"    [{site_name}] RESPINS sim={sim:.2f}<{min_similarity}: {match_text[:60]}")
                     continue
 
                 match_result = _is_valid_title_match(match_text, obj)
@@ -1012,28 +906,29 @@ def find_all_valid_prices(
                     continue
 
                 if match_result is None and isinstance(obj, Motherboard):
-                    if not _verify_motherboard_details(page, r, obj):
+                    if not _verify_motherboard_details(session, r, obj):
                         if verbose:
                             print(f"    [{site_name}] RESPINS page details: {r.title[:60]}")
                         continue
 
-                if isinstance(obj, RAM) and not _verify_ram_module_count(page, r, obj):
+                if isinstance(obj, RAM) and not _verify_ram_module_count(session, r, obj):
                     if verbose:
                         print(f"    [{site_name}] RESPINS module count: {r.title[:60]}")
                     continue
 
                 if isinstance(obj, Storage) and r.site == "eMag" and r.url:
                     if verbose:
-                        print(f"    [eMag] Extrag viteze SSD de pe pagina produsului...")
-                    viteza_citire, viteza_scriere = _extract_storage_speeds_emag(page, r.url)
-                    r.viteza_citire  = viteza_citire
-                    r.viteza_scriere = viteza_scriere
+                        print(f"    [eMag] Extrag viteze SSD...")
+                    vc, vs = _extract_storage_speeds_emag(session, r.url)
+                    r.viteza_citire  = vc
+                    r.viteza_scriere = vs
                     if verbose:
-                        print(f"    [eMag] Citire: {viteza_citire} MB/s | Scriere: {viteza_scriere} MB/s")
+                        print(f"    [eMag] Citire: {vc} MB/s | Scriere: {vs} MB/s")
 
                 if verbose:
                     print(f"    [{site_name}] OK {r.price:.2f} Lei | {r.title[:60]}")
                 all_valid.append(r)
+
         except Exception as e:
             logger.debug("Eroare la %s pentru '%s': %s", scrape_fn.__name__, obj.nume, e)
             if verbose:
@@ -1048,7 +943,7 @@ def find_all_valid_prices(
 # ─────────────────────────── COMMAND ─────────────────────────────────────────
 
 class Command(BaseCommand):
-    help = "Updateaza preturile tuturor componentelor din DB de pe eMag/Altex/CEL"
+    help = "Updateaza preturile tuturor componentelor din DB de pe eMag/Altex/CEL/PCGarage/Vexio"
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -1092,42 +987,22 @@ class Command(BaseCommand):
         }
 
         self.stdout.write("=" * 65)
-        self.stdout.write("Price Updater - eMag / Altex / CEL")
+        self.stdout.write("Price Updater - eMag / Altex / CEL / PCGarage / Vexio")
         if dry_run:
             self.stdout.write("  *** DRY RUN - nu se scrie in DB ***")
         self.stdout.write("=" * 65)
 
-        with sync_playwright() as pw:
-            BROWSER_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
-            context = pw.chromium.launch_persistent_context(
-                user_data_dir=str(BROWSER_PROFILE_DIR),
-                headless=headless,
-                args=[
-                    "--disable-blink-features=AutomationControlled",
-                    "--no-sandbox",
-                    "--disable-dev-shm-usage",
-                ],
-                user_agent=random.choice(_USER_AGENTS),
-                viewport=random.choice(_VIEWPORTS),
-                locale="ro-RO",
-                timezone_id="Europe/Bucharest",
-                extra_http_headers=_EXTRA_HEADERS,
-            )
-            page = context.new_page()
-            if _STEALTH_AVAILABLE:
-                stealth_sync(page)
-            
-            models_to_process = ALL_MODELS
-            if only_model:
-                models_to_process = [
-                    m for m in ALL_MODELS
-                    if m.__name__.lower() == only_model.lower()
-                ]
-                if not models_to_process:
-                    self.stderr.write(f"Model necunoscut: {only_model}")
-                    context.close()
-                    return
+        models_to_process = ALL_MODELS
+        if only_model:
+            models_to_process = [
+                m for m in ALL_MODELS
+                if m.__name__.lower() == only_model.lower()
+            ]
+            if not models_to_process:
+                self.stderr.write(f"Model necunoscut: {only_model}")
+                return
 
+        with DynamicSession(headless=headless) as session:
             batch_counter = 0
 
             for model_class in models_to_process:
@@ -1146,7 +1021,7 @@ class Command(BaseCommand):
                     )
 
                     try:
-                        valid_results = find_all_valid_prices(page, obj, verbose=verbose)
+                        valid_results = find_all_valid_prices(session, obj, verbose=verbose)
                     except Exception as e:
                         self.stdout.write(f"EXCEPTIE: {e}")
                         stats["eroare"] += 1
@@ -1154,15 +1029,20 @@ class Command(BaseCommand):
 
                     if not valid_results:
                         self.stdout.write("-> NU GASIT - mutat in Blacklist si sters")
-                        
+
                         if not dry_run:
                             if obj.part_number:
                                 Blacklist.objects.get_or_create(
                                     part_number=obj.part_number,
-                                    defaults={'nume': obj.nume}
+                                    defaults={'nume': obj.nume},
+                                )
+                            else:
+                                Blacklist.objects.get_or_create(
+                                    nume=obj.nume,
+                                    defaults={'part_number': None},
                                 )
                             obj.delete()
-                            
+
                         stats["sterse"] += 1
                     else:
                         best = valid_results[0]
@@ -1213,8 +1093,6 @@ class Command(BaseCommand):
                             f"\n  [Pauza antibot {wait}s dupa {BATCH_SIZE} produse...]\n"
                         )
                         time.sleep(wait)
-
-            context.close()
 
         self.stdout.write("\n" + "=" * 65)
         self.stdout.write("RAPORT FINAL")
