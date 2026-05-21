@@ -1176,15 +1176,37 @@ class Command(BaseCommand):
         (Storage,     "/us/components/ssds",          "/us/product/ssd/",          scrape_storage),
     ]
 
+    def add_arguments(self, parser):
+        parser.add_argument(
+            '--model',
+            type=str,
+            default=None,
+            help="Proceseaza doar modele specifice separate prin virgula (ex: RAM,PSU)"
+        )
+
     def handle(self, *args, **options):
         session = get_session()
         all_stats = {}
+
+        modele_dorite = options.get("model")
+        componente_de_rulat = self.COMPONENTS
+
+        if modele_dorite:
+            # Separam dupa virgula si facem totul uppercase (ex: "ram,psu" -> ["RAM", "PSU"])
+            lista_dorite = [m.strip().upper() for m in modele_dorite.split(',')]
+            componente_de_rulat = [
+                comp for comp in self.COMPONENTS
+                if comp[0].__name__.upper() in lista_dorite
+            ]
+            if not componente_de_rulat:
+                self.stderr.write(f"Eroare: Niciun model gasit pentru '{modele_dorite}'")
+                return
 
         self.stdout.write("=" * 60)
         self.stdout.write("Scraper ALL - pc-kombo.com")
         self.stdout.write("=" * 60)
 
-        for idx, (model_class, list_path, keyword, scrape_fn) in enumerate(self.COMPONENTS):
+        for idx, (model_class, list_path, keyword, scrape_fn) in enumerate(componente_de_rulat):
             if idx > 0:
                 wait = random.randint(10, 18)
                 self.stdout.write(f"\nPauza {wait}s intre componente...")

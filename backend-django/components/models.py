@@ -58,6 +58,7 @@ class Motherboard(ComponentaBase):
 
 class RAM(ComponentaBase):
     capacitate_totala_gb = models.IntegerField()
+    capacitate_modul_gb = models.IntegerField(default=0)  # ex: 8 pentru un kit 2x8GB
     numar_module = models.IntegerField(default=2)
     tip_memorie = models.CharField(max_length=50)
     frecventa_mhz = models.IntegerField()
@@ -71,6 +72,7 @@ class PSU(ComponentaBase):
     putere_w = models.IntegerField()
     certificare = models.CharField(max_length=150)
     este_modulara = models.CharField(max_length=10, default="Non")
+    format = models.CharField(max_length=50, default="ATX")  # ex: ATX, SFX, SFX-L
     lungime_mm = models.IntegerField(default=150)
 
     def __str__(self):
