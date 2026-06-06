@@ -180,5 +180,17 @@ class Blacklist(models.Model):
      part_number = models.CharField(max_length=100, unique=True, null=True, blank=True)
      nume = models.CharField(max_length=300)
 
+class BuildAnalysisCache(models.Model):
+    cache_key=models.CharField(max_length=32, unique=True,db_index=True)
+    cpu = models.ForeignKey(CPU, on_delete=models.CASCADE)
+    gpu = models.ForeignKey(GPU, on_delete=models.CASCADE)
+    ram = models.ForeignKey(RAM, on_delete=models.CASCADE, null=True, blank=True)
+    psu = models.ForeignKey(PSU, on_delete=models.CASCADE, null=True, blank=True)
+    fps_data = models.JSONField(default=dict)
+    bottleneck_data = models.JSONField(default=dict)
+    analiza_text = models.TextField(blank=True)
+    generated_image_path = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
 def __str__(self):
         return f"{self.nume} - {self.user.username}"

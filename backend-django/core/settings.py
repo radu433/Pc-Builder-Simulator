@@ -166,3 +166,4 @@ SIMPLE_JWT = {
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),    # Token-ul de refresh e valabil 7 zile
     'AUTH_HEADER_TYPES': ('Bearer',),               # Standardul folosit in industrie
 }
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")

@@ -28,7 +28,7 @@ DELAY_BETWEEN_PRODUCTS = (3.0, 7.0)
 DELAY_BETWEEN_SITES    = (1.5, 4.0)
 DELAY_BETWEEN_BATCHES  = (15, 30)
 
-MAX_RESULTS_PER_SITE = 5
+MAX_RESULTS_PER_SITE = 15
 PAGE_TIMEOUT_MS      = 30_000
 BATCH_SIZE           = 20
 
@@ -190,6 +190,13 @@ def build_query(obj, site: str = None) -> str:
                 break
 
         query = f"{prefix} {brand} {chipset_curat} {vram_curat} {variant} {oc_str}".strip()
+        
+        # Stergem O-ul de dinainte de memorie si adaugam OC la final daca e nevoie
+        if re.search(r"(?i)([-_])o(\d+g)\b", query):
+            query = re.sub(r"(?i)([-_])o(\d+g)\b", r"\1\2", query)
+            if not re.search(r"(?i)\boc\b", query):
+                query += " OC"
+                
         return re.sub(r'\s+', ' ', query)
 
     elif isinstance(obj, CPU):
@@ -517,13 +524,19 @@ def _verify_motherboard_details(session, result: PriceResult, obj: Motherboard) 
             if obj.format.lower() not in page_text:
                 return False
 
-        has_wifi = "wifi" in page_text or "wi-fi" in page_text or "wireless" in page_text
-        if obj.are_wifi != has_wifi:
-            return False
+        # Verificam WiFi doar cand DB zice ca placa ARE WiFi —
+        # confirmam ca specificatiile paginii mentioneaza WiFi.
+        # Daca DB zice ca NU are WiFi, nu respingem pe baza paginii
+        # (cuvantul "wifi" apare des in produse recomandate, ads, footer).
+        # Cazul "DB fara WiFi + titlu cu WiFi" e deja prins de _is_valid_title_match.
+        if obj.are_wifi:
+            has_wifi = "wifi" in page_text or "wi-fi" in page_text or "wireless" in page_text
+            if not has_wifi:
+                return False
 
-        has_bluetooth = "bluetooth" in page_text
-        if obj.are_bluetooth != has_bluetooth:
-            return False
+        # Nu mai verificam Bluetooth pe pagina intreaga —
+        # apare prea des in texte irelevante (related products, footer).
+        # Bluetooth coreleaza aproape intotdeauna cu WiFi pe placi de baza.
 
         return True
     except Exception as e:
@@ -642,72 +655,6 @@ def scrape_emag(session, query: str) -> list[PriceResult]:
     return results
 
 
-def scrape_altex(session, query: str) -> list[PriceResult]:
-    """
-    Selectori verificati mai 2025 din HTML real altex.ro:
-    - Card:   div.Product
-    - Pret:   div.text-red-brand > span.Price-int (integer) + sup (zecimale)
-              ATENTIE: produsele cu reducere au doua span.Price-int — cel taiat (vechi)
-              si cel din div.text-red-brand (pretul real curent). Luam DOAR pe cel din
-              div.text-red-brand, altfel luam pretul gresit.
-    - Titlu:  span.Product-name
-    - URL:    a[href*='/cpd/'] (ambele ancore de pe card duc la acelasi produs)
-    - Imagine: div.Product-photoWrapper img
-    - Stoc:   div.text-green = "in stoc" | altfel text-check
-    """
-    results = []
-    try:
-        url = f"https://altex.ro/cauta/?q={quote(query, safe='')}"
-        page = session.fetch(url, network_idle=True)
-
-        cards = page.css("div.Product")[:MAX_RESULTS_PER_SITE]
-        for card in cards:
-            try:
-                # Pretul REAL este intotdeauna in div.text-red-brand.
-                # Pretul taiat (vechi) este in div.has-line-through — il ignoram.
-                red_div = card.css("div.text-red-brand")
-                if not red_div:
-                    continue
-
-                raw_int = red_div.css("span.Price-int::text").get("").strip()
-                raw_dec = red_div.css("sup::text").get("").strip()
-
-                # raw_int poate fi "913" sau "1.259" (punct = separator mii)
-                # raw_dec este ",49" sau ",99" (virgula prefix)
-                int_part = re.sub(r"\D", "", raw_int)   # "1.259" → "1259"
-                dec_part = re.sub(r"\D", "", raw_dec)   # ",99"  → "99"
-
-                if int_part and dec_part:
-                    price = Decimal(f"{int_part}.{dec_part[:2].ljust(2, '0')}")
-                elif int_part:
-                    price = _clean_price(int_part)
-                else:
-                    continue
-
-                if not price:
-                    continue
-
-                ct = _card_text(card)
-                in_stoc = "stoc epuizat" not in ct and "indisponibil" not in ct
-
-                title = card.css("span.Product-name::text").get("").strip()
-
-                href = card.css("a[href*='/cpd/']::attr(href)").get("").strip()
-                prod_url = urljoin("https://altex.ro", href) if href else url
-
-                poza_url = (
-                    card.css("div.Product-photoWrapper img::attr(src)").get("")
-                    or card.css("img::attr(src)").get("")
-                ) or None
-
-                results.append(PriceResult("Altex", price, in_stoc, prod_url, title, poza_url=poza_url))
-            except Exception:
-                continue
-    except Exception as e:
-        logger.debug("Altex eroare: %s", e)
-    return results
-
-
 def scrape_cel(session, query: str) -> list[PriceResult]:
     """
     Selectori verificati mai 2025 din HTML real cel.ro:
@@ -758,108 +705,9 @@ def scrape_cel(session, query: str) -> list[PriceResult]:
     return results
 
 
-def scrape_pcgarage(session, query: str) -> list[PriceResult]:
-    """
-    Selectori verificati mai 2025 din HTML real pcgarage.ro:
-    - Card:   div.product_box_parent
-    - Pret:   .pb-price .price::text  (ex: "2.699,99 RON" → _clean_price)
-              Pretul vechi (taiat) este in .pbe-price-old — il ignoram.
-    - Titlu:  .product_box_name h2 a::text
-    - URL:    .product_box_name h2 a::attr(href)
-    - Imagine: .product_box_image img::attr(src)
-    - Stoc:   .product_box_availability::attr(class) contine "instock"
-    """
-    results = []
-    try:
-        url = f"https://www.pcgarage.ro/search/?search_query={quote(query, safe='')}"
-        page = session.fetch(url, network_idle=True)
-
-        cards = page.css("div.product_box_parent")[:MAX_RESULTS_PER_SITE]
-
-        for card in cards:
-            try:
-                raw = card.css(".pb-price .price::text").get("").strip()
-                price = _clean_price(raw)
-                if not price:
-                    continue
-
-                avail_class = card.css(".product_box_availability::attr(class)").get("").lower()
-                if avail_class:
-                    in_stoc = "instock" in avail_class
-                else:
-                    ct = _card_text(card)
-                    in_stoc = "stoc epuizat" not in ct and "indisponibil" not in ct
-
-                title = card.css(".product_box_name h2 a::text").get("").strip()
-
-                href = card.css(".product_box_name h2 a::attr(href)").get("").strip()
-                prod_url = href or url
-                if prod_url and not prod_url.startswith("http"):
-                    prod_url = "https://www.pcgarage.ro" + prod_url
-
-                poza_url = card.css(".product_box_image img::attr(src)").get("") or None
-
-                results.append(PriceResult("PCGarage", price, in_stoc, prod_url, title, poza_url=poza_url))
-            except Exception:
-                continue
-    except Exception as e:
-        logger.debug("PCGarage eroare: %s", e)
-    return results
-
-
-def scrape_vexio(session, query: str) -> list[PriceResult]:
-    """
-    Selectori verificati mai 2025 din HTML real vexio.ro:
-    - Card:    article.grid-group-item
-    - Pret:    div.price strong::text  (ex: "3.299,99 lei" → _clean_price)
-               ATENTIE: produsele cu discount au si <del> cu pretul vechi —
-               div.price strong ia INTOTDEAUNA pretul curent (nu <del>).
-    - Titlu:   h2.name a::text
-    - URL:     h2.name a::attr(href)  (URL complet)
-    - Imagine: div.image img::attr(src)
-    - Stoc:    .availability::attr(class) contine "instock"
-    """
-    results = []
-    try:
-        url = f"https://www.vexio.ro/cauta/{quote(query, safe='')}/"
-        page = session.fetch(url, network_idle=True)
-
-        cards = page.css("article.grid-group-item")[:MAX_RESULTS_PER_SITE]
-
-        for card in cards:
-            try:
-                raw = card.css("div.price strong::text").get("").strip()
-                price = _clean_price(raw)
-                if not price:
-                    continue
-
-                avail_class = card.css(".availability::attr(class)").get("").lower()
-                if avail_class:
-                    in_stoc = "instock" in avail_class
-                else:
-                    ct = _card_text(card)
-                    in_stoc = "stoc epuizat" not in ct and "indisponibil" not in ct
-
-                title = card.css("h2.name a::text").get("").strip()
-                prod_url = card.css("h2.name a::attr(href)").get("").strip()
-                if prod_url and not prod_url.startswith("http"):
-                    prod_url = "https://www.vexio.ro" + prod_url
-                poza_url = card.css("div.image img::attr(src)").get("") or None
-
-                results.append(PriceResult("Vexio", price, in_stoc, prod_url or url, title, poza_url=poza_url))
-            except Exception:
-                continue
-    except Exception as e:
-        logger.debug("Vexio eroare: %s", e)
-    return results
-
-
 SITE_SCRAPERS = [
     scrape_emag,
-    scrape_altex,
     scrape_cel,
-    scrape_pcgarage,
-    scrape_vexio,
 ]
 
 
@@ -987,7 +835,7 @@ class Command(BaseCommand):
         }
 
         self.stdout.write("=" * 65)
-        self.stdout.write("Price Updater - eMag / Altex / CEL / PCGarage / Vexio")
+        self.stdout.write("Price Updater - eMag / CEL")
         if dry_run:
             self.stdout.write("  *** DRY RUN - nu se scrie in DB ***")
         self.stdout.write("=" * 65)
@@ -1031,17 +879,18 @@ class Command(BaseCommand):
                         self.stdout.write("-> NU GASIT - mutat in Blacklist si sters")
 
                         if not dry_run:
-                            if obj.part_number:
-                                Blacklist.objects.get_or_create(
-                                    part_number=obj.part_number,
-                                    defaults={'nume': obj.nume},
-                                )
-                            else:
-                                Blacklist.objects.get_or_create(
-                                    nume=obj.nume,
-                                    defaults={'part_number': None},
-                                )
-                            obj.delete()
+                            # if obj.part_number:
+                            #     Blacklist.objects.get_or_create(
+                            #         part_number=obj.part_number,
+                            #         defaults={'nume': obj.nume},
+                            #     )
+                            # else:
+                            #     Blacklist.objects.get_or_create(
+                            #         nume=obj.nume,
+                            #         defaults={'part_number': None},
+                            #     )
+                            # obj.delete()
+                            pass
 
                         stats["sterse"] += 1
                     else:
