@@ -8,19 +8,27 @@ class CharInFilter(django_filters.CharFilter):
         # Dacă nu s-a bifat nimic, returnăm toate rezultatele
         if not value:
             return qs
-            
-        valori = [v.strip() for v in value.split(',')]
+        
+        # Suportăm separatorul '|' (preferat) sau ',' (fallback)
+        if '|' in value:
+            valori = [v.strip() for v in value.split('|')]
+        else:
+            valori = [v.strip() for v in value.split(',')]
+        
         q_objects = Q()
         
         for val in valori:
-            # 1. Căutare normală pentru procesoare gen "AM4", "AM5"
+            if not val:
+                continue
+            # 1. Căutare exactă (case-insensitive) pentru potrivire precisă
+            q_objects |= Q(**{f"{self.field_name}__iexact": val})
+            # 2. Căutare icontains ca fallback
             q_objects |= Q(**{f"{self.field_name}__icontains": val})
             
-            # 2. Dacă e socket Intel (conține "LGA"), extragem strict numărul și căutăm după el
+            # 3. Dacă e socket Intel (conține "LGA"), extragem strict numărul și căutăm după el
             if "LGA" in val.upper():
                 doar_numarul = ''.join([c for c in val if c.isdigit()])
                 if doar_numarul:
-                    # Va adăuga o căutare de tipul: socket__icontains="1700"
                     q_objects |= Q(**{f"{self.field_name}__icontains": doar_numarul})
 
         return qs.filter(q_objects)

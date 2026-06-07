@@ -99,6 +99,8 @@ def _normalize_text(text: str) -> str:
     text = re.sub(r"\bo(\d{1,2})g\b", r"\1gb", text)
     text = re.sub(r"\b(\d{1,2})g\b", r"\1gb", text)
     text = re.sub(r"[-_/]", " ", text)
+    # Normalizare variante WiFi: wifi6e, wifi6, wifi7, wi-fi 6e, wi fi 6e -> "wifi"
+    text = re.sub(r"wi[- ]?fi[- ]?\d*[a-z]*", "wifi", text)
     return text
 
 
@@ -206,7 +208,13 @@ def build_query(obj, site: str = None) -> str:
         socket_str = obj.socket if obj.socket else ""
         wifi_str   = "WiFi" if obj.are_wifi else ""
 
-        short_name = " ".join(obj.nume.split()[:4])
+        # Folosim primele 5 cuvinte din nume (inainte erau 4, insuficient pt
+        # modele ca "ASRock B650 Steel Legend WiFi")
+        short_name = " ".join(obj.nume.split()[:5])
+
+        # Eliminam "WiFi" din short_name daca deja il adaugam separat
+        if wifi_str:
+            short_name = re.sub(r'(?i)\bwi[-\s]?fi\b', '', short_name).strip()
 
         if site == "cel":
             query = f"{prefix} {socket_str} {short_name} {wifi_str}"
@@ -216,9 +224,26 @@ def build_query(obj, site: str = None) -> str:
         return re.sub(r'\s+', ' ', query.strip())
 
     elif isinstance(obj, Storage):
-        prefix = _STORAGE_PREFIX.get(obj.tip, "SSD")
-        cap = f"{obj.capacitate_gb // 1000}TB" if obj.capacitate_gb >= 1000 else f"{obj.capacitate_gb}GB"
-        return f"{prefix} {obj.brand} {cap}".strip()
+        # Prefix in functie de site si tip pt a lovi categoriile exacte
+        if obj.tip == "HDD":
+            prefix = "Hard Disk" if site == "emag" else "HDD"
+        elif obj.tip == "NVME":
+            prefix = "Solid State Drive" if site == "emag" else "SSD NVMe"
+        else:
+            prefix = "Solid State Drive" if site == "emag" else "SSD"
+            
+        tb_val = obj.capacitate_gb / 1000
+        cap = f"{tb_val:g}TB" if obj.capacitate_gb >= 1000 else f"{obj.capacitate_gb}GB"
+        
+        brand = str(obj.brand)
+        # Curatam numele ca sa pastram doar identificatorii de serie (ex: "NV3", "980 PRO")
+        name_clean = obj.nume.replace(brand, "").replace(cap, "")
+        stop_w = {'ssd', 'hdd', 'nvme', 'm.2', 'pcie', 'sata', 'solid', 'state', 'drive', 'hard', 'disk'}
+        words = [w for w in name_clean.split() if w.lower() not in stop_w]
+        model_str = " ".join(words[:3])
+
+        query = f"{prefix} {brand} {model_str} {cap}"
+        return re.sub(r'\s+', ' ', query.strip())
 
     elif isinstance(obj, Case):
         nume_curat = obj.nume.lower()
@@ -381,33 +406,63 @@ def _is_valid_title_match(title: str, obj) -> Optional[bool]:
         return True
 
     elif isinstance(obj, Motherboard):
-        if obj.socket:
-            if obj.socket.lower() not in title_lower:
-                return False
+        # Tracker: daca socket-ul nu e confirmat din titlu, deferam la pagina
+        needs_page_check = False
 
-        has_wifi_in_title = "wifi" in title_tokens or "wi-fi" in title_lower
+        # Socket check: daca nu e in titlu, marcam pt verificare pe pagina
+        # Multi retaileri (eMag) nu pun socketul in titlu
+        if obj.socket:
+            socket_lower = obj.socket.lower()
+            # Extragem doar numerele din socket pt fallback (ex: AM5 -> 5, 1700 -> 1700)
+            socket_num = re.sub(r'[^0-9]', '', socket_lower)
+            socket_in_title = (
+                socket_lower in title_lower
+                or (socket_num and len(socket_num) >= 3 and socket_num in title_lower)
+            )
+            if not socket_in_title:
+                needs_page_check = True
+
+        # WiFi: normalizarea din _normalize_text face wifi6e/wi-fi 6e -> "wifi"
+        has_wifi_in_title = "wifi" in title_tokens or "wifi" in title_lower
         if not obj.are_wifi and has_wifi_in_title:
             return False
         if obj.are_wifi and not has_wifi_in_title:
-            return None
+            needs_page_check = True
 
         if obj.format:
             format_lower = obj.format.lower()
-            if format_lower in title_lower:
-                pass
-            else:
-                return None
+            if format_lower not in title_lower:
+                needs_page_check = True
 
-        return True
+        # Daca avem info lipsa din titlu, returnam None => se verifica pe pagina
+        return None if needs_page_check else True
 
     elif isinstance(obj, Storage):
-        if obj.capacitate_gb >= 1000:
-            tb = str(obj.capacitate_gb // 1000)
-            if not ((tb + "tb") in title_tokens or tb in title_tokens):
-                return False
-        else:
-            gb = str(obj.capacitate_gb)
-            if not ((gb + "gb") in title_tokens or gb in title_tokens):
+        gb_str = str(obj.capacitate_gb)
+        tb_val = obj.capacitate_gb / 1000
+        tb_str = f"{tb_val:g}"
+        
+        found_capacity = False
+        if f"{gb_str}gb" in title_lower or f"{gb_str} gb" in title_lower:
+            found_capacity = True
+        if obj.capacitate_gb >= 1000 and (f"{tb_str}tb" in title_lower or f"{tb_str} tb" in title_lower or f"{tb_str}t" in title_lower):
+            found_capacity = True
+            
+        if not found_capacity and gb_str not in title_tokens and tb_str not in title_tokens:
+            return False
+
+        # Verificare serii modele (ex: daca caut A400, nu vreau NV2)
+        name_lower = obj.nume.lower()
+        model_ids = re.findall(r'\b[a-z]+\d+[a-z]*\b', name_lower) # ex: a400, nv3, sn850x, kc3000
+        model_ids.extend(re.findall(r'\b\d{3,4}\b', name_lower)) # ex: 980, 870, 860
+        
+        # Ignoram capacitati, versiuni gen, si rpm ca sa nu dea false negatives
+        skip_ids = {str(obj.capacitate_gb), "m2", "gen3", "gen4", "gen5", "sata3", "2280", "2230", "2242", "7200", "5400"}
+        
+        for mid in set(model_ids):
+            if mid in skip_ids:
+                continue
+            if mid not in title_lower:
                 return False
 
     elif isinstance(obj, Case):
@@ -515,6 +570,17 @@ def _verify_motherboard_details(session, result: PriceResult, obj: Motherboard) 
         page = session.fetch(result.url, network_idle=True)
         _rand_delay(0.5, 1.5)
         page_text = " ".join(page.css("body *::text").getall()).lower()
+
+        # Verificam socket-ul pe pagina produsului
+        if obj.socket:
+            socket_lower = obj.socket.lower()
+            socket_num = re.sub(r'[^0-9]', '', socket_lower)
+            socket_on_page = (
+                socket_lower in page_text
+                or (socket_num and len(socket_num) >= 3 and socket_num in page_text)
+            )
+            if not socket_on_page:
+                return False
 
         if obj.chipset:
             if obj.chipset.lower() not in page_text:
@@ -713,6 +779,87 @@ SITE_SCRAPERS = [
 
 # ─────────────────────────── MAIN SEARCH LOGIC ───────────────────────────────
 
+def _build_motherboard_fallback_query(obj, site: str) -> Optional[str]:
+    """Query simplificat de fallback pentru placi de baza:
+       brand + chipset + model keywords."""
+    if not isinstance(obj, Motherboard):
+        return None
+
+    brand = str(obj.brand).strip()
+    chipset = str(obj.chipset).strip() if obj.chipset else ""
+    wifi_str = "WiFi" if obj.are_wifi else ""
+
+    # Extragem cuvinte-cheie de model din nume (fara brand si chipset)
+    name_words = obj.nume.split()
+    model_keywords = []
+    skip_words = {brand.lower(), chipset.lower(), "wifi", "wi-fi"}
+    for w in name_words:
+        if w.lower() not in skip_words and not re.match(r'^[A-Z]{1,3}\d{3,4}$', w):
+            model_keywords.append(w)
+
+    model_str = " ".join(model_keywords[:3])
+
+    query = f"Placa de baza {brand} {chipset} {model_str} {wifi_str}"
+    return re.sub(r'\s+', ' ', query.strip())
+
+
+def _evaluate_site_results(
+    site_results: list[PriceResult],
+    obj,
+    session,
+    site_name: str,
+    min_similarity: float,
+    verbose: bool,
+) -> list[PriceResult]:
+    """Evalueaza rezultatele de pe un site si returneaza cele valide."""
+    valid = []
+    for r in site_results:
+        if not r.in_stoc:
+            if verbose:
+                print(f"    [{site_name}] RESPINS stoc: {r.price} | {r.title[:60]}")
+            continue
+
+        match_text = r.title if r.title else r.url
+        sim = _similarity(obj.nume, match_text)
+
+        if sim < min_similarity:
+            if verbose:
+                print(f"    [{site_name}] RESPINS sim={sim:.2f}<{min_similarity}: {match_text[:60]}")
+            continue
+
+        match_result = _is_valid_title_match(match_text, obj)
+        if match_result is False:
+            if verbose:
+                print(f"    [{site_name}] RESPINS spec: {r.title[:60]}")
+            continue
+
+        if match_result is None and isinstance(obj, Motherboard):
+            if not _verify_motherboard_details(session, r, obj):
+                if verbose:
+                    print(f"    [{site_name}] RESPINS page details: {r.title[:60]}")
+                continue
+
+        if isinstance(obj, RAM) and not _verify_ram_module_count(session, r, obj):
+            if verbose:
+                print(f"    [{site_name}] RESPINS module count: {r.title[:60]}")
+            continue
+
+        if isinstance(obj, Storage) and r.site == "eMag" and r.url:
+            if verbose:
+                print(f"    [eMag] Extrag viteze SSD...")
+            vc, vs = _extract_storage_speeds_emag(session, r.url)
+            r.viteza_citire  = vc
+            r.viteza_scriere = vs
+            if verbose:
+                print(f"    [eMag] Citire: {vc} MB/s | Scriere: {vs} MB/s")
+
+        if verbose:
+            print(f"    [{site_name}] OK {r.price:.2f} Lei | {r.title[:60]}")
+        valid.append(r)
+
+    return valid
+
+
 def find_all_valid_prices(
     session,
     obj,
@@ -733,49 +880,26 @@ def find_all_valid_prices(
             if verbose and not site_results:
                 print(f"    [{site_name}] 0 rezultate (timeout sau selector negasit)")
 
-            for r in site_results:
-                if not r.in_stoc:
+            site_valid = _evaluate_site_results(
+                site_results, obj, session, site_name, min_similarity, verbose
+            )
+            all_valid.extend(site_valid)
+
+            # Retry cu query simplificat daca nu am gasit nimic pt motherboard
+            if not site_valid and isinstance(obj, Motherboard):
+                fallback_q = _build_motherboard_fallback_query(obj, site_name)
+                if fallback_q and fallback_q != query:
                     if verbose:
-                        print(f"    [{site_name}] RESPINS stoc: {r.price} | {r.title[:60]}")
-                    continue
-
-                match_text = r.title if r.title else r.url
-                sim = _similarity(obj.nume, match_text)
-
-                if sim < min_similarity:
-                    if verbose:
-                        print(f"    [{site_name}] RESPINS sim={sim:.2f}<{min_similarity}: {match_text[:60]}")
-                    continue
-
-                match_result = _is_valid_title_match(match_text, obj)
-                if match_result is False:
-                    if verbose:
-                        print(f"    [{site_name}] RESPINS spec: {r.title[:60]}")
-                    continue
-
-                if match_result is None and isinstance(obj, Motherboard):
-                    if not _verify_motherboard_details(session, r, obj):
-                        if verbose:
-                            print(f"    [{site_name}] RESPINS page details: {r.title[:60]}")
-                        continue
-
-                if isinstance(obj, RAM) and not _verify_ram_module_count(session, r, obj):
-                    if verbose:
-                        print(f"    [{site_name}] RESPINS module count: {r.title[:60]}")
-                    continue
-
-                if isinstance(obj, Storage) and r.site == "eMag" and r.url:
-                    if verbose:
-                        print(f"    [eMag] Extrag viteze SSD...")
-                    vc, vs = _extract_storage_speeds_emag(session, r.url)
-                    r.viteza_citire  = vc
-                    r.viteza_scriere = vs
-                    if verbose:
-                        print(f"    [eMag] Citire: {vc} MB/s | Scriere: {vs} MB/s")
-
-                if verbose:
-                    print(f"    [{site_name}] OK {r.price:.2f} Lei | {r.title[:60]}")
-                all_valid.append(r)
+                        print(f"  [{site_name}] RETRY cu query simplificat: '{fallback_q}'")
+                    _rand_delay(1.0, 2.5)
+                    retry_results = scrape_fn(session, fallback_q)
+                    if retry_results:
+                        # La retry, scadem similarity threshold putin
+                        retry_valid = _evaluate_site_results(
+                            retry_results, obj, session, site_name,
+                            max(0.40, min_similarity - 0.10), verbose
+                        )
+                        all_valid.extend(retry_valid)
 
         except Exception as e:
             logger.debug("Eroare la %s pentru '%s': %s", scrape_fn.__name__, obj.nume, e)
