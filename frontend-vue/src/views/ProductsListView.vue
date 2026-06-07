@@ -181,10 +181,10 @@ const dynamicFilters = ref({})
 const categoryFiltersMap = {
   cpus: [
     { key: 'producator', label: 'Producător', type: 'select', options: ['AMD', 'Intel'] },
-    { key: 'socket', label: 'Socket', type: 'checkbox-group', options: ['AM4', 'AM5', 'LGA 1700', 'LGA 1200', 'LGA 1151', 'LGA 1851'] },
+    { key: 'socket', label: 'Socket', type: 'checkbox-group', options: ['AM4', 'AM5', 'TR4', 'sTRX4', 'LGA 1700', 'LGA 1200', 'LGA 1151', 'LGA 1851', 'LGA 2066', 'LGA 1150', 'LGA 1155'] },
   ],
   motherboards: [
-    { key: 'socket', label: 'Socket', type: 'checkbox-group', options: ['AM4', 'AM5', 'LGA 1700', 'LGA 1200', 'LGA 1151', 'LGA 1851'] },
+    { key: 'socket', label: 'Socket', type: 'checkbox-group', options: ['AM4', 'AM5', 'TR4', 'sTRX4', 'LGA 1700', 'LGA 1200', 'LGA 1151', 'LGA 1851', 'LGA 2066', 'LGA 1150', 'LGA 1155'] },
     { key: 'tip_ram', label: 'Tip Memorie Suportată', type: 'select', options: ['DDR4', 'DDR5'] },
     { key: 'format', label: 'Format', type: 'select', options: ['ATX', 'mATX', 'Mini-ITX'] }
   ],
@@ -208,7 +208,7 @@ const categoryFiltersMap = {
     { key: 'tip_carcasa', label: 'Tip Carcasă', type: 'select', options: ['MID', 'FULL', 'MINI', 'SFF', 'AQ'] }
   ],
   coolers: [
-    { key: 'socket', label: 'Socket', type: 'checkbox-group', options: ['AM4', 'AM5', 'LGA 1700', 'LGA 1200', 'LGA 1151', 'LGA 1851'] },
+    { key: 'socket', label: 'Socket', type: 'checkbox-group', options: ['AM4', 'AM5', 'TR4', 'sTRX4', 'LGA 1700', 'LGA 1200', 'LGA 1151', 'LGA 1851', 'LGA 2066', 'LGA 1150', 'LGA 1155'] },
     { key: 'tip_racire', label: 'Tip Răcire', type: 'select', options: ['Air', 'AIO 120mm', 'AIO 240mm', 'AIO 280mm', 'AIO 360mm'] }
   ]
 }
@@ -217,10 +217,9 @@ const activeCategoryFilters = computed(() => {
   return categoryFiltersMap[route.params.category] || []
 })
 
-// Funcție care inițializează corect filtrele (ca string sau array gol pentru checkbox-uri)
 const initDynamicFilters = () => {
   const filters = {}
-  activeCategoryFilters.value.forEach(f => {
+  Object.values(categoryFiltersMap).flat().forEach(f => {
     if (f.type === 'checkbox-group') {
       filters[f.key] = []
     } else {
@@ -371,7 +370,7 @@ onMounted(() => {
 .filter-input:focus, .filter-select:focus { border-color: #3b82f6; }
 .filter-select option { background: #1a1b26; color: white; }
 
-.checkbox-group-wrapper { display: flex; flex-direction: column; gap: 8px; background: #0f111a; padding: 12px; border-radius: 6px; border: 1px solid #2a2d3e; max-height: 180px; overflow-y: auto; }
+.checkbox-group-wrapper { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; background: #0f111a; padding: 12px; border-radius: 6px; border: 1px solid #2a2d3e; max-height: 180px; overflow-y: auto; }
 .checkbox-group-wrapper::-webkit-scrollbar { width: 4px; }
 .checkbox-group-wrapper::-webkit-scrollbar-thumb { background: #3b82f6; border-radius: 4px; }
 .small-label { font-size: 0.85rem; }
