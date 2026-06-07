@@ -467,7 +467,8 @@ const analizeazaBuild = async () => {
       cooler:      categories.value.find(c => c.id === 'coolers')?.selectedPart || null,
       storage:     categories.value.find(c => c.id === 'storages')?.selectedPart || null,
     }
-   const response = await axios.post('/analizeaza-build', payload)
+    const response = await axios.post('/analizeaza-build', payload)
+    agentResult.value = response.data
     openCategoryId.value = null // Sari la sumar sa vada analiza
   } catch (err) {
     agentError.value = 'Nu s-a putut contacta agentul.'

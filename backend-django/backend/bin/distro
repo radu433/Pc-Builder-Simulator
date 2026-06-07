@@ -1,4 +1,4 @@
-#!/home/radu43/mds/pc-builder/backend-django/backend/bin/python3
+#!/home/radu/Pc-Builder-Simulator/backend-django/backend/bin/python
 # -*- coding: utf-8 -*-
 import re
 import sys
