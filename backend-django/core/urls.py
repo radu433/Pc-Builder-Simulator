@@ -22,6 +22,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('components.urls')),
     path('api/accounts/', include('accounts.urls')),
+    path('api/builder/', include('builder.urls')),
     # Rutele noi pentru JWT (Login si Refresh)
     path('api/login/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),

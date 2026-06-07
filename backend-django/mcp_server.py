@@ -87,7 +87,7 @@ def get_bottleneck_score(cpu_id: int, gpu_id: int):
 @mcp.tool()
 def get_fps_estimate(cpu_id: int, gpu_id: int, game: str, resolution: str = "1080p") -> dict:
     """Returnează FPS estimat din cache pentru o combinație CPU+GPU și un joc specific."""
-    from builder.models import BuildAnalysisCache
+    from components.models import BuildAnalysisCache
 
     try:
         cpu = CPU.objects.get(id=cpu_id)
@@ -328,7 +328,7 @@ def create_build_from_preferences(
     Dacă user_id e furnizat, încearcă să încarce preferințele salvate.
     Dacă nu există preferințe, folosește parametrii transmiși direct.
     """
-    from builder.models import BuildAnalysisCache
+    from components.models import BuildAnalysisCache
 
     if user_id:
         try:

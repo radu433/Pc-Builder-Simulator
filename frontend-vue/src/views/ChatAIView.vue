@@ -8,6 +8,7 @@
           <h2>AI PC Architect</h2>
           <span class="status">● Online</span>
         </div>
+        <button class="btn-reset" @click="resetChat" title="Conversație nouă">🗑️</button>
       </div>
 
       <div class="chat-messages" ref="chatBox">
@@ -18,18 +19,83 @@
         >
           <div :class="['message-bubble', msg.role === 'user' ? 'user-bubble' : 'ai-bubble']">
             
-            <p class="msg-text">{{ msg.text }}</p>
+            <p class="msg-text" v-html="formatMessage(msg.text)"></p>
 
-            <div v-if="msg.isBuild" class="build-card">
-              <h3 class="build-title">Sistem Recomandat</h3>
+            <div v-if="msg.isBuild && msg.buildData" class="build-card">
+              <h3 class="build-title">🖥️ Sistem Recomandat</h3>
+              
+              <!-- Lista componentelor -->
               <ul class="build-parts-list">
-                <li v-if="msg.buildData.cpu"><strong>CPU:</strong> {{ msg.buildData.cpu.nume }}</li>
-                <li v-if="msg.buildData.gpu"><strong>GPU:</strong> {{ msg.buildData.gpu.nume }}</li>
-                <li v-if="msg.buildData.motherboard"><strong>Placă de bază:</strong> {{ msg.buildData.motherboard.nume }}</li>
-                <li v-if="msg.buildData.ram"><strong>RAM:</strong> {{ msg.buildData.ram.nume }}</li>
+                <li v-if="msg.buildData.build && msg.buildData.build.cpu">
+                  <strong>CPU:</strong> {{ msg.buildData.build.cpu.nume }} 
+                  <span class="part-price">{{ msg.buildData.build.cpu.pret }} RON</span>
+                </li>
+                <li v-if="msg.buildData.build && msg.buildData.build.gpu">
+                  <strong>GPU:</strong> {{ msg.buildData.build.gpu.nume }}
+                  <span class="part-price">{{ msg.buildData.build.gpu.pret }} RON</span>
+                </li>
+                <li v-if="msg.buildData.build && msg.buildData.build.motherboard">
+                  <strong>Placă de bază:</strong> {{ msg.buildData.build.motherboard.nume }}
+                  <span class="part-price">{{ msg.buildData.build.motherboard.pret }} RON</span>
+                </li>
+                <li v-if="msg.buildData.build && msg.buildData.build.ram">
+                  <strong>RAM:</strong> {{ msg.buildData.build.ram.nume }}
+                  <span class="part-price">{{ msg.buildData.build.ram.pret }} RON</span>
+                </li>
+                <li v-if="msg.buildData.build && msg.buildData.build.storage">
+                  <strong>Storage:</strong> {{ msg.buildData.build.storage.nume }}
+                  <span class="part-price">{{ msg.buildData.build.storage.pret }} RON</span>
+                </li>
+                <li v-if="msg.buildData.build && msg.buildData.build.psu">
+                  <strong>Sursă:</strong> {{ msg.buildData.build.psu.nume }}
+                  <span class="part-price">{{ msg.buildData.build.psu.pret }} RON</span>
+                </li>
               </ul>
+
+              <!-- Bottleneck info -->
+              <div v-if="msg.buildData.bottleneck" class="build-section">
+                <div :class="['bottleneck-badge', msg.buildData.bottleneck.are_bottleneck ? 'bottleneck-warn' : 'bottleneck-ok']">
+                  {{ msg.buildData.bottleneck.are_bottleneck 
+                    ? `⚠️ Bottleneck ${msg.buildData.bottleneck.componenta_limitatoare} (${msg.buildData.bottleneck.procentaj_bottleneck}%)`
+                    : '✅ Echilibru CPU/GPU bun' 
+                  }}
+                </div>
+              </div>
+
+              <!-- Compatibilitate -->
+              <div v-if="msg.buildData.compatibilitate" class="build-section">
+                <div :class="['compat-badge', msg.buildData.compatibilitate.compatibil ? 'compat-ok' : 'compat-warn']">
+                  {{ msg.buildData.compatibilitate.compatibil ? '✅ Toate componentele sunt compatibile' : '⚠️ Probleme de compatibilitate' }}
+                </div>
+                <ul v-if="msg.buildData.compatibilitate.probleme && msg.buildData.compatibilitate.probleme.length" class="compat-issues">
+                  <li v-for="(prob, i) in msg.buildData.compatibilitate.probleme" :key="i">{{ prob }}</li>
+                </ul>
+              </div>
+
+              <!-- FPS jocuri -->
+              <div v-if="msg.buildData.fps_jocuri_cerute && msg.buildData.fps_jocuri_cerute.length" class="build-section">
+                <h4 class="section-title">🎮 FPS Estimat</h4>
+                <div class="fps-grid">
+                  <div v-for="joc in msg.buildData.fps_jocuri_cerute" :key="joc.joc" class="fps-card">
+                    <span class="fps-game">{{ joc.joc }}</span>
+                    <span :class="['fps-rating', 'rating-' + (joc.rating || 'B').toLowerCase()]">{{ joc.rating }}</span>
+                    <span class="fps-preset">{{ joc.preset_optim }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Rating general -->
+              <div v-if="msg.buildData.rating_general" class="build-section">
+                <div class="rating-general">
+                  Rating: <span :class="'rating-' + msg.buildData.rating_general.toLowerCase()">{{ msg.buildData.rating_general }}</span>
+                </div>
+              </div>
+
               <div class="build-footer">
-                <span class="build-price">Total Estimat: {{ msg.buildData.totalPrice }} RON</span>
+                <span class="build-price">Total: {{ msg.buildData.pret_total }} RON</span>
+                <span v-if="msg.buildData.diferenta > 0" class="build-savings">
+                  Economie: {{ msg.buildData.diferenta }} RON
+                </span>
                 <button @click="incarcaInBuilder(msg.buildData)" class="btn-load-build">
                   ⚡ Încarcă în Builder
                 </button>
@@ -46,7 +112,13 @@
         </div>
       </div>
 
-      <div class="chat-input-area">
+      <!-- Mesaj dacă nu e logat -->
+      <div v-if="!isLoggedIn" class="login-prompt">
+        <p>🔒 Trebuie să fii autentificat pentru a folosi AI PC Architect.</p>
+        <router-link to="/login" class="btn-login">Autentifică-te</router-link>
+      </div>
+
+      <div v-else class="chat-input-area">
         <input 
           v-model="userInput" 
           @keyup.enter="sendMessage"
@@ -64,7 +136,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick, watch } from 'vue'
+import { ref, onMounted, nextTick, watch, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
 
@@ -74,6 +146,11 @@ const messages = ref([])
 const isTyping = ref(false)
 const chatBox = ref(null)
 
+// Verificare autentificare
+const isLoggedIn = computed(() => {
+  return !!localStorage.getItem('access_token')
+})
+
 // ── 1. Funcție pentru Scroll ──
 const scrollToBottom = async () => {
   await nextTick()
@@ -82,23 +159,36 @@ const scrollToBottom = async () => {
   }
 }
 
-// ── 2. Funcție pentru ștergerea conversației (Opțional, un buton de reset) ──
+// ── 2. Funcție pentru ștergerea conversației ──
 const resetChat = () => {
   localStorage.removeItem('ai_chat_history')
   messages.value = []
   initChat()
 }
 
-// ── 3. Inițializare & Încărcare Memorie (Cache) ──
+// ── 3. Formatare mesaj (bold, newlines) ──
+const formatMessage = (text) => {
+  if (!text) return ''
+  // Escapăm HTML-ul pentru securitate, apoi aplicăm formatarea minimală
+  let safe = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+  // Bold: **text**
+  safe = safe.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+  // Newlines
+  safe = safe.replace(/\n/g, '<br>')
+  return safe
+}
+
+// ── 4. Inițializare & Încărcare Memorie (Cache) ──
 const initChat = () => {
   const istoricSalvat = localStorage.getItem('ai_chat_history')
   
   if (istoricSalvat) {
-    // Dacă avem istoric, îl încărcăm
     messages.value = JSON.parse(istoricSalvat)
     scrollToBottom()
   } else {
-    // Dacă e prima dată, generăm salutul
     const username = localStorage.getItem('username')
     const textSalut = username 
       ? `Salut, ${username}! 👋 Sunt asistentul tău AI. Ce PC vrei să construim astăzi și ce buget ai la dispoziție?`
@@ -112,56 +202,69 @@ onMounted(() => {
   initChat()
 })
 
-// ── 4. Salvare Automată în Cache ──
-// De fiecare dată când 'messages' se modifică, salvăm automat în localStorage
+// ── 5. Salvare Automată în Cache ──
 watch(messages, (newMessages) => {
   localStorage.setItem('ai_chat_history', JSON.stringify(newMessages))
 }, { deep: true })
 
 
-// ── 5. Trimiterea mesajului real către Python ──
+// ── 6. Trimiterea mesajului către Django Backend ──
 const sendMessage = async () => {
   if (!userInput.value.trim() || isTyping.value) return
 
   const userText = userInput.value
-  // Adăugăm mesajul userului pe ecran
   messages.value.push({ role: 'user', text: userText })
   userInput.value = ''
   isTyping.value = true
   scrollToBottom()
 
   try {
-    // AICI FACEM LEGĂTURA CU PYTHON (FastAPI)
-    // Trimitem tot istoricul conversației ca AI-ul să aibă context
-    const response = await axios.post(import.meta.env.VITE_AI_AGENT_URL + '/chat-architect', {
-      mesaj_nou: userText,
-      istoric: messages.value.map(m => ({ role: m.role, text: m.text }))
-    })
+    const token = localStorage.getItem('access_token')
+    
+    const response = await axios.post(
+      import.meta.env.VITE_AI_AGENT_URL + '/chat/',
+      {
+        mesaj_nou: userText,
+        istoric: messages.value.map(m => ({ role: m.role, text: m.text }))
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    )
 
     const raspunsAI = response.data
 
-    // Adăugăm răspunsul de la Python pe ecran
     messages.value.push({
       role: 'ai',
       text: raspunsAI.mesaj_text,
       isBuild: raspunsAI.contine_build,
-      buildData: raspunsAI.build_data // Va fi null dacă încă mai pune întrebări
+      buildData: raspunsAI.build_data
     })
 
   } catch (error) {
-    console.error("Eroare la comunicarea cu AI-ul:", error)
-    messages.value.push({
-      role: 'ai',
-      text: 'Scuze, am întâmpinat o eroare de conexiune cu serverul neuronal. Te rog să încerci din nou.',
-      isBuild: false
-    })
+    if (error.response && error.response.status === 401) {
+      messages.value.push({
+        role: 'ai',
+        text: '🔒 Sesiunea ta a expirat. Te rog să te autentifici din nou.',
+        isBuild: false
+      })
+    } else {
+      messages.value.push({
+        role: 'ai',
+        text: 'Scuze, am întâmpinat o eroare de conexiune cu serverul. Te rog să încerci din nou.',
+        isBuild: false
+      })
+    }
   } finally {
     isTyping.value = false
     scrollToBottom()
   }
 }
 
-// ── 6. Logica butonului "Încarcă în Builder" ──
+// ── 7. Logica butonului "Încarcă în Builder" ──
 const incarcaInBuilder = (buildData) => {
   localStorage.setItem('pending_ai_build', JSON.stringify(buildData))
   router.push({ path: '/' })
@@ -208,8 +311,20 @@ const incarcaInBuilder = (buildData) => {
   margin-right: 15px;
 }
 
+.ai-info { flex-grow: 1; }
 .ai-info h2 { color: white; font-size: 1.2rem; margin-bottom: 3px; }
 .ai-info .status { color: #10b981; font-size: 0.85rem; font-weight: 600; }
+
+.btn-reset {
+  background: none;
+  border: 1px solid #2a2d3e;
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 1.2rem;
+  transition: 0.2s;
+}
+.btn-reset:hover { border-color: #ef4444; background: rgba(239,68,68,0.1); }
 
 .chat-messages {
   flex-grow: 1;
@@ -245,7 +360,7 @@ const incarcaInBuilder = (buildData) => {
   border: 1px solid #2a2d3e;
 }
 
-/* Stiluri pentru Cardul de Build Generat */
+/* ── Build Card ── */
 .build-card {
   margin-top: 15px;
   background-color: #0f111a;
@@ -257,17 +372,100 @@ const incarcaInBuilder = (buildData) => {
 
 .build-title { color: #c084fc; font-size: 1.1rem; margin-bottom: 10px; border-bottom: 1px solid #2a2d3e; padding-bottom: 8px;}
 .build-parts-list { list-style: none; padding: 0; margin-bottom: 15px; font-size: 0.9rem;}
-.build-parts-list li { margin-bottom: 6px; }
+.build-parts-list li { margin-bottom: 6px; display: flex; justify-content: space-between; }
 .build-parts-list strong { color: #94a3b8; }
+.part-price { color: #10b981; font-weight: 600; font-size: 0.85rem; }
 
-.build-footer { display: flex; justify-content: space-between; align-items: center; }
-.build-price { font-weight: bold; color: #10b981; }
+.build-section { margin: 10px 0; }
+.section-title { color: #c084fc; font-size: 0.95rem; margin-bottom: 8px; }
+
+/* Bottleneck badge */
+.bottleneck-badge {
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.bottleneck-ok { background: rgba(16,185,129,0.15); color: #10b981; }
+.bottleneck-warn { background: rgba(245,158,11,0.15); color: #f59e0b; }
+
+/* Compatibilitate */
+.compat-badge {
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.compat-ok { background: rgba(16,185,129,0.15); color: #10b981; }
+.compat-warn { background: rgba(239,68,68,0.15); color: #ef4444; }
+.compat-issues { list-style: disc; padding-left: 20px; margin-top: 6px; font-size: 0.82rem; color: #fca5a5; }
+
+/* FPS Grid */
+.fps-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+.fps-card {
+  background: #1a1b26;
+  border: 1px solid #2a2d3e;
+  border-radius: 8px;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+}
+.fps-game { color: #e2e8f0; font-weight: 600; }
+.fps-preset { color: #94a3b8; }
+
+/* Rating-uri */
+.rating-general { font-size: 0.9rem; color: #94a3b8; }
+.rating-s { color: #10b981; font-weight: bold; font-size: 1.2em; }
+.rating-a { color: #3b82f6; font-weight: bold; font-size: 1.2em; }
+.rating-b { color: #f59e0b; font-weight: bold; font-size: 1.2em; }
+.rating-c { color: #ef4444; font-weight: bold; font-size: 1.2em; }
+.rating-d { color: #6b7280; font-weight: bold; font-size: 1.2em; }
+
+.fps-rating {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: bold;
+  font-size: 0.8rem;
+}
+.fps-rating.rating-s { background: rgba(16,185,129,0.2); }
+.fps-rating.rating-a { background: rgba(59,130,246,0.2); }
+.fps-rating.rating-b { background: rgba(245,158,11,0.2); }
+.fps-rating.rating-c { background: rgba(239,68,68,0.2); }
+
+.build-footer { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.build-price { font-weight: bold; color: #10b981; font-size: 1.1rem; }
+.build-savings { color: #3b82f6; font-size: 0.85rem; }
 
 .btn-load-build {
   background: #a855f7; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.2s;
 }
 .btn-load-build:hover { background: #c084fc; }
 
+/* ── Login prompt ── */
+.login-prompt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px;
+  background-color: #0f111a;
+  border-top: 1px solid #2a2d3e;
+  gap: 10px;
+}
+.login-prompt p { color: #94a3b8; margin: 0; }
+.btn-login {
+  background: #3b82f6;
+  color: white;
+  padding: 10px 24px;
+  border-radius: 8px;
+  text-decoration: none;
+  font-weight: bold;
+  transition: 0.2s;
+}
+.btn-login:hover { background: #2563eb; }
+
+/* ── Input area ── */
 .chat-input-area {
   display: flex;
   padding: 20px;
