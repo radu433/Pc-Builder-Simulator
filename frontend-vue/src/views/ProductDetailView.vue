@@ -21,9 +21,14 @@
 
         <div class="price-box">
           <div class="price">{{ product.pret }} RON</div>
-          <button class="add-btn" :disabled="!product.stoc" @click="addToBuild">
-            <span class="icon">➕</span> {{ isAdded ? '✅ Adăugat' : 'Adaugă în Build' }}
-          </button>
+          <div class="action-buttons">
+            <button class="add-btn" :disabled="!product.stoc" @click="addToBuild">
+              <span class="icon">➕</span> {{ isAdded ? '✅ Adăugat' : 'Adaugă în Build' }}
+            </button>
+            <a v-if="product.url_produs" :href="product.url_produs" target="_blank" class="buy-btn">
+              🛒 Cumpără ({{ product.magazin || 'Magazin' }})
+            </a>
+          </div>
         </div>
 
         <div v-if="product.magazin" class="store-link">
@@ -131,6 +136,9 @@ onMounted(fetchProductDetail)
 .add-btn { background: #3b82f6; color: white; border: none; padding: 15px 30px; border-radius: 8px; font-size: 1.1rem; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 10px; transition: background 0.2s; }
 .add-btn:hover:not(:disabled) { background: #2563eb; }
 .add-btn:disabled { background: #3f4455; cursor: not-allowed; color: #94a3b8; }
+.action-buttons { display: flex; flex-direction: column; gap: 10px; }
+.buy-btn { background: #10b981; color: white; text-decoration: none; padding: 10px 15px; border-radius: 8px; font-size: 0.95rem; font-weight: 700; text-align: center; display: block; transition: background 0.2s; }
+.buy-btn:hover { background: #059669; }
 .store-link { color: #94a3b8; margin-bottom: 30px; font-size: 0.95rem; }
 .store-link a { color: #3b82f6; text-decoration: none; font-weight: 600; }
 .specs-card { background: #1a1b26; border: 1px solid #2a2d3e; border-radius: 12px; padding: 30px; }

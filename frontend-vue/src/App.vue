@@ -50,7 +50,9 @@
               </div>
             </template>
 
-            <button class="theme-toggle">🌙</button>
+            <button class="theme-toggle" @click="toggleTheme">
+              {{ isLight ? '☀️' : '🌙' }}
+            </button>
           </div>
         </div>
       </div>
@@ -185,7 +187,28 @@ const handleClickOutside = (e) => {
   }
 }
 
-onMounted(() => document.addEventListener('click', handleClickOutside))
+// ── Dark/Light Mode Logic ──
+const isLight = ref(false)
+
+const toggleTheme = () => {
+  isLight.value = !isLight.value
+  if (isLight.value) {
+    document.body.classList.add('light-theme')
+    localStorage.setItem('theme', 'light')
+  } else {
+    document.body.classList.remove('light-theme')
+    localStorage.setItem('theme', 'dark')
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('click', handleClickOutside)
+  
+  if (localStorage.getItem('theme') === 'light') {
+    isLight.value = true
+    document.body.classList.add('light-theme')
+  }
+})
 onUnmounted(() => document.removeEventListener('click', handleClickOutside))
 </script>
 
@@ -198,7 +221,13 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
 }
 
 body {
-  background-color: #0f111a;
+  background-color: #050814;
+  background-image: 
+    radial-gradient(circle at 15% 50%, rgba(0, 240, 255, 0.08), transparent 30%),
+    radial-gradient(circle at 85% 30%, rgba(168, 85, 247, 0.08), transparent 30%),
+    url('data:image/svg+xml;utf8,<svg width="60" height="60" xmlns="http://www.w3.org/2000/svg"><path d="M30 0l25.98 15v30L30 60 4.02 45V15z" stroke="rgba(255,255,255,0.03)" fill="none" stroke-width="1"/></svg>');
+  background-attachment: fixed;
+  background-size: cover, cover, 60px 60px;
   color: #e2e8f0;
 }
 
@@ -211,9 +240,14 @@ body {
 .pcpp-header { width: 100%; }
 
 .top-tier {
-  background-color: #0f111a;
-  border-bottom: 1px solid #2a2d3e;
+  background-color: rgba(15, 17, 26, 0.6);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(255,255,255,0.05);
   padding: 12px 0;
+  position: sticky;
+  top: 0;
+  z-index: 100;
 }
 
 .top-tier-content {
@@ -405,8 +439,12 @@ body {
 
 /* ── Bottom nav ── */
 .bottom-tier {
-  background-color: #1a1b26;
-  border-bottom: 1px solid #2a2d3e;
+  background-color: rgba(26, 27, 38, 0.6);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  position: relative;
+  z-index: 99;
 }
 
 .bottom-tier-content {
@@ -416,9 +454,21 @@ body {
   height: 55px;
 }
 
-.main-nav { display: flex; height: 100%; }
+.main-nav { 
+  display: flex; 
+  height: 100%; 
+  flex: 1 1 0%; 
+}
+
+.main-nav > .nav-button,
+.main-nav > .nav-item-dropdown {
+  flex: 1 1 0%;
+  display: flex;
+}
 
 .nav-button {
+  width: 100%;
+  justify-content: center;
   color: #e2e8f0;
   font-size: 0.9rem;
   font-weight: 600;
@@ -483,6 +533,8 @@ body {
   position: absolute;
   top: 100%; /* Fix sub buton */
   left: 0;
+  min-width: 100%; /* Match parent width or more */
+  left: 0;
   background: #1a1b26;
   border: 1px solid #2a2d3e;
   border-top: none; /* Se lipește vizual de bara de navigație */
@@ -531,6 +583,8 @@ body {
   display: flex;
   align-items: center;
   position: relative;
+  flex-shrink: 0;
+  margin-left: 30px;
 }
 
 .search-bar input {
@@ -604,4 +658,142 @@ body {
 .mega-menu-grid .submenu-item:hover {
   background: #232533;
 }
+
+/* =========================================
+   LIGHT THEME OVERRIDES (GLOBAL)
+========================================= */
+body.light-theme {
+  background-color: #f1f5f9 !important;
+  background-image: none !important;
+  color: #0f172a !important;
+}
+
+/* App Header/Footer */
+body.light-theme .top-tier,
+body.light-theme .bottom-tier,
+body.light-theme .footer,
+body.light-theme .account-dropdown,
+body.light-theme .nav-submenu,
+body.light-theme .search-bar input {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+body.light-theme .text-link,
+body.light-theme .lang-select,
+body.light-theme .account-name,
+body.light-theme .dropdown-item,
+body.light-theme .dropdown-role,
+body.light-theme .nav-button,
+body.light-theme .submenu-item,
+body.light-theme .text-light,
+body.light-theme .logo-text {
+  color: #0f172a !important;
+}
+
+body.light-theme .theme-toggle,
+body.light-theme .account-btn:hover,
+body.light-theme .nav-button:hover,
+body.light-theme .submenu-item:hover,
+body.light-theme .dropdown-item:hover,
+body.light-theme .page-btn:hover:not(:disabled),
+body.light-theme .reset-btn:hover {
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+
+body.light-theme .divider,
+body.light-theme .dropdown-divider {
+  background-color: #cbd5e1 !important;
+}
+
+body.light-theme .ai-nav-button {
+  color: #a855f7 !important;
+}
+
+/* Cards & Generic Panels */
+body.light-theme .builder-grid > div,
+body.light-theme .empty-slot,
+body.light-theme .summary-panel,
+body.light-theme .filters-panel,
+body.light-theme .synth-product-card,
+body.light-theme .price-box,
+body.light-theme .specs-card,
+body.light-theme .main-image,
+body.light-theme .build-card,
+body.light-theme .empty-state,
+body.light-theme .modal,
+body.light-theme .auth-card,
+body.light-theme .doc-content,
+body.light-theme .chat-container,
+body.light-theme .profile-sidebar,
+body.light-theme .profile-main,
+body.light-theme .glass-panel {
+  background-color: rgba(255, 255, 255, 0.9) !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+body.light-theme .part-row,
+body.light-theme .stat-row,
+body.light-theme .search-input-wrapper input,
+body.light-theme .sort-select,
+body.light-theme .filter-input,
+body.light-theme .filter-select,
+body.light-theme .checkbox-group-wrapper,
+body.light-theme .price-inputs input,
+body.light-theme .page-btn,
+body.light-theme .auth-input {
+  background-color: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+body.light-theme .card-img-wrapper, body.light-theme .card-image-box {
+  background-color: #f1f5f9 !important;
+}
+
+body.light-theme .slot-name,
+body.light-theme .stat-value,
+body.light-theme .slot-price,
+body.light-theme .category-title,
+body.light-theme .brand,
+body.light-theme .name,
+body.light-theme .product-name,
+body.light-theme .spec-value,
+body.light-theme .price-box .price,
+body.light-theme .build-header h3,
+body.light-theme .modal-header h2,
+body.light-theme .part-name,
+body.light-theme .stat-row strong,
+body.light-theme .empty-state h3,
+body.light-theme .auth-title,
+body.light-theme .auth-subtitle,
+body.light-theme .doc-title,
+body.light-theme h1, body.light-theme h2, body.light-theme h3, body.light-theme h4 {
+  color: #0f172a !important;
+}
+
+body.light-theme .slot-label,
+body.light-theme .stat-label,
+body.light-theme .filter-label-main,
+body.light-theme .checkbox-label,
+body.light-theme .spec-label,
+body.light-theme .part-number,
+body.light-theme .detail-item,
+body.light-theme .build-date,
+body.light-theme .empty-state p,
+body.light-theme .card-desc, 
+body.light-theme .spec-col span, 
+body.light-theme .sr-cat {
+  color: #475569 !important;
+}
+
+body.light-theme .card-brand { background: rgba(0,0,0,0.05) !important; color: #475569 !important; }
+body.light-theme .spec-col { color: #0f172a !important; }
+body.light-theme .neon-price { color: #0284c7 !important; text-shadow: none !important; }
+body.light-theme .btn-neon { background: linear-gradient(90deg, #9333ea, #0284c7) !important; }
+body.light-theme .btn-neon-full { color: #0f172a !important; background: rgba(0,0,0,0.05) !important; border-color: rgba(0,0,0,0.1) !important; }
+body.light-theme .btn-neon-full:hover { background: rgba(0,0,0,0.1) !important; }
 </style>

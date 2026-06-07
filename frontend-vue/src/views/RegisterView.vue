@@ -43,6 +43,7 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import api from '../plugins/axios'
 
 const username = ref('')
 const email = ref('')
@@ -51,7 +52,7 @@ const confirmPassword = ref('')
 const error = ref('')
 const router = useRouter()
 
-const handleRegister = () => {
+const handleRegister = async () => {
   error.value = ''
   
   if (password.value !== confirmPassword.value) {
@@ -59,9 +60,24 @@ const handleRegister = () => {
     return
   }
 
-  console.log("Inregistrare:", { username: username.value, email: email.value })
-  alert("Cont creat cu succes! (Simulare)")
-  router.push('/login')
+  try {
+    const response = await api.post('accounts/register/', {
+      username: username.value,
+      email: email.value,
+      password: password.value
+    });
+    alert("Cont creat cu succes!");
+    router.push('/login');
+  } catch (err) {
+    console.error(err);
+    if (err.response?.data) {
+        // Formatează erorile din backend într-un mesaj lizibil
+        const messages = Object.values(err.response.data).flat();
+        error.value = messages.join(' ') || 'A apărut o eroare la înregistrare.';
+    } else {
+        error.value = 'Eroare de conexiune la server.';
+    }
+  }
 }
 </script>
 

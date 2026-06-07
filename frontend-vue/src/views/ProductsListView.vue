@@ -44,7 +44,7 @@
           </label>
         </div>
 
-        <h3 v-if="activeCategoryFilters.length" class="dynamic-filters-title">⚙️ Specificații</h3>
+        <!-- <h3 v-if="activeCategoryFilters.length" class="dynamic-filters-title">⚙️ Specificații</h3>
         
         <div v-for="filter in activeCategoryFilters" :key="filter.key" class="filter-group">
           <label class="filter-label-main">{{ filter.label }}</label>
@@ -79,7 +79,7 @@
             @change="onFilterChange" 
             class="filter-input" 
           />
-        </div>
+        </div> -->
 
         <div class="results-count" v-if="totalProducts > 0">
           {{ totalProducts }} produse găsite
@@ -98,26 +98,38 @@
           <div 
             v-for="product in products" 
             :key="product.id"
-            class="product-card"
+            class="synth-product-card glass-panel"
           >
             <router-link :to="`/products/${route.params.category}/${product.id}`" class="card-link">
-              <div class="card-img-wrapper">
-                <img :src="product.imagine_url || 'https://placehold.co/200x200/1a1b26/3b82f6?text=No+Image'" :alt="product.nume" />
-                <span v-if="product.stoc" class="badge-stock in-stock">În stoc</span>
-                <span v-else class="badge-stock out-stock">Stoc epuizat</span>
-              </div>
-              <div class="card-info">
-                <span class="brand">{{ product.brand }}</span>
-                <h4 class="name">{{ product.nume }}</h4>
-                <div class="price">{{ Number(product.pret).toLocaleString('ro-RO') }} RON</div>
+              <div class="card-glow"></div>
+              <div class="card-content">
+                <div class="card-top">
+                  <div class="card-brand">{{ product.brand || 'N/A' }}</div>
+                  <a v-if="product.url_produs" :href="product.url_produs" target="_blank" class="external-link-icon" title="Cumpără de pe magazin" @click.prevent.stop>🛒</a>
+                </div>
+                
+                <div class="card-image-box">
+                  <img :src="product.imagine_url || 'https://placehold.co/200x200/111827/00f0ff?text=No+Image'" :alt="product.nume" />
+                  <span v-if="product.stoc" class="badge-stock in-stock">În stoc</span>
+                  <span v-else class="badge-stock out-stock">Stoc epuizat</span>
+                </div>
+                
+                <h3 class="card-title">{{ product.nume }}</h3>
+                <div class="card-specs">
+                  <div class="spec-col">
+                    <span class="neon-price">{{ Number(product.pret).toLocaleString('ro-RO') }} RON</span>
+                  </div>
+                </div>
               </div>
             </router-link>
 
-            <div class="card-actions">
+            <div class="card-footer">
               <button 
-                class="add-build-btn"
+                class="btn-neon"
+                :class="{ 'btn-neon-remove': currentAddedId === product.id }"
                 :disabled="!product.stoc"
                 @click="addToBuild(product)"
+                style="width: 100%"
               >
                 {{ currentAddedId === product.id ? '✅ Adăugat' : '➕ Adaugă în Build' }}
               </button>
@@ -371,23 +383,126 @@ onMounted(() => {
 .results-count { color: #64748b; font-size: 0.8rem; margin-bottom: 15px; padding: 8px; background: #0f111a; border-radius: 6px; text-align: center; }
 .reset-btn { width: 100%; background: transparent; color: #94a3b8; border: 1px solid #2a2d3e; padding: 10px; border-radius: 6px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
 .reset-btn:hover { background: #3b82f6; color: white; border-color: #3b82f6; }
-.products-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 20px; margin-bottom: 30px; }
-.product-card { background: #1a1b26; border: 1px solid #2a2d3e; border-radius: 10px; overflow: hidden; transition: transform 0.2s, border-color 0.2s; display: flex; flex-direction: column; }
-.product-card:hover { transform: translateY(-4px); border-color: #3b82f6; }
+.products-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 25px; margin-bottom: 30px; }
+
+/* MODERN GLASSMORPHISM CARD STYLES */
+.glass-panel {
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
+}
+
+.synth-product-card {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  transition: transform 0.3s ease, border-color 0.3s ease;
+}
+
+.synth-product-card:hover {
+  transform: translateY(-5px);
+  border-color: rgba(0, 240, 255, 0.5);
+}
+
+.card-top {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 15px;
+}
+.card-brand {
+  background: rgba(255,255,255,0.1);
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #94a3b8;
+}
+
+.card-image-box {
+  position: relative;
+  width: 100%;
+  height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20px;
+  background: rgba(255,255,255,0.02);
+  border-radius: 12px;
+}
+.card-image-box img {
+  max-width: 80%;
+  max-height: 80%;
+  object-fit: contain;
+  filter: drop-shadow(0 10px 15px rgba(0,0,0,0.5));
+}
+
+.card-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-bottom: 5px;
+  line-height: 1.3;
+  color: #e2e8f0;
+}
+
+.card-specs {
+  display: flex;
+  gap: 15px;
+  margin-bottom: 25px;
+  border-top: 1px solid rgba(255,255,255,0.05);
+  padding-top: 15px;
+}
+.spec-col span {
+  font-size: 0.7rem;
+  color: #64748b;
+  text-transform: uppercase;
+}
+.spec-col {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.neon-price {
+  color: #00f0ff;
+  font-weight: 800;
+  font-size: 1.3rem;
+  text-shadow: 0 0 10px rgba(0, 240, 255, 0.3);
+}
+
+.btn-neon {
+  background: linear-gradient(90deg, rgba(168, 85, 247, 0.8), rgba(0, 240, 255, 0.8));
+  border: none;
+  padding: 12px 20px;
+  border-radius: 20px;
+  color: white;
+  font-weight: 700;
+  cursor: pointer;
+  transition: 0.3s;
+}
+.btn-neon:hover:not(:disabled) {
+  box-shadow: 0 0 15px rgba(168, 85, 247, 0.6);
+  transform: scale(1.05);
+}
+.btn-neon:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-neon-remove {
+  background: transparent;
+  border: 1px solid #ef4444;
+  color: #ef4444;
+}
+
 .card-link { text-decoration: none; flex: 1; }
-.card-img-wrapper { position: relative; height: 180px; background: white; display: flex; align-items: center; justify-content: center; }
-.card-img-wrapper img { max-width: 100%; max-height: 100%; object-fit: contain; padding: 15px; }
-.badge-stock { position: absolute; top: 10px; right: 10px; padding: 4px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; color: white; }
+
+.badge-stock { position: absolute; top: 10px; left: 10px; padding: 4px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; color: white; }
 .in-stock { background: #10b981; }
 .out-stock { background: #f43f5e; }
-.card-info { padding: 15px; }
-.brand { color: #94a3b8; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; }
-.name { color: white; font-size: 0.95rem; margin: 5px 0 10px 0; line-height: 1.4; }
-.price { color: #3b82f6; font-size: 1.2rem; font-weight: 800; }
-.card-actions { padding: 0 15px 15px 15px; }
-.add-build-btn { width: 100%; background: #3b82f6; color: white; border: none; padding: 10px; border-radius: 8px; font-size: 0.85rem; font-weight: 700; cursor: pointer; transition: background 0.2s; }
-.add-build-btn:hover:not(:disabled) { background: #2563eb; }
-.add-build-btn:disabled { background: #3f4455; cursor: not-allowed; color: #94a3b8; }
+.external-link-icon { font-size: 1.2rem; text-decoration: none; background: rgba(26, 27, 38, 0.85); border-radius: 50%; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; transition: all 0.2s; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 4px 6px rgba(0,0,0,0.3); margin-left: auto; z-index: 10; }
+.external-link-icon:hover { transform: scale(1.1); background: #00f0ff; border-color: #00f0ff; }
 .pagination { display: flex; justify-content: center; align-items: center; gap: 8px; padding: 20px 0; flex-wrap: wrap; }
 .page-btn { background: #1a1b26; border: 1px solid #2a2d3e; color: #a9b1d6; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-size: 0.9rem; font-weight: 600; transition: all 0.15s; min-width: 40px; }
 .page-btn:hover:not(:disabled) { background: #232533; color: white; border-color: #3b82f6; }

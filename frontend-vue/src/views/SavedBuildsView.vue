@@ -64,7 +64,10 @@
                   <span class="part-icon">{{ slot.icon }}</span>
                   <div class="part-info">
                     <span class="part-label">{{ slot.label }}</span>
-                    <span class="part-name">{{ modalParts[slot.key]?.nume || modalParts[slot.key]?.model || 'Neselectat' }}</span>
+                    <span class="part-name">
+                      {{ modalParts[slot.key]?.nume || modalParts[slot.key]?.model || 'Neselectat' }}
+                      <a v-if="modalParts[slot.key]?.url_produs" :href="modalParts[slot.key].url_produs" target="_blank" class="external-link" title="Cumpără de pe magazin">🛒</a>
+                    </span>
                   </div>
                   <span class="part-price" v-if="modalParts[slot.key]">
                     {{ modalParts[slot.key]?.pret }} RON
@@ -441,7 +444,9 @@ onMounted(fetchSavedBuilds)
 .part-icon { font-size: 1.1rem; width: 24px; text-align: center; }
 .part-info { flex: 1; display: flex; flex-direction: column; }
 .part-label { font-size: 0.7rem; color: #64748b; }
-.part-name { font-size: 0.85rem; color: #c0caf5; font-weight: 500; }
+.part-name { font-size: 0.85rem; color: #c0caf5; font-weight: 500; display: flex; align-items: center; flex-wrap: wrap; }
+.external-link { text-decoration: none; margin-left: 6px; font-size: 1rem; transition: transform 0.2s; display: inline-block; line-height: 1; }
+.external-link:hover { transform: scale(1.2); }
 .part-price { font-size: 0.85rem; color: #10b981; font-weight: 600; white-space: nowrap; }
 
 /* Side panel */

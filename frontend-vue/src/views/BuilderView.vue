@@ -1,164 +1,143 @@
 <template>
-  <div class="container builder-layout">
+  <div class="synth-builder-container">
     
-    <div class="main-panel">
-      <div class="header-section">
-        <h2>🛠️ Configurează-ți PC-ul</h2>
-        
-        <div class="progress-container">
-          <div class="progress-info">
-            <span>Progres Build</span>
-            <span>{{ selectedPartsCount }} / {{ categories.length }} piese</span>
-          </div>
-          <div class="progress-bar-bg">
-            <div class="progress-bar-fill" :style="{ width: progressPercentage + '%' }"></div>
-          </div>
-        </div>
+    <!-- SIDEBAR -->
+    <aside class="synth-sidebar glass-panel">
+      <div class="sidebar-header">
+        <span class="gradient-text">DASHBOARD</span>
       </div>
       
-      <div class="build-list">
-        <div v-if="loading" class="loading">Se încarcă componentele...</div>
-        
-        <div v-else-if="totalPartsLoaded === 0" class="empty-state">
-          Nu s-a încărcat nicio componentă de la API. Verifică dacă serverul Django rulează.
-        </div>
-
-        <div 
-          v-else
-          v-for="category in categories" 
-          :key="category.id" 
-          class="category-container"
-        >
-          <div class="build-row" :class="{ 'has-part': category.selectedPart }">
-            <div class="category-icon">{{ category.icon }}</div>
-            
-            <div class="category-info">
-              <div class="category-name">{{ category.name }}</div>
-              <div v-if="category.selectedPart" class="selected-name">
-                {{ displayPartName(category.selectedPart) }}
-                <span v-if="category.incompatibil" class="incompatibil-warning">
-                  ⚠️ Incompatibil cu selecția curentă
-                </span>
-              </div>
-              <div v-else class="no-part">
-                <span v-if="category.filterLocked" class="filter-hint">
-                  {{ category.filterHint }}
-                </span>
-                <span v-else>Nicio componentă selectată</span>
-              </div>
-            </div>
-
-            <div class="price-section">
-              <span v-if="category.selectedPart">{{ displayPartPrice(category.selectedPart) }} RON</span>
-            </div>
-
-            <div v-if="category.activeFilter" class="filter-tag">
-              🔗 {{ category.activeFilter }}
-            </div>
-
-            <div class="actions">
-              <button v-if="!category.selectedPart" class="btn btn-outline" @click="openPartSelector(category.id)">
-                {{ openCategoryId === category.id ? 'Închide' : '+ Alege' }}
-              </button>
-              <button v-else class="btn-remove" @click="removePart(category.id)">
-                ✕
-              </button>
-            </div>
-          </div>
-
-          <div v-if="openCategoryId === category.id" class="parts-selector-box">
-            <div v-if="category.parts.length === 0" class="mini-loading">
-              {{ category.filterLocked
-                ? 'Nicio piesă compatibilă găsită pentru filtrul activ.'
-                : 'Nu există piese disponibile în această categorie.' }}
-            </div>
-            <div 
-              v-else
-              v-for="part in category.parts" 
-              :key="part.id" 
-              class="part-option"
-              @click="selectPart(category.id, part)"
-            >
-              <div class="part-main-info">
-                <span class="p-name">{{ displayPartName(part) }}</span>
-                <span class="p-specs" v-if="part.frecventa || part.capacitate">{{ part.frecventa }} {{ part.capacitate }}</span>
-              </div>
-              <span class="p-price">{{ displayPartPrice(part) }} RON</span>
-            </div>
-          </div>
+      <div class="category-list">
+        <div v-for="(cat, idx) in categories" :key="cat.id" 
+             class="category-item" 
+             :class="{ active: openCategoryId === cat.id }"
+             @click="openCategory(cat.id)">
+             <div class="cat-left">
+               <span class="cat-icon">{{ cat.icon }}</span>
+               <span class="cat-name">{{ idx + 1 }}. {{ cat.name }}</span>
+             </div>
+             <span class="status-dot" :class="{ selected: cat.selectedPart }"></span>
         </div>
       </div>
-    </div>
 
-    <div class="summary-panel">
-      <div class="summary-card">
-        <h3>Sumar Build</h3>
-        <div class="divider"></div>
-        
-        <div class="summary-row">
-          <span>Componente:</span>
-          <span>{{ selectedPartsCount }} / {{ categories.length }}</span>
-        </div>
-        
-        <div class="summary-row total">
-          <span>Total Estimativ:</span>
-          <strong class="price-highlight">{{ totalPrice.toFixed(2) }} RON</strong>
-        </div>
-
-        <button 
-          class="btn btn-primary btn-block" 
-          :disabled="selectedPartsCount === 0"
-          @click="salveazaPC"
-        >
-          🚀 Salvează Configurația
-        </button>
+      <div class="sidebar-footer">
+         <button class="btn-neon-full" @click="openCategory(null)">📋 View Summary</button>
+         <div style="height: 10px;"></div>
+         <button class="btn-solid-green" @click="salveazaPC" :disabled="selectedPartsCount === 0">
+           🚀 Save Build
+         </button>
+         <div style="height: 10px;"></div>
+         <button class="btn-solid-purple" @click="analizeazaBuild" :disabled="selectedPartsCount === 0 || agentLoading">
+           {{ agentLoading ? '⏳ Analyzing...' : '✨ AI Analysis' }}
+         </button>
       </div>
+    </aside>
+    
+    <!-- MAIN AREA -->
+    <main class="synth-main">
+       <div class="main-header">
+           <h2>{{ activeCategory ? activeCategory.name.toUpperCase() + ' SELECTION' : 'BUILD SUMMARY' }}</h2>
+           <div class="total-price">
+               <span class="compatible-badge" v-if="selectedPartsCount > 0 && !hasIncompatibilities">● Compatible</span> 
+               <span class="incompatible-badge" v-if="hasIncompatibilities">● Check Issues</span> 
+               Build Total: <span class="neon-price">{{ totalPrice.toFixed(2) }} RON</span>
+           </div>
+       </div>
 
-      <div class="info-box">
-        <h4>🤖 Analiză AI</h4>
+       <div v-if="loading" class="loading-state glass-panel">
+          <div class="spinner"></div>
+          <p>Loading components...</p>
+       </div>
 
-        <div v-if="selectedPartsCount === 0">
-          <p>Începe prin a alege un <strong>Procesor</strong>. Acesta este inima sistemului tău.</p>
-        </div>
+       <div class="parts-grid-panel" v-else-if="activeCategory">
+          <div class="parts-grid" v-if="activeCategory.parts.length > 0">
+             <div v-for="part in activeCategory.parts" :key="part.id" class="synth-product-card glass-panel" :class="{ 'is-selected': activeCategory.selectedPart?.id === part.id }">
+                 <div class="card-glow"></div>
+                 <div class="card-content">
+                    <router-link :to="`/products/${activeCategory.id}/${part.id}`" class="card-link" style="text-decoration: none; color: inherit;">
+                      <div class="card-top">
+                        <div class="card-brand">{{ part.brand || part.producator || 'N/A' }}</div>
+                        <a v-if="part.url_produs" :href="part.url_produs" target="_blank" class="external-link-icon" title="Cumpără de pe magazin" @click.stop>🛒</a>
+                      </div>
+                      
+                      <div class="card-image-box">
+                          <img :src="part.imagine_url || 'https://placehold.co/200x200/111827/00f0ff?text=No+Image'" :alt="part.nume">
+                      </div>
+                      
+                      <h3 class="card-title">{{ displayPartName(part) }}</h3>
+                      <p class="card-desc">{{ (part.nume || "").substring(0, 50) }}...</p>
+                    </router-link>
+                    
+                    <div class="card-specs">
+                       <div class="spec-col" v-if="part.frecventa"><span>Speed</span><br>{{ part.frecventa }}</div>
+                       <div class="spec-col" v-if="part.capacitate || part.memorie"><span>Memory</span><br>{{ part.capacitate || part.memorie }}</div>
+                       <div class="spec-col" v-if="part.socket"><span>Socket</span><br>{{ part.socket }}</div>
+                       <div class="spec-col" v-if="part.putere"><span>Power</span><br>{{ part.putere }}W</div>
+                       <div class="spec-col" v-if="part.format"><span>Form</span><br>{{ part.format }}</div>
+                    </div>
 
-        <div v-else>
-          <button class="btn btn-analyze" :disabled="agentLoading" @click="analizeazaBuild">
-            {{ agentLoading ? '⏳ Se analizează...' : '🔍 Analizează Build-ul' }}
-          </button>
-
-          <div v-if="agentError" class="agent-error">⚠️ {{ agentError }}</div>
-
-          <div v-if="agentResult" class="agent-result">
-            <div class="agent-badge" :class="'badge-' + agentResult.severitate">
-              {{ agentResult.severitate === 'ok' ? '✅ Compatibil' : agentResult.severitate === 'warning' ? '⚠️ Atenție' : '❌ Probleme' }}
-            </div>
-
-            <div v-if="agentResult.probleme?.length > 0" class="agent-section">
-              <strong>Probleme:</strong>
-              <ul><li v-for="p in agentResult.probleme" :key="p">{{ p }}</li></ul>
-            </div>
-
-            <div v-if="agentResult.bottleneck?.are_bottleneck" class="agent-section">
-              <strong>Bottleneck:</strong>
-              <p>{{ agentResult.bottleneck.componenta_limitatoare }} limitează {{ agentResult.bottleneck.componenta_limitata }} cu {{ agentResult.bottleneck.procentaj_bottleneck }}%</p>
-            </div>
-
-            <div v-if="agentResult.analiza_ai" class="agent-section">
-              <strong>Feedback AI:</strong>
-              <p>{{ agentResult.analiza_ai }}</p>
-            </div>
-
-            <div v-if="Object.keys(agentResult.sugestii || {}).length > 0" class="agent-section">
-              <strong>Sugestii:</strong>
-              <div v-for="(lista, tip) in agentResult.sugestii" :key="tip">
-                <em>{{ tip.toUpperCase() }}:</em>
-                <div v-for="s in lista" :key="s.id" class="sugestie-item">{{ s.nume || s.model }} — {{ s.pret }} RON</div>
-              </div>
-            </div>
+                    <div class="card-footer">
+                       <div class="card-price">{{ displayPartPrice(part) }} RON</div>
+                       <button class="btn-neon" v-if="activeCategory.selectedPart?.id !== part.id" @click="selectPart(activeCategory.id, part)">SELECT</button>
+                       <button class="btn-neon-remove" v-else @click="removePart(activeCategory.id)">REMOVE</button>
+                    </div>
+                 </div>
+             </div>
           </div>
-        </div>
-      </div>
-    </div>
+          <div v-else class="empty-parts glass-panel">
+              <p>Nicio componentă disponibilă sau incompatibilitate cu selecția curentă.</p>
+              <button class="btn-neon" v-if="activeCategory.filterLocked" @click="resetFilters(activeCategory.id)">Reset Filters</button>
+          </div>
+       </div>
+
+       <!-- SUMMARY PANEL -->
+       <div class="summary-view-panel" v-else>
+           <div class="glass-panel">
+             <h3 class="gradient-text">Your Selected Parts</h3>
+             <div class="selected-parts-list">
+                 <div class="selected-row" v-for="cat in categories" :key="cat.id" @click="openCategory(cat.id)">
+                     <div class="sr-left">
+                       <span class="sr-icon">{{ cat.icon }}</span>
+                       <span class="sr-cat">{{ cat.name }}</span>
+                     </div>
+                     <div class="sr-right">
+                       <span class="sr-name" :class="{'text-muted': !cat.selectedPart}">{{ cat.selectedPart ? displayPartName(cat.selectedPart) : 'None selected' }}</span>
+                       <span class="sr-price" v-if="cat.selectedPart">{{ displayPartPrice(cat.selectedPart) }} RON</span>
+                       <button class="btn-icon-remove" v-if="cat.selectedPart" @click.stop="removePart(cat.id)">✕</button>
+                     </div>
+                 </div>
+             </div>
+           </div>
+
+           <!-- AI Results -->
+           <div v-if="agentResult || agentError" class="ai-glass-panel glass-panel mt-4">
+              <h3 class="gradient-text">✨ AI Analysis Results</h3>
+              <div v-if="agentError" class="agent-error">⚠️ {{ agentError }}</div>
+
+              <div v-if="agentResult" class="agent-result">
+                <div class="agent-badge" :class="'badge-' + agentResult.severitate">
+                  {{ agentResult.severitate === 'ok' ? '✅ Compatibil' : agentResult.severitate === 'warning' ? '⚠️ Atenție' : '❌ Probleme' }}
+                </div>
+
+                <div v-if="agentResult.probleme?.length > 0" class="agent-section">
+                  <strong>Probleme:</strong>
+                  <ul><li v-for="p in agentResult.probleme" :key="p">{{ p }}</li></ul>
+                </div>
+
+                <div v-if="agentResult.bottleneck?.are_bottleneck" class="agent-section">
+                  <strong>Bottleneck:</strong>
+                  <p>{{ agentResult.bottleneck.componenta_limitatoare }} limitează {{ agentResult.bottleneck.componenta_limitata }} cu {{ agentResult.bottleneck.procentaj_bottleneck }}%</p>
+                </div>
+
+                <div v-if="agentResult.analiza_ai" class="agent-section">
+                  <strong>Feedback AI:</strong>
+                  <p>{{ agentResult.analiza_ai }}</p>
+                </div>
+              </div>
+           </div>
+       </div>
+
+    </main>
   </div>
 </template>
 
@@ -171,17 +150,17 @@ const agentLoading = ref(false)
 const agentResult = ref(null)
 const agentError = ref(null)
 const loading = ref(true)
-const openCategoryId = ref(null)
+const openCategoryId = ref('cpus') // Default la primul tab
 
 const categories = ref([
-  { id: 'cpus',         name: 'Procesor',      icon: '🧠', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false, filterHint: '',                            incompatibil: false },
-  { id: 'motherboards', name: 'Placă de Bază', icon: '🛹', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false, filterHint: 'Alege mai întâi un Procesor', incompatibil: false },
-  { id: 'gpus',         name: 'Placă Video',   icon: '🎮', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false, filterHint: '',                            incompatibil: false },
-  { id: 'rams',         name: 'Memorie RAM',   icon: '⚡', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false, filterHint: 'Alege mai întâi o Placă de Bază', incompatibil: false },
-  { id: 'storages',     name: 'Stocare',       icon: '💾', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false, filterHint: '',                            incompatibil: false },
-  { id: 'psus',         name: 'Sursă',         icon: '🔌', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false, filterHint: '',                            incompatibil: false },
-  { id: 'cases',        name: 'Carcasă',       icon: '📦', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false, filterHint: '',                            incompatibil: false },
-  { id: 'coolers',      name: 'Cooler CPU',    icon: '❄️', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false, filterHint: '',                            incompatibil: false },
+  { id: 'cpus',         name: 'Procesor',      icon: '🧠', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false },
+  { id: 'motherboards', name: 'Placă de Bază', icon: '🛹', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false },
+  { id: 'gpus',         name: 'Placă Video',   icon: '🎮', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false },
+  { id: 'rams',         name: 'Memorie RAM',   icon: '⚡', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false },
+  { id: 'storages',     name: 'Stocare',       icon: '💾', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false },
+  { id: 'psus',         name: 'Sursă',         icon: '🔌', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false },
+  { id: 'cases',        name: 'Carcasă',       icon: '📦', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false },
+  { id: 'coolers',      name: 'Cooler CPU',    icon: '❄️', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false },
 ])
 
 const catToKeyMap = {
@@ -190,7 +169,17 @@ const catToKeyMap = {
   'cases': 'case', 'coolers': 'cooler'
 }
 
-// ── Fetch ─────────────────────────────────────────────────
+const activeCategory = computed(() => {
+  if (!openCategoryId.value) return null;
+  return categories.value.find(c => c.id === openCategoryId.value)
+})
+
+const hasIncompatibilities = computed(() => categories.value.some(c => c.incompatibil))
+
+const openCategory = (id) => {
+  openCategoryId.value = id
+}
+
 const fetchParts = async () => {
   loading.value = true
   try {
@@ -199,20 +188,26 @@ const fetchParts = async () => {
       const parts = response.data.results || response.data
       category.allParts = parts        
       category.parts = [...parts]      
-      console.log(`✅ Încărcat ${category.id}: ${parts.length} piese`)
     }
   } catch (err) {
-    console.error('Eroare la citirea bazei de date:', err)
+    console.error('Eroare:', err)
   } finally {
     loading.value = false
   }
 }
 
-// ── Select cu filtre în cascadă ───────────────────────────
+const resetFilters = (categoryId) => {
+  if (categoryId === 'cpus' || categoryId === 'motherboards' || categoryId === 'rams') {
+     const cat = categories.value.find(c => c.id === categoryId)
+     cat.parts = [...cat.allParts]
+     cat.filterLocked = false
+     cat.activeFilter = null
+  }
+}
+
 const selectPart = (categoryId, part) => {
   const category = categories.value.find(c => c.id === categoryId)
   category.selectedPart = part
-  openCategoryId.value = null
   agentResult.value = null
   agentError.value = null
 
@@ -224,55 +219,26 @@ const selectPart = (categoryId, part) => {
   if (categoryId === 'cpus') {
     const socket = part.socket
     const moboCat = categories.value.find(c => c.id === 'motherboards')
-
     if (socket) {
       moboCat.parts = moboCat.allParts.filter(m => m.socket === socket)
       moboCat.activeFilter = `Socket ${socket}`
       moboCat.filterLocked = true
-
-      if (moboCat.selectedPart && moboCat.selectedPart.socket !== socket) {
-        moboCat.incompatibil = true
-      } else {
-        moboCat.incompatibil = false
-      }
-    } else {
-      moboCat.parts = [...moboCat.allParts]
-      moboCat.activeFilter = null
-      moboCat.filterLocked = false
-      moboCat.incompatibil = false
+      moboCat.incompatibil = moboCat.selectedPart && moboCat.selectedPart.socket !== socket
     }
-
-    const ramCat = categories.value.find(c => c.id === 'rams')
-    ramCat.parts = [...ramCat.allParts]
-    ramCat.activeFilter = null
-    ramCat.filterLocked = false
-    ramCat.incompatibil = false
   }
 
   if (categoryId === 'motherboards') {
     const tipRam = part.tip_ram
     const ramCat = categories.value.find(c => c.id === 'rams')
-
     if (tipRam) {
       ramCat.parts = ramCat.allParts.filter(r => r.tip === tipRam)
       ramCat.activeFilter = tipRam
       ramCat.filterLocked = true
-
-      if (ramCat.selectedPart && ramCat.selectedPart.tip !== tipRam) {
-        ramCat.incompatibil = true
-      } else {
-        ramCat.incompatibil = false
-      }
-    } else {
-      ramCat.parts = [...ramCat.allParts]
-      ramCat.activeFilter = null
-      ramCat.filterLocked = false
-      ramCat.incompatibil = false
+      ramCat.incompatibil = ramCat.selectedPart && ramCat.selectedPart.tip !== tipRam
     }
   }
 }
 
-// ── Remove cu reset filtre ────────────────────────────────
 const removePart = (categoryId) => {
   const category = categories.value.find(c => c.id === categoryId)
   if (!category) return
@@ -292,12 +258,6 @@ const removePart = (categoryId) => {
     moboCat.activeFilter = null
     moboCat.filterLocked = false
     moboCat.incompatibil = false
-
-    const ramCat = categories.value.find(c => c.id === 'rams')
-    ramCat.parts = [...ramCat.allParts]
-    ramCat.activeFilter = null
-    ramCat.filterLocked = false
-    ramCat.incompatibil = false
   }
 
   if (categoryId === 'motherboards') {
@@ -309,11 +269,6 @@ const removePart = (categoryId) => {
   }
 }
 
-const openPartSelector = (categoryId) => {
-  openCategoryId.value = openCategoryId.value === categoryId ? null : categoryId
-}
-
-// ── Salvare ───────────────────────────────────────────────
 const salveazaPC = async () => {
   try {
     const payload = {
@@ -330,12 +285,10 @@ const salveazaPC = async () => {
     const response = await api.post('saved-builds/', payload)
     alert(`Build salvat cu succes sub numele: ${response.data.nume}`)
   } catch (error) {
-    console.error('Eroare la salvare:', error)
     alert(error.response?.status === 401 ? 'Loghează-te pentru a salva!' : 'Eroare server.')
   }
 }
 
-// ── Agent AI ──────────────────────────────────────────────
 const analizeazaBuild = async () => {
   agentLoading.value = true
   agentError.value = null
@@ -353,25 +306,21 @@ const analizeazaBuild = async () => {
     }
     const response = await axios.post('http://127.0.0.1:8002/analizeaza-build', payload)
     agentResult.value = response.data
+    openCategoryId.value = null // Sari la sumar sa vada analiza
   } catch (err) {
-    agentError.value = 'Nu s-a putut contacta agentul. Verifică dacă rulează pe portul 8002.'
+    agentError.value = 'Nu s-a putut contacta agentul.'
   } finally {
     agentLoading.value = false
   }
 }
 
-// ── Helpers ───────────────────────────────────────────────
 const selectedPartsCount = computed(() => categories.value.filter(cat => cat.selectedPart).length)
-const totalPartsLoaded = computed(() => categories.value.reduce((acc, cat) => acc + (cat.parts?.length || 0), 0))
 const totalPrice = computed(() => categories.value.reduce((sum, cat) => sum + parseFloat(cat.selectedPart?.pret || 0), 0))
-const progressPercentage = computed(() => (selectedPartsCount.value / categories.value.length) * 100)
 const displayPartName = (part) => part.nume || part.model || 'Componentă'
 const displayPartPrice = (part) => part.pret || '0.00'
 
-// ── Mount + încarcă din sesiuni/storage ──
 onMounted(async () => {
   await fetchParts()
-
   const saved = sessionStorage.getItem('loadBuild')
   if (saved) {
     const parts = JSON.parse(saved)
@@ -382,258 +331,371 @@ onMounted(async () => {
     sessionStorage.removeItem('loadBuild')
   }
 
-  const pendingAiBuild = localStorage.getItem('pending_ai_build')
-  if (pendingAiBuild) {
-    try {
-      const buildRecomandat = JSON.parse(pendingAiBuild)
-      
-      if (buildRecomandat.cpu) {
-         const cpuCat = categories.value.find(c => c.id === 'cpus')
-         const cpuPart = cpuCat.allParts.find(p => p.id === buildRecomandat.cpu.id)
-         if (cpuPart) selectPart('cpus', cpuPart)
-      }
-      
-      if (buildRecomandat.gpu) {
-         const gpuCat = categories.value.find(c => c.id === 'gpus')
-         const gpuPart = gpuCat.allParts.find(p => p.id === buildRecomandat.gpu.id)
-         if (gpuPart) selectPart('gpus', gpuPart)
-      }
-      
-      if (buildRecomandat.motherboard) {
-         const moboCat = categories.value.find(c => c.id === 'motherboards')
-         const moboPart = moboCat.allParts.find(p => p.id === buildRecomandat.motherboard.id)
-         if (moboPart) selectPart('motherboards', moboPart)
-      }
-      
-      if (buildRecomandat.ram) {
-         const ramCat = categories.value.find(c => c.id === 'rams')
-         const ramPart = ramCat.allParts.find(p => p.id === buildRecomandat.ram.id)
-         if (ramPart) selectPart('rams', ramPart)
-      }
-
-      localStorage.removeItem('pending_ai_build')
-      agentError.value = null
-      agentResult.value = null
-
-    } catch (error) {
-      console.error('Eroare la parsarea build-ului AI:', error)
-      localStorage.removeItem('pending_ai_build')
-    }
-  }
-
   const currentBuildStr = localStorage.getItem('current_build')
-  if (currentBuildStr && !pendingAiBuild && !saved) {
+  if (currentBuildStr && !saved) {
     try {
       const currentBuild = JSON.parse(currentBuildStr)
       for (const slot of categories.value) {
         const key = catToKeyMap[slot.id]
         if (key && currentBuild[key]) {
            const part = slot.allParts.find(p => p.id === currentBuild[key].id)
-           if (part) {
-               selectPart(slot.id, part) 
-           }
+           if (part) selectPart(slot.id, part) 
         }
       }
-    } catch (e) {
-      console.error("Eroare la încărcarea current_build:", e)
-    }
+    } catch (e) {}
   }
 })
 </script>
 
 <style scoped>
-.builder-layout { 
-  display: grid; 
-  grid-template-columns: 1fr 350px; 
-  gap: 30px; 
-  padding: 40px 20px; 
-  color: white; 
+/* =========== MODERN UI =========== */
+.synth-builder-container {
+  display: flex;
+  min-height: calc(100vh - 80px);
+  padding: 30px;
+  gap: 30px;
+  color: #e2e8f0;
 }
 
-.main-panel { 
-  background-color: #1a1b26; 
-  border-radius: 12px; 
-  border: 1px solid #2a2d3e; 
-  padding: 25px; 
+/* Glassmorphism Utilities */
+.glass-panel {
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
 }
 
-.build-row { 
-  display: flex; 
-  align-items: center; 
-  padding: 20px; 
-  border-bottom: 1px solid #2a2d3e; 
+.gradient-text {
+  background: linear-gradient(90deg, #00f0ff, #a855f7);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-weight: 800;
+}
+
+/* SIDEBAR */
+.synth-sidebar {
+  width: 280px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  height: fit-content;
+  position: sticky;
+  top: 30px;
+}
+
+.sidebar-header {
+  font-size: 1.2rem;
+  letter-spacing: 2px;
+  margin-bottom: 30px;
+  text-align: center;
+}
+
+.category-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 30px;
+}
+
+.category-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid transparent;
+}
+
+.category-item:hover {
+  background: rgba(255,255,255,0.05);
+}
+
+.category-item.active {
+  background: rgba(0, 240, 255, 0.1);
+  border-color: rgba(0, 240, 255, 0.3);
+  box-shadow: 0 0 15px rgba(0, 240, 255, 0.1);
+}
+
+.cat-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.cat-icon { font-size: 1.2rem; }
+.cat-name { font-weight: 500; font-size: 0.95rem; }
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #334155;
+  border: 2px solid #1e293b;
+}
+
+.status-dot.selected {
+  background: #00f0ff;
+  box-shadow: 0 0 8px #00f0ff;
+  border-color: rgba(0, 240, 255, 0.3);
+}
+
+.btn-solid-green, .btn-solid-purple, .btn-neon-full {
+  width: 100%;
+  padding: 14px;
+  border-radius: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s;
+  color: white;
+}
+.btn-neon-full { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); }
+.btn-neon-full:hover { background: rgba(255,255,255,0.1); }
+
+.btn-solid-green { background: #10b981; }
+.btn-solid-green:hover:not(:disabled) { background: #059669; box-shadow: 0 0 15px rgba(16, 185, 129, 0.4); }
+.btn-solid-green:disabled { background: #334155; opacity: 0.5; cursor: not-allowed; }
+
+.btn-solid-purple { background: #a855f7; }
+.btn-solid-purple:hover:not(:disabled) { background: #9333ea; box-shadow: 0 0 15px rgba(168, 85, 247, 0.4); }
+.btn-solid-purple:disabled { background: #334155; opacity: 0.5; cursor: not-allowed; }
+
+/* MAIN AREA */
+.synth-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.main-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 25px;
+}
+
+.main-header h2 {
+  font-size: 1.5rem;
+  letter-spacing: 1px;
+  font-weight: 700;
+}
+
+.total-price {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  font-size: 1.1rem;
+}
+
+.compatible-badge { color: #10b981; font-size: 0.9rem; font-weight: 600; text-shadow: 0 0 8px rgba(16, 185, 129, 0.4); }
+.incompatible-badge { color: #ef4444; font-size: 0.9rem; font-weight: 600; text-shadow: 0 0 8px rgba(239, 68, 68, 0.4); }
+
+.neon-price {
+  color: #00f0ff;
+  font-weight: 800;
+  font-size: 1.4rem;
+  text-shadow: 0 0 10px rgba(0, 240, 255, 0.3);
+}
+
+/* CARDS GRID */
+.parts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 25px;
+}
+
+.synth-product-card {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  transition: transform 0.3s ease, border-color 0.3s ease;
+}
+
+.synth-product-card:hover {
+  transform: translateY(-5px);
+  border-color: rgba(0, 240, 255, 0.5);
+}
+
+.synth-product-card.is-selected {
+  border-color: #a855f7;
+  box-shadow: 0 0 20px rgba(168, 85, 247, 0.2);
+}
+
+.card-top {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 15px;
+}
+.card-brand {
+  background: rgba(255,255,255,0.1);
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #94a3b8;
+}
+
+.card-image-box {
+  width: 100%;
+  height: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+.external-link-icon { font-size: 1.2rem; text-decoration: none; background: rgba(26, 27, 38, 0.85); border-radius: 50%; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; transition: all 0.2s; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 4px 6px rgba(0,0,0,0.3); z-index: 10; margin-left: auto; }
+.external-link-icon:hover { transform: scale(1.1); background: #00f0ff; border-color: #00f0ff; }
+.card-link { display: block; }
+.card-image-box img {
+  max-width: 80%;
+  max-height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 10px 15px rgba(0,0,0,0.5));
+}
+
+.card-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-bottom: 5px;
+  line-height: 1.3;
+}
+
+.card-desc {
+  font-size: 0.8rem;
+  color: #64748b;
+  margin-bottom: 15px;
+  min-height: 35px;
+}
+
+.card-specs {
+  display: flex;
+  gap: 15px;
+  margin-bottom: 25px;
+  border-top: 1px solid rgba(255,255,255,0.05);
+  padding-top: 15px;
+}
+.spec-col span {
+  font-size: 0.7rem;
+  color: #64748b;
+  text-transform: uppercase;
+}
+.spec-col {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.card-footer {
+  margin-top: auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.card-price {
+  font-size: 1.2rem;
+  font-weight: 800;
+}
+
+.btn-neon {
+  background: linear-gradient(90deg, rgba(168, 85, 247, 0.8), rgba(0, 240, 255, 0.8));
+  border: none;
+  padding: 8px 20px;
+  border-radius: 20px;
+  color: white;
+  font-weight: 700;
+  cursor: pointer;
   transition: 0.3s;
 }
-
-.category-container { 
-  border-bottom: 1px solid #232533; 
+.btn-neon:hover {
+  box-shadow: 0 0 15px rgba(168, 85, 247, 0.6);
+  transform: scale(1.05);
 }
 
-.category-info { 
-  flex: 1;
-  display: flex; 
-  flex-direction: column; 
-  margin-left: 15px;
-}
-
-.price-section { 
-  margin-left: auto;
-  margin-right: 25px; 
-  min-width: 120px; 
-  text-align: right; 
-  font-weight: bold;
-}
-
-.actions { 
-  width: 120px; 
-  display: flex; 
-  justify-content: flex-end; 
-}
-
-.no-part {
-  font-size: 0.8rem;
-  color: #475569;
-}
-
-.filter-hint {
-  color: #f59e0b;
-  font-size: 0.78rem;
-}
-
-.incompatibil-warning {
-  display: block;
-  font-size: 0.75rem;
-  color: #f43f5e;
-  margin-top: 3px;
-}
-
-.filter-tag {
-  font-size: 0.7rem;
-  color: #475569;
-  background: rgba(255,255,255,0.04);
-  border: 1px solid #2a2d3e;
-  border-radius: 20px;
-  padding: 2px 10px;
-  margin-right: 12px;
-  white-space: nowrap;
-}
-
-.parts-selector-box {
-  background-color: #16161e;
-  max-height: 350px;
-  overflow-y: auto;
-  border-left: 3px solid #3b82f6;
-  margin: 0 10px 15px 10px;
-  border-radius: 0 0 8px 8px;
-  box-shadow: inset 0 4px 10px rgba(0,0,0,0.3);
-}
-
-.part-option {
-  display: flex; 
-  justify-content: space-between; 
-  align-items: center;
-  padding: 15px 25px; 
-  cursor: pointer; 
-  border-bottom: 1px solid #232533;
-  transition: 0.2s;
-}
-
-.part-option:hover { 
-  background-color: rgba(59, 130, 246, 0.1); 
-}
-
-.p-name { font-weight: 500; color: #a9b1d6; }
-.p-price { color: #10b981; font-weight: bold; }
-
-.btn { 
-  padding: 8px 18px; 
-  border-radius: 6px; 
-  cursor: pointer; 
-  font-weight: 600; 
-  transition: 0.2s;
-}
-
-.btn-outline { 
-  background: transparent; 
-  border: 1px solid #3b82f6; 
-  color: #3b82f6; 
-}
-
-.btn-outline:hover { 
-  background: #3b82f6; 
-  color: white; 
-}
-
-.btn-primary { 
-  background: #10b981; 
-  border: none; 
-  color: white; 
-  padding: 15px; 
-  font-size: 1rem;
-}
-
-.btn-primary:hover:not(:disabled) { 
-  background: #059669; 
-  transform: translateY(-1px);
-}
-
-.btn-primary:disabled { 
-  background: #334155; 
-  cursor: not-allowed; 
-  opacity: 0.5;
-}
-
-.btn-block { width: 100%; }
-
-.summary-card { 
-  background: #1a1b26; 
-  border: 1px solid #2a2d3e; 
-  padding: 25px; 
-  border-radius: 12px; 
-  margin-bottom: 20px; 
-}
-
-.price-highlight { 
-  color: #10b981; 
-  font-size: 1.6rem; 
-}
-
-.info-box { 
-  background: #1e293b; 
-  padding: 20px; 
-  border-radius: 12px; 
-  border-left: 4px solid #3b82f6; 
-}
-
-.info-box h4 { 
-  color: #3b82f6; 
-  margin-bottom: 10px; 
-}
-
-.btn-analyze {
-  width: 100%;
-  padding: 10px;
-  background: #6366f1;
-  border: none;
-  color: white;
-  border-radius: 6px;
-  cursor: pointer;
-  font-weight: 600;
-  margin-bottom: 12px;
-  transition: 0.2s;
-}
-.btn-analyze:hover:not(:disabled) { background: #4f46e5; }
-.btn-analyze:disabled { opacity: 0.6; cursor: not-allowed; }
-
-.agent-error {
-  background: rgba(239,68,68,0.1);
+.btn-neon-remove {
+  background: transparent;
   border: 1px solid #ef4444;
-  color: #fca5a5;
-  padding: 10px;
-  border-radius: 6px;
-  font-size: 0.85rem;
+  color: #ef4444;
+  padding: 8px 15px;
+  border-radius: 20px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: 0.3s;
+}
+.btn-neon-remove:hover {
+  background: rgba(239, 68, 68, 0.2);
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.3);
 }
 
+/* SUMMARY VIEW */
+.summary-view-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.selected-parts-list {
+  padding: 20px;
+}
+
+.selected-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  cursor: pointer;
+  transition: 0.2s;
+}
+.selected-row:hover {
+  background: rgba(255,255,255,0.02);
+}
+
+.sr-left {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  width: 200px;
+}
+.sr-icon { font-size: 1.2rem; }
+.sr-cat { font-weight: 600; color: #94a3b8; }
+
+.sr-right {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 20px;
+}
+.sr-name { font-weight: 600; }
+.text-muted { color: #475569; }
+.sr-price { font-weight: 800; color: #00f0ff; width: 100px; text-align: right; }
+
+.btn-icon-remove {
+  background: none;
+  border: none;
+  color: #ef4444;
+  cursor: pointer;
+  font-size: 1.1rem;
+}
+.btn-icon-remove:hover { text-shadow: 0 0 5px #ef4444; }
+
+.loading-state, .empty-parts {
+  padding: 40px;
+  text-align: center;
+  color: #94a3b8;
+}
+
+/* AI Results styling kept similar to before but with glassmorphism */
+.ai-glass-panel { padding: 25px; }
 .agent-badge {
   display: inline-block;
   padding: 4px 12px;
@@ -645,27 +707,26 @@ onMounted(async () => {
 .badge-ok      { background: rgba(16,185,129,0.2); color: #10b981; }
 .badge-warning { background: rgba(245,158,11,0.2);  color: #f59e0b; }
 .badge-error   { background: rgba(239,68,68,0.2);   color: #ef4444; }
-
 .agent-section { margin-top: 10px; font-size: 0.85rem; color: #a9b1d6; }
 .agent-section ul { margin: 4px 0 0 16px; }
-.agent-section p { margin-top: 4px; line-height: 1.5; }
-.sugestie-item { padding: 2px 0 2px 8px; color: #7aa2f7; font-size: 0.8rem; }
 
-.parts-selector-box::-webkit-scrollbar { width: 6px; }
-.parts-selector-box::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
-.btn-remove {
-  background: transparent;
-  border: 1px solid #ef4444;
-  color: #ef4444;
-  padding: 8px 18px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-weight: 600;
-  transition: 0.2s;
+/* LIGHT THEME OVERRIDES FOR BUILDER */
+body.light-theme .glass-panel {
+  background: rgba(255, 255, 255, 0.8);
+  border-color: rgba(0, 0, 0, 0.1);
+  color: #0f172a;
 }
-
-.btn-remove:hover {
-  background: #ef4444;
-  color: white;
+body.light-theme .synth-builder-container {
+  color: #0f172a;
+  background: #f1f5f9;
 }
+body.light-theme .category-item:hover { background: rgba(0,0,0,0.05); }
+body.light-theme .category-item.active { background: rgba(0, 240, 255, 0.1); }
+body.light-theme .card-desc, body.light-theme .spec-col span, body.light-theme .sr-cat { color: #64748b; }
+body.light-theme .card-brand { background: rgba(0,0,0,0.05); color: #475569; }
+body.light-theme .spec-col { color: #0f172a; }
+body.light-theme .neon-price { color: #0284c7; text-shadow: none; }
+body.light-theme .btn-neon { background: linear-gradient(90deg, #9333ea, #0284c7); }
+body.light-theme .btn-neon-full { color: #0f172a; background: rgba(0,0,0,0.05); border-color: rgba(0,0,0,0.1); }
+body.light-theme .btn-neon-full:hover { background: rgba(0,0,0,0.1); }
 </style>
