@@ -44,7 +44,7 @@
           </label>
         </div>
 
-        <!-- <h3 v-if="activeCategoryFilters.length" class="dynamic-filters-title">⚙️ Specificații</h3>
+        <h3 v-if="activeCategoryFilters.length" class="dynamic-filters-title">⚙️ Specificații</h3>
         
         <div v-for="filter in activeCategoryFilters" :key="filter.key" class="filter-group">
           <label class="filter-label-main">{{ filter.label }}</label>
@@ -79,7 +79,8 @@
             @change="onFilterChange" 
             class="filter-input" 
           />
-        </div> -->
+        </div>
+
 
         <div class="results-count" v-if="totalProducts > 0">
           {{ totalProducts }} produse găsite

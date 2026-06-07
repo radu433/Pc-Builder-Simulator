@@ -50,45 +50,6 @@
        </div>
 
        <div class="parts-grid-panel" v-else-if="activeCategory">
-          <!-- SEARCH & FILTERS -->
-          <div class="builder-filters glass-panel">
-            <div class="builder-filters-header">
-              <div class="search-input-wrapper">
-                <span class="icon">🔍</span>
-                <input type="text" v-model="searchQuery" placeholder="Caută componenta..." @input="applyFilters" />
-              </div>
-              <div class="price-inputs">
-                <input type="number" v-model="minPrice" placeholder="Preț Min" @input="applyFilters" />
-                <span>-</span>
-                <input type="number" v-model="maxPrice" placeholder="Preț Max" @input="applyFilters" />
-              </div>
-              <label class="checkbox-label">
-                <input type="checkbox" v-model="inStockOnly" @change="applyFilters" /> Doar în stoc
-              </label>
-              <button class="btn-neon-remove reset-btn" @click="resetFilters(activeCategory.id)">🔄 Reset</button>
-            </div>
-            
-            <div class="dynamic-filters-row" v-if="activeCategoryFilters.length">
-              <div v-for="filter in activeCategoryFilters" :key="filter.key" class="filter-group">
-                <label class="filter-label-main">{{ filter.label }}</label>
-                
-                <select v-if="filter.type === 'select'" v-model="dynamicFilters[filter.key]" @change="applyFilters" class="filter-select">
-                  <option value="">Orice</option>
-                  <option v-for="opt in filter.options" :key="opt" :value="opt">{{ opt }}</option>
-                </select>
-
-                <div v-else-if="filter.type === 'checkbox-group'" class="checkbox-group-wrapper">
-                  <label v-for="opt in filter.options" :key="opt" class="checkbox-label small-label">
-                    <input type="checkbox" :value="opt" v-model="dynamicFilters[filter.key]" @change="applyFilters" />
-                    {{ opt }}
-                  </label>
-                </div>
-
-                <input v-else :type="filter.type" v-model="dynamicFilters[filter.key]" :placeholder="filter.placeholder" @input="applyFilters" class="filter-input" />
-              </div>
-            </div>
-          </div>
-
           <div class="parts-grid" v-if="activeCategory.parts.length > 0">
              <div v-for="part in activeCategory.parts" :key="part.id" class="synth-product-card glass-panel" :class="{ 'is-selected': activeCategory.selectedPart?.id === part.id }">
                  <div class="card-glow"></div>
@@ -215,121 +176,6 @@ const activeCategory = computed(() => {
 
 const hasIncompatibilities = computed(() => categories.value.some(c => c.incompatibil))
 
-// --- FILTERS STATE ---
-const searchQuery = ref('')
-const minPrice = ref('')
-const maxPrice = ref('')
-const inStockOnly = ref(false)
-const dynamicFilters = ref({})
-
-const categoryFiltersMap = {
-  cpus: [
-    { key: 'producator', label: 'Producător', type: 'select', options: ['AMD', 'Intel'] },
-    { key: 'socket', label: 'Socket', type: 'checkbox-group', options: ['AM4', 'AM5', 'LGA 1700', 'LGA 1200', 'LGA 1151', 'LGA 1851'] },
-  ],
-  motherboards: [
-    { key: 'socket', label: 'Socket', type: 'checkbox-group', options: ['AM4', 'AM5', 'LGA 1700', 'LGA 1200', 'LGA 1151', 'LGA 1851'] },
-    { key: 'tip_ram', label: 'Tip Memorie Suportată', type: 'select', options: ['DDR4', 'DDR5'] },
-    { key: 'format', label: 'Format', type: 'select', options: ['ATX', 'mATX', 'Mini-ITX'] }
-  ],
-  gpus: [
-    { key: 'producator_chipset', label: 'Producător Chipset', type: 'select', options: ['NVIDIA', 'AMD', 'Intel'] },
-    { key: 'memorie', label: 'Capacitate VRAM', type: 'number', placeholder: 'ex: 8, 12, 16' }
-  ],
-  rams: [
-    { key: 'tip', label: 'Tip Memorie', type: 'select', options: ['DDR4', 'DDR5'] },
-    { key: 'capacitate', label: 'Capacitate (GB)', type: 'number', placeholder: 'ex: 16, 32' }
-  ],
-  storages: [
-    { key: 'tip', label: 'Tip Stocare', type: 'select', options: ['SSD', 'HDD', 'NVME'] },
-    { key: 'capacitate', label: 'Capacitate (GB)', type: 'number', placeholder: 'ex: 500, 1000' }
-  ],
-  psus: [
-    { key: 'putere', label: 'Putere (W)', type: 'number', placeholder: 'ex: 750, 850' },
-    { key: 'certificare', label: 'Certificare 80+', type: 'select', options: ['White', 'Bronze', 'Gold', 'Platinum', 'Titanium'] }
-  ],
-  cases: [
-    { key: 'tip_carcasa', label: 'Tip Carcasă', type: 'select', options: ['MID', 'FULL', 'MINI', 'SFF', 'AQ'] }
-  ],
-  coolers: [
-    { key: 'socket', label: 'Socket', type: 'checkbox-group', options: ['AM4', 'AM5', 'LGA 1700', 'LGA 1200', 'LGA 1151', 'LGA 1851'] },
-    { key: 'tip_racire', label: 'Tip Răcire', type: 'select', options: ['Air', 'AIO 120mm', 'AIO 240mm', 'AIO 280mm', 'AIO 360mm'] }
-  ]
-}
-
-const activeCategoryFilters = computed(() => {
-  if (!activeCategory.value) return []
-  return categoryFiltersMap[activeCategory.value.id] || []
-})
-
-const initDynamicFilters = () => {
-  const filters = {}
-  activeCategoryFilters.value.forEach(f => {
-    if (f.type === 'checkbox-group') {
-      filters[f.key] = []
-    } else {
-      filters[f.key] = ''
-    }
-  })
-  dynamicFilters.value = filters
-}
-
-import { watch } from 'vue'
-
-watch(openCategoryId, () => {
-  searchQuery.value = ''
-  minPrice.value = ''
-  maxPrice.value = ''
-  inStockOnly.value = false
-  initDynamicFilters()
-  applyFilters()
-})
-
-const applyFilters = async () => {
-  const cat = activeCategory.value
-  if (!cat) return
-
-  loading.value = true
-
-  const params = {}
-
-  // 1. Compatibility Lock
-  if (cat.filterLocked && cat.activeFilter) {
-    if (cat.id === 'motherboards' && cat.activeFilter.startsWith('Socket ')) {
-       params.socket = cat.activeFilter.replace('Socket ', '')
-    } else if (cat.id === 'rams') {
-       params.tip = cat.activeFilter
-    }
-  }
-
-  // 2. Global Filters
-  if (searchQuery.value) params.search = searchQuery.value
-  if (minPrice.value) params.min_pret = minPrice.value
-  if (maxPrice.value) params.max_pret = maxPrice.value
-  if (inStockOnly.value) params.in_stock = 'true'
-
-  // 3. Dynamic Filters
-  for (const [key, value] of Object.entries(dynamicFilters.value)) {
-    if (Array.isArray(value)) {
-      if (value.length > 0) {
-        params[key] = value.join(',')
-      }
-    } else if (value !== '' && value !== null && value !== undefined) {
-       params[key] = value
-    }
-  }
-
-  try {
-    const response = await axios.get(`/api/${cat.id}/`, { params })
-    cat.parts = response.data.results !== undefined ? response.data.results : response.data
-  } catch (error) {
-    console.error(error)
-  } finally {
-    loading.value = false
-  }
-}
-// --- END FILTERS STATE ---
-
 const openCategory = (id) => {
   openCategoryId.value = id
 }
@@ -347,25 +193,16 @@ const fetchParts = async () => {
     console.error('Eroare:', err)
   } finally {
     loading.value = false
-    applyFilters()
   }
 }
 
 const resetFilters = (categoryId) => {
-  searchQuery.value = ''
-  minPrice.value = ''
-  maxPrice.value = ''
-  inStockOnly.value = false
-  initDynamicFilters()
-
   if (categoryId === 'cpus' || categoryId === 'motherboards' || categoryId === 'rams') {
      const cat = categories.value.find(c => c.id === categoryId)
-     if (cat) {
-       cat.filterLocked = false
-       cat.activeFilter = null
-     }
+     cat.parts = [...cat.allParts]
+     cat.filterLocked = false
+     cat.activeFilter = null
   }
-  applyFilters()
 }
 
 const selectPart = (categoryId, part) => {
@@ -383,6 +220,7 @@ const selectPart = (categoryId, part) => {
     const socket = part.socket
     const moboCat = categories.value.find(c => c.id === 'motherboards')
     if (socket) {
+      moboCat.parts = moboCat.allParts.filter(m => m.socket === socket)
       moboCat.activeFilter = `Socket ${socket}`
       moboCat.filterLocked = true
       moboCat.incompatibil = moboCat.selectedPart && moboCat.selectedPart.socket !== socket
@@ -393,13 +231,12 @@ const selectPart = (categoryId, part) => {
     const tipRam = part.tip_ram
     const ramCat = categories.value.find(c => c.id === 'rams')
     if (tipRam) {
+      ramCat.parts = ramCat.allParts.filter(r => r.tip === tipRam)
       ramCat.activeFilter = tipRam
       ramCat.filterLocked = true
-      ramCat.incompatibil = ramCat.selectedPart && ramCat.selectedPart.tip !== tipRam && ramCat.selectedPart.tip_memorie !== tipRam
+      ramCat.incompatibil = ramCat.selectedPart && ramCat.selectedPart.tip !== tipRam
     }
   }
-  
-  applyFilters()
 }
 
 const removePart = (categoryId) => {
@@ -417,6 +254,7 @@ const removePart = (categoryId) => {
 
   if (categoryId === 'cpus') {
     const moboCat = categories.value.find(c => c.id === 'motherboards')
+    moboCat.parts = [...moboCat.allParts]
     moboCat.activeFilter = null
     moboCat.filterLocked = false
     moboCat.incompatibil = false
@@ -424,12 +262,11 @@ const removePart = (categoryId) => {
 
   if (categoryId === 'motherboards') {
     const ramCat = categories.value.find(c => c.id === 'rams')
+    ramCat.parts = [...ramCat.allParts]
     ramCat.activeFilter = null
     ramCat.filterLocked = false
     ramCat.incompatibil = false
   }
-  
-  applyFilters()
 }
 
 const salveazaPC = async () => {
@@ -891,61 +728,4 @@ body.light-theme .neon-price { color: #0284c7; text-shadow: none; }
 body.light-theme .btn-neon { background: linear-gradient(90deg, #9333ea, #0284c7); }
 body.light-theme .btn-neon-full { color: #0f172a; background: rgba(0,0,0,0.05); border-color: rgba(0,0,0,0.1); }
 body.light-theme .btn-neon-full:hover { background: rgba(0,0,0,0.1); }
-
-/* Builder Filters CSS */
-.builder-filters {
-  padding: 15px 20px;
-  margin-bottom: 20px;
-}
-
-.builder-filters-header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 15px;
-  margin-bottom: 15px;
-}
-
-.search-input-wrapper { position: relative; display: flex; align-items: center; flex: 1; min-width: 200px; }
-.search-input-wrapper input { background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 8px 15px 8px 35px; color: white; width: 100%; outline: none; font-size: 0.9rem; }
-.search-input-wrapper input:focus { border-color: #3b82f6; }
-.search-input-wrapper .icon { position: absolute; left: 10px; }
-
-.price-inputs { display: flex; align-items: center; gap: 8px; }
-.price-inputs input { width: 90px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); color: white; padding: 8px; border-radius: 6px; outline: none; font-size: 0.85rem; }
-.price-inputs span { color: #64748b; }
-
-.checkbox-label { display: flex; align-items: center; gap: 8px; color: #e2e8f0; cursor: pointer; font-size: 0.9rem; }
-.checkbox-label input { accent-color: #3b82f6; width: 16px; height: 16px; }
-
-.dynamic-filters-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 15px;
-  border-top: 1px solid rgba(255,255,255,0.05);
-  padding-top: 15px;
-}
-
-.filter-group { flex: 1; min-width: 150px; }
-.filter-label-main { display: block; color: #94a3b8; font-size: 0.8rem; margin-bottom: 6px; font-weight: 600; text-transform: uppercase; }
-
-.filter-input, .filter-select { width: 100%; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); color: white; padding: 8px; border-radius: 6px; outline: none; font-size: 0.85rem; }
-.filter-input:focus, .filter-select:focus { border-color: #3b82f6; }
-.filter-select option { background: #1a1b26; color: white; }
-
-.checkbox-group-wrapper { display: flex; flex-direction: column; gap: 6px; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.1); max-height: 120px; overflow-y: auto; }
-.checkbox-group-wrapper::-webkit-scrollbar { width: 4px; }
-.checkbox-group-wrapper::-webkit-scrollbar-thumb { background: #3b82f6; border-radius: 4px; }
-
-.reset-btn { margin-left: auto; }
-
-body.light-theme .builder-filters .search-input-wrapper input,
-body.light-theme .builder-filters .price-inputs input,
-body.light-theme .builder-filters .filter-input,
-body.light-theme .builder-filters .filter-select,
-body.light-theme .builder-filters .checkbox-group-wrapper {
-  background: rgba(255,255,255,0.5);
-  border-color: rgba(0,0,0,0.1);
-  color: #0f172a;
-}
 </style>
