@@ -40,7 +40,8 @@
            <div class="total-price">
                <span class="compatible-badge" v-if="selectedPartsCount > 0 && !hasIncompatibilities">● Compatible</span> 
                <span class="incompatible-badge" v-if="hasIncompatibilities">● Check Issues</span> 
-               Build Total: <span class="neon-price">{{ totalPrice.toFixed(2) }} RON</span>
+               Build Total: <span class="neon-price">{{ totalPrice.toFixed(2) }} RON</span> |
+               TDP: <span class="neon-price">{{ totalTdp }} W</span>
            </div>
        </div>
 
@@ -143,7 +144,7 @@
 
        <!-- SUMMARY PANEL -->
        <div class="summary-view-panel" v-else>
-           <div class="glass-panel">
+           <div class="glass-panel summary-parts-panel">
              <h3 class="gradient-text">Your Selected Parts</h3>
              <div class="selected-parts-list">
                  <div class="selected-row" v-for="cat in categories" :key="cat.id" @click="openCategory(cat.id)">
@@ -154,9 +155,76 @@
                      <div class="sr-right">
                        <span class="sr-name" :class="{'text-muted': !cat.selectedPart}">{{ cat.selectedPart ? displayPartName(cat.selectedPart) : 'None selected' }}</span>
                        <span class="sr-price" v-if="cat.selectedPart">{{ displayPartPrice(cat.selectedPart) }} RON</span>
-                       <button class="btn-icon-remove" v-if="cat.selectedPart" @click.stop="removePart(cat.id)">✕</button>
+                       <button class="btn-icon-alt" v-if="cat.selectedPart" @click.stop="openAlternativesModal(cat)" title="Alternative">🔄</button>
+                       <button class="btn-icon-remove" v-if="cat.selectedPart" @click.stop="removePart(cat.id)" title="Remove">✕</button>
                      </div>
                  </div>
+             </div>
+           </div>
+
+           <div class="analysis-panels-grid" v-if="hasCpuAndGpu">
+             <!-- BOTTLENECK PANEL -->
+             <div class="glass-panel bottleneck-panel">
+                <h3 class="gradient-text">⚡ Bottleneck Analysis</h3>
+                <div v-if="bottleneckData">
+                   <div class="bottleneck-bars">
+                      <div class="bar-row">
+                         <span class="bar-label">CPU: {{ bottleneckData.scor_cpu }}</span>
+                         <div class="bar-bg"><div class="bar-fill cpu-bar" :style="{ width: getBarWidth(bottleneckData.scor_cpu, bottleneckData.scor_gpu) + '%' }"></div></div>
+                      </div>
+                      <div class="bar-row">
+                         <span class="bar-label">GPU: {{ bottleneckData.scor_gpu }}</span>
+                         <div class="bar-bg"><div class="bar-fill gpu-bar" :style="{ width: getBarWidth(bottleneckData.scor_gpu, bottleneckData.scor_cpu) + '%' }"></div></div>
+                      </div>
+                   </div>
+                   <div class="bottleneck-result mt-3 text-center">
+                      <p v-if="bottleneckData.are_bottleneck" class="text-warning">
+                         ⚠️ <strong>{{ bottleneckData.componenta_limitatoare }}</strong> limitează performanța cu <strong>{{ bottleneckData.procentaj_bottleneck }}%</strong>.
+                      </p>
+                      <p v-else class="text-success">
+                         ✅ Build echilibrat (Bottleneck: {{ bottleneckData.procentaj_bottleneck }}%)
+                      </p>
+                   </div>
+                </div>
+                <div v-else class="text-center mt-3">
+                   <button class="btn-solid-purple" @click="checkBottleneck" :disabled="loadingBottleneck">
+                      {{ loadingBottleneck ? '⏳ Se calculează...' : 'Analizează Bottleneck' }}
+                   </button>
+                </div>
+             </div>
+
+             <!-- FPS PANEL -->
+             <div class="glass-panel fps-panel">
+                <h3 class="gradient-text">🎮 Gaming FPS</h3>
+                <div v-if="fpsData">
+                   <p class="text-muted text-center mb-3" v-if="fpsData.analiza_text" style="font-size: 0.85rem;">{{ fpsData.analiza_text.substring(0, 100) }}...</p>
+                   <div class="fps-table-wrapper">
+                     <table class="fps-table">
+                       <thead>
+                         <tr>
+                           <th>Joc</th>
+                           <th>1080p</th>
+                           <th>1440p</th>
+                           <th>4K</th>
+                         </tr>
+                       </thead>
+                       <tbody>
+                         <tr v-for="joc in fpsData.fps_data?.jocuri?.slice(0, 4) || fpsData.jocuri?.slice(0, 4) || []" :key="joc.nume">
+                           <td>{{ joc.nume }}</td>
+                           <td :class="getFpsClass(joc.fps_1080p)">{{ formatFps(joc.fps_1080p) }}</td>
+                           <td :class="getFpsClass(joc.fps_1440p)">{{ formatFps(joc.fps_1440p) }}</td>
+                           <td :class="getFpsClass(joc.fps_4k)">{{ formatFps(joc.fps_4k) }}</td>
+                         </tr>
+                       </tbody>
+                     </table>
+                   </div>
+                   <p class="text-center mt-2"><small>*Estimări High/Ultra</small></p>
+                </div>
+                <div v-else class="text-center mt-3">
+                   <button class="btn-solid-green" @click="checkBenchmark" :disabled="loadingFps">
+                      {{ loadingFps ? '⏳ Se generează...' : 'Rulează Benchmark' }}
+                   </button>
+                </div>
              </div>
            </div>
 
@@ -189,6 +257,36 @@
        </div>
 
     </main>
+
+    <!-- MODAL ALTERNATIVE -->
+    <div v-if="showAlternativesModal" class="modal-overlay" @click.self="showAlternativesModal = false">
+      <div class="modal-content glass-panel">
+        <div class="modal-header">
+          <h3>🔄 Alternative pentru {{ selectedAlternativeCat?.selectedPart?.nume }}</h3>
+          <button class="close-btn" @click="showAlternativesModal = false">✕</button>
+        </div>
+        <div class="modal-body">
+          <div v-if="loadingAlternatives" class="loading-state">
+             <div class="spinner"></div>
+             <p>AI-ul caută cele mai bune alternative...</p>
+          </div>
+          <div v-else-if="alternativesError" class="agent-error">{{ alternativesError }}</div>
+          <div v-else class="alternatives-grid">
+             <div v-for="alt in alternativesList" :key="alt.id" class="alt-card">
+                <div class="alt-info">
+                   <h4 style="margin-bottom: 5px;">{{ alt.nume }}</h4>
+                   <p class="alt-price neon-price" style="font-size: 1.1rem; margin-bottom: 5px;">{{ alt.pret }} RON</p>
+                   <p class="alt-reason text-muted" style="font-size: 0.9rem;">{{ alt.motiv }}</p>
+                </div>
+                <button class="btn-solid-green mt-2" @click="replacePart(selectedAlternativeCat.id, alt)">Înlocuiește</button>
+             </div>
+             <div v-if="alternativesList.length === 0" class="text-center mt-3 text-muted">
+                Nu s-au găsit alternative.
+             </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -233,6 +331,143 @@ const minPrice = ref('')
 const maxPrice = ref('')
 const inStockOnly = ref(false)
 const dynamicFilters = ref({})
+
+// --- NEW STATE ---
+const loadingBottleneck = ref(false)
+const bottleneckData = ref(null)
+
+const loadingFps = ref(false)
+const fpsData = ref(null)
+
+const showAlternativesModal = ref(false)
+const selectedAlternativeCat = ref(null)
+const loadingAlternatives = ref(false)
+const alternativesList = ref([])
+const alternativesError = ref('')
+
+const hasCpuAndGpu = computed(() => {
+  return categories.value.find(c => c.id === 'cpus')?.selectedPart != null &&
+         categories.value.find(c => c.id === 'gpus')?.selectedPart != null
+})
+
+const getBarWidth = (val, other) => {
+  const m = Math.max(val, other);
+  if (m === 0) return 0;
+  return (val / m) * 100;
+}
+
+const getFpsClass = (fps) => {
+  if (!fps || fps === '-') return '';
+  const val = typeof fps === 'string' ? parseFloat(fps) : fps;
+  if (val >= 60) return 'text-success';
+  if (val >= 30) return 'text-warning';
+  return 'text-danger';
+}
+
+const formatFps = (fps) => {
+  if (!fps || fps === '-') return '-';
+  const val = typeof fps === 'string' ? parseFloat(fps) : fps;
+  return Math.round(val);
+}
+
+const checkBottleneck = async () => {
+  loadingBottleneck.value = true;
+  const cpu = categories.value.find(c => c.id === 'cpus')?.selectedPart;
+  const gpu = categories.value.find(c => c.id === 'gpus')?.selectedPart;
+  try {
+    const response = await api.get(`/builder/bottleneck/?cpu_id=${cpu.id}&gpu_id=${gpu.id}`);
+    bottleneckData.value = response.data;
+  } catch (e) {
+    console.error(e);
+  }
+  loadingBottleneck.value = false;
+}
+
+const fetchFpsCache = async () => {
+  const cpu = categories.value.find(c => c.id === 'cpus')?.selectedPart;
+  const gpu = categories.value.find(c => c.id === 'gpus')?.selectedPart;
+  if (!cpu || !gpu) return;
+  try {
+    const response = await api.get(`/builder/benchmark/?cpu_id=${cpu.id}&gpu_id=${gpu.id}`);
+    if (response.data.cached) {
+      fpsData.value = response.data;
+    } else {
+      fpsData.value = null;
+    }
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+const checkBenchmark = async () => {
+  loadingFps.value = true;
+  const cpu = categories.value.find(c => c.id === 'cpus')?.selectedPart;
+  const gpu = categories.value.find(c => c.id === 'gpus')?.selectedPart;
+  const ram = categories.value.find(c => c.id === 'rams')?.selectedPart || {};
+  try {
+    const response = await api.post('/builder/benchmark/', { cpu, gpu, ram, rezolutie: '1080p' });
+    fpsData.value = response.data; 
+  } catch (e) {
+    console.error(e);
+  }
+  loadingFps.value = false;
+}
+
+const openAlternativesModal = async (cat) => {
+  selectedAlternativeCat.value = cat;
+  showAlternativesModal.value = true;
+  loadingAlternatives.value = true;
+  alternativesList.value = [];
+  alternativesError.value = '';
+  
+  const key = catToKeyMap[cat.id] || cat.id;
+  const currentPrice = cat.selectedPart.pret;
+  const pid = cat.selectedPart.id;
+  
+  const prompt = `Pentru componenta cu numele "${cat.selectedPart.nume}" (ID-ul din DB este ${pid}, Preț: ${currentPrice} RON) din categoria de produse "${key}", te rog să găsești EXACT 3 alternative folosind tool-ul "get_component_alternatives" (folosind "component_type": "${key}", "component_id": ${pid}). 
+  
+  IMPORTANT: După ce folosești tool-ul, trebuie să îmi răspunzi STRICT cu un array JSON valid care să conțină alternativele găsite. Fiecare obiect din array trebuie să aibă cheile: "id" (număr întreg, ID-ul componentei găsite), "nume" (numele componentei găsite), "pret" (prețul), și "motiv" (1 scurtă propoziție de ce e bună). 
+  NU adăuga niciun fel de text, explicație sau markdown în afara array-ului JSON. Exclusiv array-ul. Dacă nu găsești nimic, returnează [].`;
+  
+  try {
+    const res = await api.post('/builder/chat/', {
+      mesaj_nou: prompt,
+      istoric: []
+    });
+    
+    let text = res.data.mesaj_text;
+    text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+    const startIndex = text.indexOf('[');
+    const endIndex = text.lastIndexOf(']');
+    if (startIndex !== -1 && endIndex !== -1) {
+       text = text.substring(startIndex, endIndex + 1);
+    }
+    alternativesList.value = JSON.parse(text);
+  } catch (err) {
+    alternativesError.value = "Eroare la parsarea alternativelor de la AI.";
+    console.error(err);
+  } finally {
+    loadingAlternatives.value = false;
+  }
+}
+
+const replacePart = async (catId, alt) => {
+  try {
+    const res = await api.get(`/${catId}/${alt.id}/`);
+    const partToSelect = res.data;
+    
+    const cat = categories.value.find(c => c.id === catId);
+    if (cat) {
+      cat.selectedPart = partToSelect;
+      saveToCurrentBuild(catToKeyMap[cat.id] || cat.id, partToSelect);
+      hasCpuAndGpu.value && checkBottleneck();
+      hasCpuAndGpu.value && fetchFpsCache();
+    }
+    showAlternativesModal.value = false;
+  } catch (err) {
+    console.error("Eroare la înlocuirea componentei", err);
+  }
+}
 
 // --- PAGINATION STATE ---
 const currentPage = ref(1)
@@ -406,6 +641,14 @@ const applyFilters = async () => {
 
 const openCategory = (id) => {
   openCategoryId.value = id
+  if (!id) {
+     if (hasCpuAndGpu.value) {
+       bottleneckData.value = null;
+       fpsData.value = null;
+       checkBottleneck();
+       fetchFpsCache();
+     }
+  }
 }
 
 const fetchParts = async () => {
@@ -561,8 +804,27 @@ const analizeazaBuild = async () => {
   }
 }
 
+const totalPrice = computed(() => {
+  let total = 0
+  categories.value.forEach(c => {
+    if (c.selectedPart && c.selectedPart.pret) {
+      total += parseFloat(c.selectedPart.pret)
+    }
+  })
+  return total
+})
+
+const totalTdp = computed(() => {
+  let total = 0
+  categories.value.forEach(c => {
+    if (c.selectedPart && c.selectedPart.consum_tdp) {
+      total += parseInt(c.selectedPart.consum_tdp, 10)
+    }
+  })
+  return total
+})
+
 const selectedPartsCount = computed(() => categories.value.filter(cat => cat.selectedPart).length)
-const totalPrice = computed(() => categories.value.reduce((sum, cat) => sum + parseFloat(cat.selectedPart?.pret || 0), 0))
 const displayPartName = (part) => part.nume || part.model || 'Componentă'
 const displayPartPrice = (part) => part.pret || '0.00'
 
@@ -1148,4 +1410,150 @@ body.light-theme .builder-filters .checkbox-group-wrapper {
   border-color: rgba(0,0,0,0.1);
   color: #0f172a;
 }
+
+.summary-parts-panel {
+  max-height: 350px;
+  overflow-y: auto;
+  margin-bottom: 20px;
+}
+
+/* Custom Scrollbar pentru panel */
+.summary-parts-panel::-webkit-scrollbar {
+  width: 6px;
+}
+.summary-parts-panel::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+.summary-parts-panel::-webkit-scrollbar-thumb {
+  background: #3b82f6;
+  border-radius: 4px;
+}
+
+.analysis-panels-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.btn-icon-alt {
+  background: rgba(168, 85, 247, 0.2);
+  color: #d8b4fe;
+  border: 1px solid rgba(168, 85, 247, 0.5);
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  margin-right: 10px;
+  transition: all 0.2s;
+}
+.btn-icon-alt:hover {
+  background: rgba(168, 85, 247, 0.5);
+  transform: scale(1.1);
+}
+
+.bottleneck-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+.bar-row {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.bar-label {
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+.bar-bg {
+  width: 100%;
+  height: 12px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.bar-fill {
+  height: 100%;
+  border-radius: 6px;
+  transition: width 0.5s ease-out;
+}
+.cpu-bar { background: linear-gradient(90deg, #3b82f6, #00f0ff); }
+.gpu-bar { background: linear-gradient(90deg, #10b981, #00ff88); }
+
+.fps-table-wrapper {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.fps-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: center;
+  font-size: 0.9rem;
+}
+.fps-table th {
+  background: rgba(255, 255, 255, 0.05);
+  padding: 10px;
+  color: #a9b1d6;
+  font-weight: 600;
+}
+.fps-table td {
+  padding: 8px 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.text-success { color: #10b981 !important; }
+.text-warning { color: #f59e0b !important; }
+.text-danger { color: #ef4444 !important; }
+
+.modal-overlay {
+  position: fixed;
+  top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(5px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.modal-content {
+  width: 90%;
+  max-width: 600px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+  padding-bottom: 15px;
+  margin-bottom: 20px;
+}
+.close-btn {
+  background: none; border: none; color: white; font-size: 1.2rem; cursor: pointer;
+}
+.modal-body {
+  overflow-y: auto;
+}
+.alternatives-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+.alt-card {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 15px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.alt-info { flex: 1; }
 </style>

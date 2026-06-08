@@ -125,10 +125,66 @@
                 </div>
               </div>
 
+              <div class="modal-section" v-if="bottleneckData || loadingBottleneck">
+                 <h4>⚡ Analiză Bottleneck</h4>
+                 <div v-if="loadingBottleneck">⏳ Se calculează...</div>
+                 <div v-else>
+                    <p v-if="bottleneckData.are_bottleneck" style="color: #f59e0b">
+                       ⚠️ <strong>{{ bottleneckData.componenta_limitatoare }}</strong> limitează performanța cu <strong>{{ bottleneckData.procentaj_bottleneck }}%</strong>.
+                    </p>
+                    <p v-else style="color: #10b981">
+                       ✅ Build echilibrat (Bottleneck: {{ bottleneckData.procentaj_bottleneck }}%)
+                    </p>
+                 </div>
+              </div>
+
+              <div class="modal-section" v-if="fpsData || loadingFps">
+                 <h4>🎮 Gaming FPS</h4>
+                 <div v-if="loadingFps">⏳ Se generează...</div>
+                 <div v-else class="fps-table-wrapper">
+                    <p style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 5px;">{{ fpsData.analiza_text?.substring(0,80) }}...</p>
+                    <table class="fps-table" style="width: 100%; text-align: center; font-size: 0.85rem; border-collapse: collapse;">
+                       <thead>
+                          <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+                             <th style="padding: 5px;">Joc</th>
+                             <th>1080p</th>
+                             <th>1440p</th>
+                             <th>4K</th>
+                          </tr>
+                       </thead>
+                       <tbody>
+                          <tr v-for="joc in (fpsData.fps_data?.jocuri || fpsData.jocuri || []).slice(0, 4)" :key="joc.nume">
+                             <td style="padding: 5px; text-align: left;">{{ joc.nume }}</td>
+                             <td>{{ joc.fps_1080p || '-' }}</td>
+                             <td>{{ joc.fps_1440p || '-' }}</td>
+                             <td>{{ joc.fps_4k || '-' }}</td>
+                          </tr>
+                       </tbody>
+                    </table>
+                 </div>
+              </div>
+              
+              <div class="modal-section" v-if="generatedImageUrl || loadingImage">
+                 <h4>📸 Randare 3D Build</h4>
+                 <div v-if="loadingImage">⏳ Agentul AI generează imaginea...</div>
+                 <div v-else>
+                    <img :src="generatedImageUrl" alt="PC Render" style="width: 100%; border-radius: 8px; margin-top: 10px;" />
+                 </div>
+              </div>
+
             </div>
           </div>
 
           <div class="modal-footer">
+            <button class="btn-bottleneck" v-if="modalParts.cpu && modalParts.gpu" @click="checkBottleneck" :disabled="loadingBottleneck">
+              ⚡ Bottleneck
+            </button>
+            <button class="btn-fps" v-if="modalParts.cpu && modalParts.gpu && !fpsData" @click="checkFps" :disabled="loadingFps">
+              🎮 Rulează Benchmark
+            </button>
+            <button class="btn-image" v-if="modalParts.cpu && modalParts.gpu && modalParts.case && !generatedImageUrl" @click="generateImage" :disabled="loadingImage">
+              📸 Generează Imagine
+            </button>
             <button class="btn-load-builder" @click="loadIntoBuilder">
               🚀 Încarcă în Builder
             </button>
@@ -156,6 +212,13 @@ const modalOpen = ref(false)
 const modalLoading = ref(false)
 const selectedBuild = ref(null)
 const modalParts = ref({})
+
+const bottleneckData = ref(null)
+const loadingBottleneck = ref(false)
+const fpsData = ref(null)
+const loadingFps = ref(false)
+const generatedImageUrl = ref(null)
+const loadingImage = ref(false)
 
 const partSlots = [
   { key: 'cpu',         label: 'Procesor',      icon: '🧠', endpoint: 'cpus' },
@@ -205,31 +268,114 @@ const openModal = async (build) => {
   modalOpen.value = true
   modalLoading.value = true
 
-  // Fetch fiecare piesă după ID
-  const fetches = partSlots.map(async (slot) => {
-    const id = build[slot.key]
-    if (!id) return
-    try {
-      const res = await api.get(`${slot.endpoint}/${id}/`)
-      modalParts.value[slot.key] = res.data
-    } catch {
-      modalParts.value[slot.key] = { id, nume: `ID #${id}`, pret: null }
-    }
-  })
+  try {
+    // Fetch fiecare piesă după ID
+    const fetches = partSlots.map(async (slot) => {
+      const id = build[slot.key]
+      if (!id) return
+      try {
+        const res = await api.get(`${slot.endpoint}/${id}/`)
+        modalParts.value[slot.key] = res.data
+      } catch {
+        modalParts.value[slot.key] = { id, nume: `ID #${id}`, pret: null }
+      }
+    })
 
-  await Promise.all(fetches)
-  modalLoading.value = false
+    await Promise.all(fetches)
+    
+    if (modalParts.value.cpu && modalParts.value.gpu) {
+       checkFpsCache(modalParts.value.cpu.id, modalParts.value.gpu.id);
+    }
+  } catch (error) {
+    console.error('Eroare detaliere build:', error)
+  } finally {
+    modalLoading.value = false
+  }
+}
+
+const checkBottleneck = async () => {
+  const cpuId = modalParts.value.cpu?.id;
+  const gpuId = modalParts.value.gpu?.id;
+  if (!cpuId || !gpuId) return;
+  
+  loadingBottleneck.value = true;
+  try {
+    const res = await api.get(`/builder/bottleneck/?cpu_id=${cpuId}&gpu_id=${gpuId}`);
+    bottleneckData.value = res.data;
+  } catch (err) {
+    console.error(err);
+  } finally {
+    loadingBottleneck.value = false;
+  }
+}
+
+const checkFpsCache = async (cpuId, gpuId) => {
+  try {
+    const res = await api.get(`/builder/benchmark/?cpu_id=${cpuId}&gpu_id=${gpuId}`);
+    if (res.data.cached) {
+       fpsData.value = res.data;
+    }
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+const checkFps = async () => {
+  const cpu = modalParts.value.cpu;
+  const gpu = modalParts.value.gpu;
+  if (!cpu || !gpu) return;
+  
+  loadingFps.value = true;
+  try {
+    const res = await api.post('/builder/benchmark/', {
+      cpu: cpu,
+      gpu: gpu,
+      ram: modalParts.value.ram || {},
+      rezolutie: '1080p'
+    });
+    fpsData.value = res.data;
+  } catch (err) {
+    console.error(err);
+  } finally {
+    loadingFps.value = false;
+  }
+}
+
+const generateImage = async () => {
+  const cpu = modalParts.value.cpu;
+  const gpu = modalParts.value.gpu;
+  const case_part = modalParts.value.case;
+  if (!cpu || !gpu || !case_part) return;
+  
+  loadingImage.value = true;
+  try {
+    const res = await api.post('/builder/generate-image/', {
+      cpu_name: cpu.nume,
+      gpu_name: gpu.nume,
+      case_name: case_part.nume
+    });
+    if (res.data.image_url) {
+       generatedImageUrl.value = res.data.image_url;
+    }
+  } catch (err) {
+    console.error(err);
+    alert('A apărut o eroare la generarea imaginii.');
+  } finally {
+    loadingImage.value = false;
+  }
 }
 
 const closeModal = () => {
   modalOpen.value = false
   selectedBuild.value = null
   modalParts.value = {}
+  bottleneckData.value = null
+  fpsData.value = null
+  generatedImageUrl.value = null
 }
 
 // ── Încarcă în Builder ────────────────────────────────────
 const loadIntoBuilder = () => {
-  // Salvăm piesele în sessionStorage, BuilderView le va citi la mount
   sessionStorage.setItem('loadBuild', JSON.stringify(modalParts.value))
   router.push('/')
 }
@@ -489,6 +635,47 @@ onMounted(fetchSavedBuilds)
   padding: 16px 28px 24px;
   border-top: 1px solid #2a2d3e;
 }
+
+.btn-bottleneck {
+  background: #f59e0b;
+  color: white;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: 0.2s;
+}
+.btn-bottleneck:hover:not(:disabled) { background: #d97706; }
+
+.btn-fps {
+  background: #8b5cf6;
+  color: white;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: 0.2s;
+}
+.btn-fps:hover:not(:disabled) { background: #7c3aed; }
+
+.btn-image {
+  background: #06b6d4;
+  color: white;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: 0.2s;
+}
+.btn-image:hover:not(:disabled) { background: #0891b2; }
+
+.btn-bottleneck:disabled, .btn-fps:disabled, .btn-image:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.fps-table-wrapper { background: rgba(0,0,0,0.2); padding: 5px; border-radius: 6px; margin-top: 10px;}
+
 .btn-load-builder {
   flex: 1;
   background: #10b981;
