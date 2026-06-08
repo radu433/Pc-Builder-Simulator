@@ -55,15 +55,15 @@
             <div class="builder-filters-header">
               <div class="search-input-wrapper">
                 <span class="icon">🔍</span>
-                <input type="text" v-model="searchQuery" placeholder="Caută componenta..." @input="applyFilters" />
+                <input type="text" v-model="searchQuery" placeholder="Caută componenta..." @input="onFilterChange" />
               </div>
               <div class="price-inputs">
-                <input type="number" v-model="minPrice" placeholder="Preț Min" @input="applyFilters" />
+                <input type="number" v-model="minPrice" placeholder="Preț Min" @input="onFilterChange" />
                 <span>-</span>
-                <input type="number" v-model="maxPrice" placeholder="Preț Max" @input="applyFilters" />
+                <input type="number" v-model="maxPrice" placeholder="Preț Max" @input="onFilterChange" />
               </div>
               <label class="checkbox-label">
-                <input type="checkbox" v-model="inStockOnly" @change="applyFilters" /> Doar în stoc
+                <input type="checkbox" v-model="inStockOnly" @change="onFilterChange" /> Doar în stoc
               </label>
               <button class="btn-neon-remove reset-btn" @click="resetFilters(activeCategory.id)">🔄 Reset</button>
             </div>
@@ -72,19 +72,19 @@
               <div v-for="filter in activeCategoryFilters" :key="filter.key" class="filter-group">
                 <label class="filter-label-main">{{ filter.label }}</label>
                 
-                <select v-if="filter.type === 'select'" v-model="dynamicFilters[filter.key]" @change="applyFilters" class="filter-select">
+                <select v-if="filter.type === 'select'" v-model="dynamicFilters[filter.key]" @change="onFilterChange" class="filter-select">
                   <option value="">Orice</option>
                   <option v-for="opt in filter.options" :key="opt" :value="opt">{{ opt }}</option>
                 </select>
 
                 <div v-else-if="filter.type === 'checkbox-group'" class="checkbox-group-wrapper">
-                  <label v-for="opt in filter.options" :key="opt" class="checkbox-label small-label">
-                    <input type="checkbox" :value="opt" v-model="dynamicFilters[filter.key]" @change="applyFilters" />
+                  <label v-for="opt in filter.options" :key="filter.key + '-' + opt" class="checkbox-label small-label">
+                    <input type="checkbox" :value="opt" v-model="dynamicFilters[filter.key]" @change="onFilterChange" />
                     {{ opt }}
                   </label>
                 </div>
 
-                <input v-else :type="filter.type" v-model="dynamicFilters[filter.key]" :placeholder="filter.placeholder" @input="applyFilters" class="filter-input" />
+                <input v-else :type="filter.type" v-model="dynamicFilters[filter.key]" :placeholder="filter.placeholder" @input="onFilterChange" class="filter-input" />
               </div>
             </div>
           </div>
@@ -126,6 +126,18 @@
           <div v-else class="empty-parts glass-panel">
               <p>Nicio componentă disponibilă sau incompatibilitate cu selecția curentă.</p>
               <button class="btn-neon" v-if="activeCategory.filterLocked" @click="resetFilters(activeCategory.id)">Reset Filters</button>
+          </div>
+
+          <!-- PAGINATION -->
+          <div class="pagination-controls glass-panel" v-if="totalPages > 1">
+            <button class="page-btn" :disabled="currentPage <= 1" @click="goToPage(1)">«</button>
+            <button class="page-btn" :disabled="currentPage <= 1" @click="goToPage(currentPage - 1)">‹</button>
+            <button v-for="p in visiblePages" :key="p" class="page-btn" :class="{ active: p === currentPage, ellipsis: p === '...' }" :disabled="p === '...'" @click="p !== '...' && goToPage(p)">
+              {{ p }}
+            </button>
+            <button class="page-btn" :disabled="currentPage >= totalPages" @click="goToPage(currentPage + 1)">›</button>
+            <button class="page-btn" :disabled="currentPage >= totalPages" @click="goToPage(totalPages)">»</button>
+            <span class="page-info">Pagina {{ currentPage }} din {{ totalPages }} ({{ totalCount }} produse)</span>
           </div>
        </div>
 
@@ -222,13 +234,64 @@ const maxPrice = ref('')
 const inStockOnly = ref(false)
 const dynamicFilters = ref({})
 
+// --- PAGINATION STATE ---
+const currentPage = ref(1)
+const totalCount = ref(0)
+const pageSize = 50
+
+const totalPages = computed(() => Math.max(1, Math.ceil(totalCount.value / pageSize)))
+
+const visiblePages = computed(() => {
+  const total = totalPages.value
+  const current = currentPage.value
+  const pages = []
+  
+  if (total <= 7) {
+    for (let i = 1; i <= total; i++) pages.push(i)
+    return pages
+  }
+  
+  pages.push(1)
+  if (current > 3) pages.push('...')
+  
+  const start = Math.max(2, current - 1)
+  const end = Math.min(total - 1, current + 1)
+  
+  for (let i = start; i <= end; i++) pages.push(i)
+  
+  if (current < total - 2) pages.push('...')
+  pages.push(total)
+  
+  return pages
+})
+
+const goToPage = (page) => {
+  if (page < 1 || page > totalPages.value || page === currentPage.value) return
+  currentPage.value = page
+  applyFilters()
+  // Scroll to top of parts grid
+  const grid = document.querySelector('.parts-grid-panel')
+  if (grid) grid.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+const onFilterChange = () => {
+  currentPage.value = 1
+  applyFilters()
+}
+
+const allSocketOptions = [
+  'AM4', 'AM5', '1851', 'LGA 1851', 'FM2', 'FM2+', 'FM2, FM2+',
+  'AM3+', 'AM3', 'TR4', 'TRX40', 'sTR5', 'sWRX80', 'sWRX8',
+  '1700', '1150', '1200', '1151', '1155', '2066', '2011-V3'
+]
+
 const categoryFiltersMap = {
   cpus: [
     { key: 'producator', label: 'Producător', type: 'select', options: ['AMD', 'Intel'] },
-    { key: 'socket', label: 'Socket', type: 'checkbox-group', options: ['AM4', 'AM5', 'LGA 1700', 'LGA 1200', 'LGA 1151', 'LGA 1851'] },
+    { key: 'socket', label: 'Socket', type: 'checkbox-group', options: allSocketOptions },
   ],
   motherboards: [
-    { key: 'socket', label: 'Socket', type: 'checkbox-group', options: ['AM4', 'AM5', 'LGA 1700', 'LGA 1200', 'LGA 1151', 'LGA 1851'] },
+    { key: 'socket', label: 'Socket', type: 'checkbox-group', options: allSocketOptions },
     { key: 'tip_ram', label: 'Tip Memorie Suportată', type: 'select', options: ['DDR4', 'DDR5'] },
     { key: 'format', label: 'Format', type: 'select', options: ['ATX', 'mATX', 'Mini-ITX'] }
   ],
@@ -252,7 +315,7 @@ const categoryFiltersMap = {
     { key: 'tip_carcasa', label: 'Tip Carcasă', type: 'select', options: ['MID', 'FULL', 'MINI', 'SFF', 'AQ'] }
   ],
   coolers: [
-    { key: 'socket', label: 'Socket', type: 'checkbox-group', options: ['AM4', 'AM5', 'LGA 1700', 'LGA 1200', 'LGA 1151', 'LGA 1851'] },
+    { key: 'socket', label: 'Socket', type: 'checkbox-group', options: allSocketOptions },
     { key: 'tip_racire', label: 'Tip Răcire', type: 'select', options: ['Air', 'AIO 120mm', 'AIO 240mm', 'AIO 280mm', 'AIO 360mm'] }
   ]
 }
@@ -281,6 +344,7 @@ watch(openCategoryId, () => {
   minPrice.value = ''
   maxPrice.value = ''
   inStockOnly.value = false
+  currentPage.value = 1
   initDynamicFilters()
   applyFilters()
 })
@@ -312,16 +376,26 @@ const applyFilters = async () => {
   for (const [key, value] of Object.entries(dynamicFilters.value)) {
     if (Array.isArray(value)) {
       if (value.length > 0) {
-        params[key] = value.join(',')
+        params[key] = value.join('|')
       }
     } else if (value !== '' && value !== null && value !== undefined) {
        params[key] = value
     }
   }
 
+  // 4. Pagination
+  params.page = currentPage.value
+  params.page_size = pageSize
+
   try {
     const response = await axios.get(`/api/${cat.id}/`, { params })
-    cat.parts = response.data.results !== undefined ? response.data.results : response.data
+    if (response.data.results !== undefined) {
+      cat.parts = response.data.results
+      totalCount.value = response.data.count || 0
+    } else {
+      cat.parts = response.data
+      totalCount.value = response.data.length || 0
+    }
   } catch (error) {
     console.error(error)
   } finally {
@@ -356,6 +430,7 @@ const resetFilters = (categoryId) => {
   minPrice.value = ''
   maxPrice.value = ''
   inStockOnly.value = false
+  currentPage.value = 1
   initDynamicFilters()
 
   if (categoryId === 'cpus' || categoryId === 'motherboards' || categoryId === 'rams') {
@@ -501,7 +576,7 @@ onMounted(async () => {
       for (const slot of categories.value) {
         const key = catToKeyMap[slot.id]
         if (key && currentBuild[key]) {
-           const part = slot.allParts.find(p => p.id === currentBuild[key].id)
+           const part = slot.allParts?.find(p => p.id === currentBuild[key]?.id)
            if (part) selectPart(slot.id, part) 
         }
       }
@@ -934,11 +1009,87 @@ body.light-theme .btn-neon-full:hover { background: rgba(0,0,0,0.1); }
 .filter-input:focus, .filter-select:focus { border-color: #3b82f6; }
 .filter-select option { background: #1a1b26; color: white; }
 
-.checkbox-group-wrapper { display: flex; flex-direction: column; gap: 6px; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.1); max-height: 120px; overflow-y: auto; }
+.checkbox-group-wrapper { display: flex; flex-direction: column; gap: 6px; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.1); max-height: 180px; overflow-y: auto; }
 .checkbox-group-wrapper::-webkit-scrollbar { width: 4px; }
 .checkbox-group-wrapper::-webkit-scrollbar-thumb { background: #3b82f6; border-radius: 4px; }
+.checkbox-group-wrapper .small-label { user-select: none; }
 
 .reset-btn { margin-left: auto; }
+
+/* PAGINATION */
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 16px 20px;
+  margin-top: 25px;
+  flex-wrap: wrap;
+}
+
+.page-btn {
+  min-width: 40px;
+  height: 40px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  color: #e2e8f0;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.page-btn:hover:not(:disabled):not(.active) {
+  background: rgba(0, 240, 255, 0.1);
+  border-color: rgba(0, 240, 255, 0.3);
+  color: #00f0ff;
+}
+
+.page-btn.active {
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.6), rgba(0, 240, 255, 0.6));
+  border-color: transparent;
+  color: white;
+  box-shadow: 0 0 15px rgba(168, 85, 247, 0.3);
+  transform: scale(1.05);
+}
+
+.page-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.page-btn.ellipsis {
+  border: none;
+  background: none;
+  cursor: default;
+  color: #64748b;
+  min-width: 30px;
+}
+
+.page-info {
+  color: #64748b;
+  font-size: 0.82rem;
+  margin-left: 12px;
+  white-space: nowrap;
+}
+
+body.light-theme .page-btn {
+  background: rgba(0, 0, 0, 0.03);
+  border-color: rgba(0, 0, 0, 0.1);
+  color: #334155;
+}
+body.light-theme .page-btn:hover:not(:disabled):not(.active) {
+  background: rgba(0, 240, 255, 0.08);
+  color: #0284c7;
+}
+body.light-theme .page-btn.active {
+  background: linear-gradient(135deg, #9333ea, #0284c7);
+  color: white;
+}
 
 body.light-theme .builder-filters .search-input-wrapper input,
 body.light-theme .builder-filters .price-inputs input,

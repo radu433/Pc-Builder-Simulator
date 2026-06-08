@@ -210,7 +210,7 @@ const openModal = async (build) => {
     const id = build[slot.key]
     if (!id) return
     try {
-      const res = await axios.get(`/api/${slot.endpoint}/${id}/`)
+      const res = await api.get(`${slot.endpoint}/${id}/`)
       modalParts.value[slot.key] = res.data
     } catch {
       modalParts.value[slot.key] = { nume: `ID #${id}`, pret: null }

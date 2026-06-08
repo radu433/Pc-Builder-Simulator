@@ -60,7 +60,7 @@
           </select>
 
           <div v-else-if="filter.type === 'checkbox-group'" class="checkbox-group-wrapper">
-            <label v-for="opt in filter.options" :key="opt" class="checkbox-label small-label">
+            <label v-for="opt in filter.options" :key="filter.key + '-' + opt" class="checkbox-label small-label">
               <input 
                 type="checkbox" 
                 :value="opt" 
@@ -178,13 +178,19 @@ const toast = ref('')
 const dynamicFilters = ref({})
 
 // Configurația filtrelor specifice pentru fiecare categorie.
+const allSocketOptions = [
+  'AM4', 'AM5', '1851', 'LGA 1851', 'FM2', 'FM2+', 'FM2, FM2+',
+  'AM3+', 'AM3', 'TR4', 'TRX40', 'sTR5', 'sWRX80', 'sWRX8',
+  '1700', '1150', '1200', '1151', '1155', '2066', '2011-V3'
+]
+
 const categoryFiltersMap = {
   cpus: [
     { key: 'producator', label: 'Producător', type: 'select', options: ['AMD', 'Intel'] },
-    { key: 'socket', label: 'Socket', type: 'checkbox-group', options: ['AM4', 'AM5', 'TR4', 'sTRX4', 'LGA 1700', 'LGA 1200', 'LGA 1151', 'LGA 1851', 'LGA 2066', 'LGA 1150', 'LGA 1155'] },
+    { key: 'socket', label: 'Socket', type: 'checkbox-group', options: allSocketOptions },
   ],
   motherboards: [
-    { key: 'socket', label: 'Socket', type: 'checkbox-group', options: ['AM4', 'AM5', 'TR4', 'sTRX4', 'LGA 1700', 'LGA 1200', 'LGA 1151', 'LGA 1851', 'LGA 2066', 'LGA 1150', 'LGA 1155'] },
+    { key: 'socket', label: 'Socket', type: 'checkbox-group', options: allSocketOptions },
     { key: 'tip_ram', label: 'Tip Memorie Suportată', type: 'select', options: ['DDR4', 'DDR5'] },
     { key: 'format', label: 'Format', type: 'select', options: ['ATX', 'mATX', 'Mini-ITX'] }
   ],
@@ -208,7 +214,7 @@ const categoryFiltersMap = {
     { key: 'tip_carcasa', label: 'Tip Carcasă', type: 'select', options: ['MID', 'FULL', 'MINI', 'SFF', 'AQ'] }
   ],
   coolers: [
-    { key: 'socket', label: 'Socket', type: 'checkbox-group', options: ['AM4', 'AM5', 'TR4', 'sTRX4', 'LGA 1700', 'LGA 1200', 'LGA 1151', 'LGA 1851', 'LGA 2066', 'LGA 1150', 'LGA 1155'] },
+    { key: 'socket', label: 'Socket', type: 'checkbox-group', options: allSocketOptions },
     { key: 'tip_racire', label: 'Tip Răcire', type: 'select', options: ['Air', 'AIO 120mm', 'AIO 240mm', 'AIO 280mm', 'AIO 360mm'] }
   ]
 }
@@ -283,7 +289,7 @@ const fetchProducts = async () => {
       if (Array.isArray(value)) {
         if (value.length > 0) {
           // Trimite array-ul ca un string separat prin virgulă (ex: AM4,AM5)
-          params[key] = value.join(',')
+          params[key] = value.join('|')
         }
       } else if (value !== '' && value !== null && value !== undefined) {
         params[key] = value

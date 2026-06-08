@@ -21,7 +21,13 @@ mcp = FastMCP("PC Builder Tools")
 
 @mcp.tool()
 def search_components(component_type: str, budget: float, in_stock: bool = True) -> dict:
-    """Caută componente din DB după tip și buget."""
+    """
+        Caută componente disponibile în DB după tip și buget maxim.
+        Tipuri acceptate: cpu, gpu, ram, storage, psu, motherboard, case, cooler.
+        Returnează maxim 15 rezultate sortate după preț descrescător.
+        Folosește acest tool când userul întreabă ce componente sunt disponibile
+        într-un anumit buget sau vrea să exploreze opțiunile.
+    """
     
     model_map = {
         "cpu": CPU, 
@@ -52,7 +58,13 @@ def search_components(component_type: str, budget: float, in_stock: bool = True)
     
 @mcp.tool()
 def get_bottleneck_score(cpu_id: int, gpu_id: int):
-    """Calculează bottleneck între CPU și GPU"""
+   """
+        Calculează bottleneck-ul între un CPU și GPU dintr-un build.
+        Returnează scorul fiecărei componente, procentajul de bottleneck
+        și care componentă limitează performanța.
+        Folosește când userul întreabă dacă un combo CPU+GPU e echilibrat
+        sau dacă o componentă îl trage înapoi pe cealaltă.
+    """
     try:
         cpu = CPU.objects.get(id=cpu_id)
         gpu = GPU.objects.get(id=gpu_id)
@@ -83,10 +95,15 @@ def get_bottleneck_score(cpu_id: int, gpu_id: int):
         "componenta_limitatoare": limitator,
     }
 
-
 @mcp.tool()
 def get_fps_estimate(cpu_id: int, gpu_id: int, game: str, resolution: str = "1080p") -> dict:
-    """Returnează FPS estimat din cache pentru o combinație CPU+GPU și un joc specific."""
+    """
+    Returnează FPS estimat din cache pentru o combinație CPU+GPU și un joc specific.
+    Caută în cache după numele jocului (match parțial, case-insensitive).
+    Dacă nu există cache pentru combo-ul respectiv, sugerează rularea benchmark_build întâi.
+    Folosește când userul întreabă câte FPS-uri face un build la un anumit joc și rezoluție.
+    Rezoluții acceptate: 1080p, 1440p, 4k.
+    """
     from components.models import BuildAnalysisCache
 
     try:
@@ -100,27 +117,43 @@ def get_fps_estimate(cpu_id: int, gpu_id: int, game: str, resolution: str = "108
     try:
         cached = BuildAnalysisCache.objects.get(cache_key=cache_key)
         fps_data = cached.fps_data
-        joc_data = next((j for j in fps_data.get("jocuri", []) if j["nume"] == game), None)
+
+        joc_data = next(
+            (j for j in fps_data.get("jocuri", [])
+             if game.lower() in j["nume"].lower() or j["nume"].lower() in game.lower()),
+            None
+        )
+
         if joc_data:
+            res_key = f"fps_{resolution.replace('p', '').replace('P', '')}p"
+            return {
+                "cpu": cpu.nume,
+                "gpu": gpu.nume,
+                "game": joc_data["nume"],
+                "resolution": resolution,
+                "fps": joc_data.get(res_key, {}),
+                "preset_optim": joc_data.get("preset_optim"),
+                "rating_joc": joc_data.get("rating_joc"),
+                "cached": True
+            }
+        else:
+            jocuri_disponibile = [j["nume"] for j in fps_data.get("jocuri", [])]
             return {
                 "cpu": cpu.nume,
                 "gpu": gpu.nume,
                 "game": game,
-                "resolution": resolution,
-                "fps": joc_data.get(f"fps_{resolution.replace('p', '')}p", {}),
-                "cached": True
+                "cached": True,
+                "nota": f"Jocul '{game}' nu există în cache. Jocuri disponibile: {', '.join(jocuri_disponibile)}"
             }
+
     except BuildAnalysisCache.DoesNotExist:
-        pass
-
-    return {
-        "cpu": cpu.nume,
-        "gpu": gpu.nume,
-        "game": game,
-        "cached": False,
-        "nota": "Rulează benchmark_build pentru această combinație întâi."
-    }
-
+        return {
+            "cpu": cpu.nume,
+            "gpu": gpu.nume,
+            "game": game,
+            "cached": False,
+            "nota": "Nu există benchmark pentru această combinație CPU+GPU. Rulează benchmark_build întâi."
+        }
 
 @mcp.tool()
 def check_compatibility(build: dict) -> dict:
@@ -478,7 +511,7 @@ def generate_build_image(case_name: str, gpu_name: str, cpu_name: str) -> dict:
 
     cache_key = f"{case_name}_{gpu_name}_{cpu_name}".replace(" ", "_").lower()
     cache_key = hashlib.md5(cache_key.encode()).hexdigest()
-    cache_path = f"media/builds/{cache_key}.png"
+    cache_path = os.path.join(settings.MEDIA_ROOT, "builds", f"{cache_key}.png")
 
     if os.path.exists(cache_path):
         return {"image_path": cache_path, "cached": True}
@@ -844,7 +877,36 @@ def get_best_value_builds(buget: float) -> dict:
 
 @mcp.tool()
 def get_component_alternatives(component_type: str, component_id: int, limit: int = 3) -> dict:
-    """Returnează alternative similare (ca specificații) dar mai ieftine pentru o componentă dată din DB."""
+    """
+        Găsește alternative mai ieftine sau cu raport calitate/preț mai bun pentru o componentă dată.
+
+        Primește un component_id și tipul componentei (cpu/gpu/ram/storage/motherboard/psu/case/cooler).
+
+        Criterii de similaritate per tip:
+        - CPU: același socket, diferență max ±2 nuclee, frecvență similară (±0.5 GHz), TDP similar
+        - GPU: același tier de performanță (±15% VRAM), același tip memorie (GDDR6/GDDR6X)
+        - RAM: aceeași generație (DDR4/DDR5), capacitate identică, frecvență similară (±400 MHz)
+        - Storage: același tip (NVMe/SATA), capacitate identică sau superioară
+        - Motherboard: același socket, același chipset tier (B-series vs X-series), același tip RAM suportat
+        - PSU: putere similară (±50W), același rating eficiență (80+ Bronze/Gold/Platinum)
+        - Case: același form factor (ATX/mATX/ITX)
+        - Cooler: compatibil cu același socket, TDP suportat similar
+
+        Pentru fiecare alternativă găsită calculează:
+        - 'economie_ron': cât economisești față de componenta originală
+        - 'diferenta_performanta': estimare procentuală față de original (+ mai bun / - mai slab)
+        - 'scor_calitate_pret': performanță relativă / preț * 100
+        - 'verdict': 'Recomandat' / 'Compromis acceptabil' / 'Evită' cu explicație scurtă
+
+        Returnează:
+        1. 'componenta_originala': datele componentei de referință (nume, preț, specs)
+        2. 'alternative': lista sortată după scor calitate/preț descrescător (max 5 rezultate)
+        3. 'recomandata': alternativa cu cel mai bun echilibru preț/performanță
+        4. 'sumar': 2-3 propoziții care explică contextul (ex: "Dacă bugetul e limitat, X oferă 90% din performanță la 70% din preț")
+
+        Returnează doar componente care au preț real în DB.
+        Dacă nu există alternative cu preț în DB, returnează un mesaj explicit.
+    """
     
     model_map = {
         "cpu": CPU, "gpu": GPU, "ram": RAM, "storage": Storage, 
