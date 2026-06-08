@@ -186,7 +186,12 @@ const initChat = () => {
   const istoricSalvat = localStorage.getItem('ai_chat_history')
   
   if (istoricSalvat) {
-    messages.value = JSON.parse(istoricSalvat)
+    try {
+      messages.value = JSON.parse(istoricSalvat)
+    } catch {
+      localStorage.removeItem('ai_chat_history')
+      messages.value = []
+    }
     scrollToBottom()
   } else {
     const username = localStorage.getItem('username')

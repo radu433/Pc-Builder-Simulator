@@ -613,7 +613,24 @@ onMounted(async () => {
       }
     } catch (e) {}
   }
+
+  const pendingAiBuild = localStorage.getItem('pending_ai_build')
+  if (pendingAiBuild) {
+    try {
+      const buildData = JSON.parse(pendingAiBuild)
+      const build = buildData.build || buildData
+      for (const slot of categories.value) {
+        const key = catToKeyMap[slot.id]
+        if (key && build[key] && build[key].id != null) {
+          const part = slot.allParts?.find(p => p.id === build[key].id)
+          if (part) selectPart(slot.id, part)
+        }
+      }
+    } catch (e) {}
+    localStorage.removeItem('pending_ai_build')
+  }
 })
+
 </script>
 
 <style scoped>
