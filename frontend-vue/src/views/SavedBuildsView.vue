@@ -178,7 +178,7 @@ const fetchSavedBuilds = async () => {
     const response = await api.get('saved-builds/', {
       headers: { Authorization: `Bearer ${token}` }
     })
-    builds.value = response.data
+    builds.value = response.data || response.data.results
   } catch (error) {
     console.error('Eroare la preluarea build-urilor:', error)
   } finally {
