@@ -322,7 +322,7 @@ const categoryFiltersMap = {
 
 const activeCategoryFilters = computed(() => {
   if (!activeCategory.value) return []
-  return categoryFiltersMap[activeCategory.value.id] || []
+  return categoryFiltersMap[activeCategory.value?.id] || []
 })
 
 const initDynamicFilters = () => {
