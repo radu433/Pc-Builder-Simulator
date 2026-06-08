@@ -32,6 +32,7 @@ from mcp_server import (
     get_user_preferences,
     save_user_preferences,
     generate_build_image,
+    get_component_alternatives,
 )
 
 logger = logging.getLogger(__name__)
@@ -181,6 +182,19 @@ TOOL_DECLARATIONS = [
             },
             "required": ["case_name", "gpu_name", "cpu_name"]
         }
+    },
+    {
+        "name": "get_component_alternatives",
+        "description": "Găsește alternative pentru o componentă PC specificată.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "component_type": {"type": "string", "description": "Tipul componentei (cpu, gpu, ram, etc.)"},
+                "component_id": {"type": "integer", "description": "ID-ul componentei din DB"},
+                "limit": {"type": "integer", "description": "Numărul maxim de alternative"}
+            },
+            "required": ["component_type", "component_id"]
+        }
     }
 ]
 
@@ -195,6 +209,7 @@ TOOL_MAP = {
     "get_user_preferences": get_user_preferences,
     "save_user_preferences": save_user_preferences,
     "generate_build_image": generate_build_image,
+    "get_component_alternatives": get_component_alternatives,
 }
 
 
@@ -416,8 +431,21 @@ class SearchComponentsView(APIView):
 
 
 class BottleneckView(APIView):
-    """POST /api/builder/bottleneck/ — Calcul bottleneck CPU/GPU."""
+    """GET/POST /api/builder/bottleneck/ — Calcul bottleneck CPU/GPU."""
     permission_classes = [AllowAny]
+
+    def get(self, request):
+        cpu_id = request.query_params.get("cpu_id")
+        gpu_id = request.query_params.get("gpu_id")
+
+        if not cpu_id or not gpu_id:
+            return Response(
+                {"error": "Parametrii cpu_id și gpu_id sunt obligatorii."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        result = get_bottleneck_score(cpu_id=int(cpu_id), gpu_id=int(gpu_id))
+        return Response(_convert_for_json(result))
 
     def post(self, request):
         cpu_id = request.data.get("cpu_id")
@@ -450,8 +478,28 @@ class CompatibilityView(APIView):
 
 
 class BenchmarkView(APIView):
-    """POST /api/builder/benchmark/ — Estimare FPS via Gemini."""
+    """GET/POST /api/builder/benchmark/ — Estimare FPS via Gemini."""
     permission_classes = [AllowAny]
+
+    def get(self, request):
+        from components.models import BuildAnalysisCache
+        import hashlib
+        cpu_id = request.query_params.get("cpu_id")
+        gpu_id = request.query_params.get("gpu_id")
+        
+        if not cpu_id or not gpu_id:
+            return Response({"error": "cpu_id si gpu_id lipsesc"}, status=400)
+            
+        cache_key = hashlib.md5(f"{cpu_id}_{gpu_id}".encode()).hexdigest()
+        try:
+            cached = BuildAnalysisCache.objects.get(cache_key=cache_key)
+            return Response({
+                "cached": True,
+                "fps_data": _convert_for_json(cached.fps_data),
+                "analiza_text": cached.analiza_text
+            })
+        except BuildAnalysisCache.DoesNotExist:
+            return Response({"cached": False})
 
     def post(self, request):
         cpu = request.data.get("cpu", {})
@@ -545,4 +593,10 @@ class GenerateImageView(APIView):
             gpu_name=str(gpu_name),
             cpu_name=str(cpu_name),
         )
+        if "image_path" in result:
+            import os
+            from django.conf import settings
+            filename = os.path.basename(result["image_path"])
+            result["image_url"] = request.build_absolute_uri(settings.MEDIA_URL + 'builds/' + filename)
+        
         return Response(_convert_for_json(result))
