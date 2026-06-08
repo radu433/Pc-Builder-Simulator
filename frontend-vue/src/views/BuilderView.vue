@@ -445,6 +445,7 @@ const resetFilters = (categoryId) => {
 
 const selectPart = (categoryId, part) => {
   const category = categories.value.find(c => c.id === categoryId)
+  if (!category) return
   category.selectedPart = part
   agentResult.value = null
   agentError.value = null
@@ -457,7 +458,7 @@ const selectPart = (categoryId, part) => {
   if (categoryId === 'cpus') {
     const socket = part.socket
     const moboCat = categories.value.find(c => c.id === 'motherboards')
-    if (socket) {
+    if (socket && moboCat) {
       moboCat.activeFilter = `Socket ${socket}`
       moboCat.filterLocked = true
       moboCat.incompatibil = moboCat.selectedPart && moboCat.selectedPart.socket !== socket
@@ -467,13 +468,13 @@ const selectPart = (categoryId, part) => {
   if (categoryId === 'motherboards') {
     const tipRam = part.tip_ram
     const ramCat = categories.value.find(c => c.id === 'rams')
-    if (tipRam) {
+    if (tipRam && ramCat) {
       ramCat.activeFilter = tipRam
       ramCat.filterLocked = true
       ramCat.incompatibil = ramCat.selectedPart && ramCat.selectedPart.tip !== tipRam && ramCat.selectedPart.tip_memorie !== tipRam
     }
   }
-  
+
   applyFilters()
 }
 
@@ -492,18 +493,22 @@ const removePart = (categoryId) => {
 
   if (categoryId === 'cpus') {
     const moboCat = categories.value.find(c => c.id === 'motherboards')
-    moboCat.activeFilter = null
-    moboCat.filterLocked = false
-    moboCat.incompatibil = false
+    if (moboCat) {
+      moboCat.activeFilter = null
+      moboCat.filterLocked = false
+      moboCat.incompatibil = false
+    }
   }
 
   if (categoryId === 'motherboards') {
     const ramCat = categories.value.find(c => c.id === 'rams')
-    ramCat.activeFilter = null
-    ramCat.filterLocked = false
-    ramCat.incompatibil = false
+    if (ramCat) {
+      ramCat.activeFilter = null
+      ramCat.filterLocked = false
+      ramCat.incompatibil = false
+    }
   }
-  
+
   applyFilters()
 }
 
