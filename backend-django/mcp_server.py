@@ -517,7 +517,424 @@ def generate_build_image(case_name: str, gpu_name: str, cpu_name: str) -> dict:
     except Exception as e:
         return {"error": str(e)}
 
+@mcp.tool()
+def compare_components(component_type: str, component_names: list[str]) -> dict:
+    """Compară 2 până la 3 componente de același tip (ex: CPU, GPU, RAM) din baza de date.
+
+        Pentru fiecare componentă returnează:
+        - Nume, brand, preț actual (RON) și magazin
+        - Specificații tehnice relevante categoriei (nuclee/threaduri pentru CPU, VRAM pentru GPU, etc.)
+        - Scor calitate/preț calculat ca: (scor_performanță / preț) * 100
+
+        Logica scorului de performanță per categorie:
+        - CPU: frecventa_ghz * nuclee * threaduri / consum_tdp
+        - GPU: vram_gb * frecventa_mhz / consum_tdp  
+        - RAM: frecventa_mhz * capacitate_gb / latenta
+
+        Returnează:
+        1. 'tabel_markdown': string formatat ca tabel markdown cu toate datele
+        2. 'recomandat': numele componentei cu cel mai bun raport calitate/preț
+        3. 'componente': lista cu datele brute ale fiecărei componente
+        4. 'sumar': 1-2 propoziții care explică de ce e recomandat cel ales
+
+        Dacă o componentă nu are preț în DB, exclude-o din calculul calitate/preț 
+        și menționează asta în sumar.
+        """
     
+    model_map = {
+        "cpu": CPU, 
+        "gpu": GPU, 
+        "ram": RAM, 
+        "storage": Storage, 
+        "psu": PSU,
+        "motherboard": Motherboard,
+        "case": Case,
+        "cooler": Cooler
+    }
+    
+    model = model_map.get(component_type.lower())
+    if not model:
+        return {"error": f"Tip necunoscut: {component_type}"}
+
+    if len(component_names) < 2 or len(component_names) > 3:
+        return {"error": "Te rog să furnizezi exact 2 sau 3 nume de componente pentru comparație."}
+
+    comparison_data = []
+    
+    for name in component_names:
+        query = model.objects.filter(stoc=True)
+        for word in name.split():
+            query = query.filter(nume__icontains=word)
+            
+        found = query.order_by("pret").first()
+        if not found:
+            query_nostoc = model.objects.all()
+            for word in name.split():
+                query_nostoc = query_nostoc.filter(nume__icontains=word)
+            found = query_nostoc.order_by("pret").first()
+            
+        if not found:
+            comparison_data.append({"error": f"Nu am găsit nicio componentă pentru: {name}", "nume_cautat": name})
+            continue
+
+        c = found
+        data = {
+            "nume": c.nume,
+            "pret": float(c.pret) if c.pret else 0,
+            "stoc": c.stoc,
+            "magazin": c.magazin
+        }
+        
+        if component_type.lower() == "gpu":
+            data["specs"] = {
+                "VRAM": f"{c.vram_gb} GB",
+                "TDP": f"{c.consum_tdp} W",
+                "Chipset": c.model_chipset,
+                "Lungime": f"{c.lungime_mm} mm"
+            }
+            data["scor_performanta"] = c.vram_gb * 15 + c.consum_tdp * 0.8
+            
+        elif component_type.lower() == "cpu":
+            data["specs"] = {
+                "Nuclee / Threaduri": f"{c.nuclee}C / {c.threaduri}T",
+                "Frecvență": f"{c.frecventa_ghz} GHz",
+                "TDP": f"{c.consum_tdp} W",
+                "Socket": c.socket
+            }
+            scor = c.nuclee * float(c.frecventa_ghz) * 10
+            if c.threaduri > c.nuclee:
+                scor *= 1.15
+            data["scor_performanta"] = scor
+            
+        elif component_type.lower() == "ram":
+            data["specs"] = {
+                "Capacitate": f"{c.capacitate_totala_gb} GB",
+                "Frecvență": f"{c.frecventa_mhz} MHz",
+                "Tip": c.tip_memorie,
+                "Latență": f"CL{c.latenta_cl}"
+            }
+            scor = (c.capacitate_totala_gb * 100) + (c.frecventa_mhz * 0.1) - (c.latenta_cl * 5)
+            data["scor_performanta"] = max(scor, 1)
+
+        elif component_type.lower() == "motherboard":
+            data["specs"] = {
+                "Socket": c.socket,
+                "Chipset": c.chipset,
+                "Format": c.format,
+                "WiFi": "Da" if c.are_wifi else "Nu",
+                "Sloturi RAM": c.sloturi_ram
+            }
+            
+        elif component_type.lower() == "storage":
+            data["specs"] = {
+                "Capacitate": f"{c.capacitate_gb} GB",
+                "Tip": c.tip,
+                "Format": c.format,
+                "Citire": f"{c.viteza_citire_mb_s} MB/s" if c.viteza_citire_mb_s else "N/A",
+                "Scriere": f"{c.viteza_scriere_mb_s} MB/s" if c.viteza_scriere_mb_s else "N/A"
+            }
+            scor = c.capacitate_gb + (c.viteza_citire_mb_s or 500) * 0.5
+            data["scor_performanta"] = scor
+            
+        elif component_type.lower() == "psu":
+            data["specs"] = {
+                "Putere": f"{c.putere_w} W",
+                "Certificare": c.certificare,
+                "Modulară": c.este_modulara
+            }
+            scor = c.putere_w + (50 if "Gold" in str(c.certificare) else 0)
+            data["scor_performanta"] = scor
+            
+        elif component_type.lower() == "case":
+            data["specs"] = {
+                "Tip": c.tip_carcasa,
+                "Sursă inclusă": "Da" if c.include_sursa else "Nu",
+                "GPU Max": f"{c.lungime_max_gpu_mm} mm" if c.lungime_max_gpu_mm else "N/A",
+                "Cooler Max": f"{c.inaltime_max_cooler_mm} mm" if c.inaltime_max_cooler_mm else "N/A"
+            }
+            
+        elif component_type.lower() == "cooler":
+            data["specs"] = {
+                "Tip răcire": c.tip_racire,
+                "Înălțime": f"{c.inaltime_mm} mm" if c.inaltime_mm else "N/A",
+                "Radiator": f"{c.lungime_radiator_mm} mm" if c.lungime_radiator_mm else "N/A"
+            }
+            
+        comparison_data.append(data)
+
+    nume_cols = []
+    for c in comparison_data:
+        if "error" in c:
+            nume_cols.append(c["nume_cautat"])
+        else:
+            short_name = c['nume'][:35] + "..." if len(c.get('nume','')) > 35 else c.get('nume','')
+            nume_cols.append(short_name)
+            
+    md = f"### 📊 Comparație: {' vs '.join(nume_cols)}\n\n"
+    md += "| Funcție / Specificație | " + " | ".join(nume_cols) + " |\n"
+    md += "|" + "---|" * (len(comparison_data) + 1) + "\n"
+    
+    md += "| 💰 **Preț minim** | " + " | ".join([f"**{c.get('pret', 0)} RON**" if "error" not in c else "N/A" for c in comparison_data]) + " |\n"
+    md += "| 📦 **Stoc** | " + " | ".join(["✅ În stoc" if c.get('stoc') else "❌ Indisponibil" if "error" not in c else "N/A" for c in comparison_data]) + " |\n"
+    
+    all_spec_keys = []
+    for c in comparison_data:
+        if "specs" in c:
+            for k in c["specs"].keys():
+                if k not in all_spec_keys:
+                    all_spec_keys.append(k)
+                    
+    for k in all_spec_keys:
+        md += f"| ⚙️ **{k}** | " + " | ".join([str(c.get("specs", {}).get(k, "-")) if "error" not in c else "-" for c in comparison_data]) + " |\n"
+        
+    if any("scor_performanta" in c for c in comparison_data):
+        md += "| 🏆 **Scor Performanță (Estimat)** | " + " | ".join([str(round(c.get("scor_performanta", 0))) if "error" not in c else "-" for c in comparison_data]) + " |\n"
+        md += "| ⚖️ **Raport Performanță/Preț** | "
+        
+        for c in comparison_data:
+            if "error" in c or not c.get("pret") or c.get("pret") == 0 or not c.get("scor_performanta"):
+                md += "- | "
+            else:
+                raport = c["scor_performanta"] / c["pret"] * 100
+                md += f"**{round(raport, 1)}** pct/100RON | "
+        md = md.rstrip(" |") + " |\n"
+
+    best_buy = None
+    best_ratio = 0
+    for c in comparison_data:
+        if "error" not in c and c.get("pret") and c.get("pret") > 0 and c.get("scor_performanta"):
+            r = c["scor_performanta"] / c["pret"]
+            if r > best_ratio:
+                best_ratio = r
+                best_buy = c["nume"]
+                
+    if best_buy:
+        md += f"\n💡 **Recomandare (Best Buy):** **{best_buy}** oferă cel mai bun raport performanță/preț din această selecție.\n"
+
+    return {
+        "succes": True,
+        "markdown": md,
+        "date_brute": comparison_data
+    }
+
+
+@mcp.tool()
+def get_best_value_builds(buget: float) -> dict:
+    """
+        Generează top 3 build-uri complete optimizate pentru tipuri diferite de utilizare,
+        respectând un buget maxim dat în RON.
+
+        Tipuri de build-uri generate:
+        - GAMING: prioritizează GPU puternic, CPU echilibrat, RAM 16GB+ rapid
+        - OFFICE: prioritizează stabilitate și consum redus, GPU integrat sau entry-level
+        - WORKSTATION: prioritizează CPU cu multe nuclee/threaduri, RAM 32GB+, GPU cu VRAM mare
+
+        Criterii de selecție componente (doar cele cu preț în DB):
+        - CPU: ales în funcție de nuclee/threaduri necesare tipului de build
+        - GPU: ales după VRAM și performanță relativă la preț
+        - RAM: minim 16GB gaming/office, 32GB workstation, frecvență cât mai mare
+        - Storage: cel mai rapid disponibil în buget (preferă NVMe > SATA SSD > HDD)
+        - Compatibilitate: socket CPU == socket Motherboard, DDR generation match
+
+        Calcul scor calitate/preț per build:
+        - suma scorurilor individuale ale componentelor / costul total * 100
+        - penalizare dacă bugetul e depășit
+        - bonus dacă toate componentele au preț real din DB (nu estimat)
+
+        Returnează pentru fiecare build:
+        1. 'tip': Gaming / Office / Workstation
+        2. 'componente': dict cu fiecare componentă selectată (nume, preț, magazin, url)
+        3. 'pret_total': suma prețurilor reale din DB
+        4. 'scor_calitate_pret': float calculat
+        5. 'procent_buget_folosit': cât % din buget e folosit
+        6. 'sumar': 2-3 propoziții care explică de ce acest build e optim pentru tipul său
+        7. 'avertismente': lista de probleme (ex: "GPU-ul depășește 40% din buget")
+
+        Dacă bugetul e prea mic pentru un tip de build, returnează un mesaj explicit
+        în loc să forțezi componente incompatibile.
+        """
+    
+    distributii = {
+        "Gaming": {
+            "gpu": 0.45, "cpu": 0.20, "ram": 0.10, "storage": 0.10, "psu": 0.07, "motherboard": 0.08
+        },
+        "Workstation": {
+            "gpu": 0.25, "cpu": 0.35, "ram": 0.15, "storage": 0.12, "psu": 0.05, "motherboard": 0.08
+        },
+        "Office": {
+            "gpu": 0.10, "cpu": 0.40, "ram": 0.15, "storage": 0.15, "psu": 0.10, "motherboard": 0.10
+        }
+    }
+    
+    def alege_optima(queryset, buget_max):
+        valabile = list(queryset.filter(pret__lte=buget_max, stoc=True).order_by("-pret"))
+        return valabile[0] if valabile else None
+        
+    def alege_ieftina(queryset):
+        valabile = list(queryset.filter(stoc=True).order_by("pret"))
+        return valabile[0] if valabile else None
+
+    builds = []
+    
+    for nume_build, dist in distributii.items():
+        gpu_ales = alege_optima(GPU.objects.all(), buget * dist["gpu"])
+        if not gpu_ales: gpu_ales = alege_ieftina(GPU.objects.all())
+        
+        cpu_ales = alege_optima(CPU.objects.all(), buget * dist["cpu"])
+        if not cpu_ales: cpu_ales = alege_ieftina(CPU.objects.all())
+        
+        ram_ales = alege_optima(RAM.objects.all(), buget * dist["ram"])
+        if not ram_ales: ram_ales = alege_ieftina(RAM.objects.all())
+        
+        sto_ales = alege_optima(Storage.objects.all(), buget * dist["storage"])
+        if not sto_ales: sto_ales = alege_ieftina(Storage.objects.all())
+        
+        psu_ales = alege_optima(PSU.objects.all(), buget * dist["psu"])
+        if not psu_ales: psu_ales = alege_ieftina(PSU.objects.all())
+        
+        mb_aleasa = None
+        if cpu_ales:
+            mb_qs = Motherboard.objects.filter(socket=cpu_ales.socket)
+            mb_aleasa = alege_optima(mb_qs, buget * dist["motherboard"])
+            if not mb_aleasa: mb_aleasa = alege_ieftina(mb_qs)
+            
+        componente = [cpu_ales, gpu_ales, ram_ales, sto_ales, psu_ales, mb_aleasa]
+        pret_total = sum(float(c.pret) for c in componente if c and c.pret)
+        
+        # Scor global
+        scor_total = 0
+        if cpu_ales: scor_total += cpu_ales.nuclee * float(cpu_ales.frecventa_ghz) * 10
+        if gpu_ales: scor_total += gpu_ales.vram_gb * 15
+        if ram_ales: scor_total += ram_ales.capacitate_totala_gb * 10
+        
+        scor_calitate_pret = (scor_total / pret_total * 100) if pret_total > 0 else 0
+        
+        builds.append({
+            "tip_build": nume_build,
+            "pret_total": round(pret_total, 2),
+            "scor_performanta_absolut": round(scor_total, 1),
+            "scor_calitate_pret": round(scor_calitate_pret, 2),
+            "componente": {
+                "CPU": cpu_ales.nume if cpu_ales else "N/A",
+                "GPU": gpu_ales.nume if gpu_ales else "N/A",
+                "Placa de baza": mb_aleasa.nume if mb_aleasa else "N/A",
+                "RAM": ram_ales.nume if ram_ales else "N/A",
+                "Storage": sto_ales.nume if sto_ales else "N/A",
+                "Sursa": psu_ales.nume if psu_ales else "N/A",
+            }
+        })
+        
+    md = f"### 🏆 Top 3 Build-uri Recomandate (Buget: {buget} RON)\n\n"
+    
+    for b in builds:
+        md += f"#### 🖥️ Build {b['tip_build']} - {b['pret_total']} RON\n"
+        md += f"**Scor Calitate/Preț:** {b['scor_calitate_pret']} pct/100RON | **Performanță Brută:** {b['scor_performanta_absolut']} pct\n\n"
+        md += "- **CPU:** " + b['componente']['CPU'] + "\n"
+        md += "- **GPU:** " + b['componente']['GPU'] + "\n"
+        md += "- **Placă de bază:** " + b['componente']['Placa de baza'] + "\n"
+        md += "- **RAM:** " + b['componente']['RAM'] + "\n"
+        md += "- **Stocare:** " + b['componente']['Storage'] + "\n"
+        md += "- **Sursă:** " + b['componente']['Sursa'] + "\n\n"
+        
+    return {
+        "succes": True,
+        "markdown": md,
+        "builds": builds
+    }
+
+@mcp.tool()
+def get_component_alternatives(component_type: str, component_id: int, limit: int = 3) -> dict:
+    """Returnează alternative similare (ca specificații) dar mai ieftine pentru o componentă dată din DB."""
+    
+    model_map = {
+        "cpu": CPU, "gpu": GPU, "ram": RAM, "storage": Storage, 
+        "psu": PSU, "motherboard": Motherboard, "case": Case, "cooler": Cooler
+    }
+    
+    model = model_map.get(component_type.lower())
+    if not model:
+        return {"error": f"Tip componentă necunoscut: {component_type}"}
+        
+    try:
+        orig = model.objects.get(id=component_id)
+    except model.DoesNotExist:
+        return {"error": f"Nu există componentă de tip {component_type} cu ID-ul {component_id}"}
+        
+    if not orig.pret:
+        return {"error": "Componenta originală nu are preț, deci nu putem căuta alternative mai ieftine."}
+        
+    # Baza de căutare: pe stoc, mai ieftine
+    qs = model.objects.filter(stoc=True, pret__lt=orig.pret)
+    
+    # Filtrare hardware-friendly ca să nu ne propună componente complet incompatibile
+    if component_type.lower() == "cpu":
+        qs = qs.filter(socket=orig.socket, nuclee__gte=orig.nuclee - 2)
+    elif component_type.lower() == "gpu":
+        qs = qs.filter(vram_gb__gte=max(2, orig.vram_gb - 4))
+    elif component_type.lower() == "ram":
+        qs = qs.filter(tip_memorie=orig.tip_memorie, capacitate_totala_gb__gte=orig.capacitate_totala_gb)
+    elif component_type.lower() == "motherboard":
+        qs = qs.filter(socket=orig.socket)
+    elif component_type.lower() == "storage":
+        qs = qs.filter(tip=orig.tip, capacitate_gb__gte=orig.capacitate_gb * 0.75)
+    elif component_type.lower() == "psu":
+        qs = qs.filter(putere_w__gte=orig.putere_w - 100)
+    elif component_type.lower() == "case":
+        qs = qs.filter(tip_carcasa=orig.tip_carcasa)
+
+    def calc_scor(c, tip):
+        if tip == "cpu": return (getattr(c, 'nuclee', 0) or 0) * float(getattr(c, 'frecventa_ghz', 0) or 0) * 10
+        if tip == "gpu": return (getattr(c, 'vram_gb', 0) or 0) * 15 + (getattr(c, 'consum_tdp', 0) or 0) * 0.8
+        if tip == "ram": return (getattr(c, 'capacitate_totala_gb', 0) or 0) * 100 + (getattr(c, 'frecventa_mhz', 0) or 0) * 0.1
+        if tip == "storage": return getattr(c, 'capacitate_gb', 0) or 0
+        if tip == "psu": return getattr(c, 'putere_w', 0) or 0
+        return 1
+
+    scor_orig = calc_scor(orig, component_type.lower())
+    alts = list(qs)
+    
+    rezultate_valide = []
+    for a in alts:
+        scor_a = calc_scor(a, component_type.lower())
+        # Vrem o performanță estimată de cel puțin 85% din original
+        if scor_a >= scor_orig * 0.85:
+            economie = float(orig.pret - a.pret)
+            diff_proc = ((scor_a - scor_orig) / max(scor_orig, 1)) * 100
+            rezultate_valide.append({
+                "id": a.id,
+                "nume": a.nume,
+                "pret": float(a.pret),
+                "magazin": a.magazin,
+                "url": a.url_produs,
+                "economie_ron": round(economie, 2),
+                "diferenta_performanta_procent": round(diff_proc, 1),
+                "scor_performanta": round(scor_a, 1)
+            })
+            
+    # Le sortăm să le obținem pe cele cu cel mai bun raport calitate/preț 
+    # (adică performanță mare, economie mare)
+    rezultate_valide.sort(key=lambda x: (x["diferenta_performanta_procent"], x["economie_ron"]), reverse=True)
+    top_alts = rezultate_valide[:limit]
+    
+    md = f"### 🔄 Alternative pentru {orig.nume} ({orig.pret} RON)\n\n"
+    if not top_alts:
+        md += "Nu am găsit alternative mai ieftine cu performanțe similare sau hardware compatibil.\n"
+    else:
+        for a in top_alts:
+            semn = "+" if a['diferenta_performanta_procent'] > 0 else ""
+            md += f"- **{a['nume']}** la **{a['pret']} RON** (-{a['economie_ron']} RON) | Perf estimată: {semn}{a['diferenta_performanta_procent']}% | Magazin: {a['magazin']}\n"
+
+    return {
+        "succes": True,
+        "original": {
+            "nume": orig.nume,
+            "pret": float(orig.pret),
+            "scor_performanta": round(scor_orig, 1)
+        },
+        "alternative": top_alts,
+        "markdown": md
+    }
+
 if __name__ == "__main__":
     print("MCP Server pornit...")
     mcp.run()
