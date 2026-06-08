@@ -452,7 +452,11 @@ const selectPart = (categoryId, part) => {
 
   const key = catToKeyMap[categoryId] || categoryId
   const currentBuild = JSON.parse(localStorage.getItem('current_build') || '{}')
-  currentBuild[key] = part
+  if (part && part.id != null) {
+    currentBuild[key] = part
+  } else {
+    delete currentBuild[key]
+  }
   localStorage.setItem('current_build', JSON.stringify(currentBuild))
 
   if (categoryId === 'cpus') {
@@ -563,13 +567,32 @@ const displayPartName = (part) => part.nume || part.model || 'Componentă'
 const displayPartPrice = (part) => part.pret || '0.00'
 
 onMounted(async () => {
+  // Curăță current_build corupt
+  try {
+    const raw = localStorage.getItem('current_build')
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      let changed = false
+      for (const k of Object.keys(parsed)) {
+        if (parsed[k] === null || parsed[k]?.id == null) {
+          delete parsed[k]
+          changed = true
+        }
+      }
+      if (changed) localStorage.setItem('current_build', JSON.stringify(parsed))
+    }
+  } catch { localStorage.removeItem('current_build') }
+
   await fetchParts()
+
   const saved = sessionStorage.getItem('loadBuild')
   if (saved) {
     const parts = JSON.parse(saved)
     for (const slot of categories.value) {
       const key = catToKeyMap[slot.id]
-      if (key && parts[key]) slot.selectedPart = parts[key]
+      if (key && parts[key] && parts[key].id != null) {
+        slot.selectedPart = parts[key]
+      }
     }
     sessionStorage.removeItem('loadBuild')
   }
@@ -581,8 +604,11 @@ onMounted(async () => {
       for (const slot of categories.value) {
         const key = catToKeyMap[slot.id]
         if (key && currentBuild[key]) {
-           const part = slot.allParts?.find(p => p.id === currentBuild[key]?.id)
-           if (part) selectPart(slot.id, part) 
+          const savedId = currentBuild[key]?.id
+          if (savedId != null) {
+            const part = slot.allParts?.find(p => p.id === savedId)
+            if (part) selectPart(slot.id, part)
+          }
         }
       }
     } catch (e) {}

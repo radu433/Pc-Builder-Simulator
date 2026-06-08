@@ -58,12 +58,12 @@ def search_components(component_type: str, budget: float, in_stock: bool = True)
     
 @mcp.tool()
 def get_bottleneck_score(cpu_id: int, gpu_id: int):
-   """
-        Calculează bottleneck-ul între un CPU și GPU dintr-un build.
-        Returnează scorul fiecărei componente, procentajul de bottleneck
-        și care componentă limitează performanța.
-        Folosește când userul întreabă dacă un combo CPU+GPU e echilibrat
-        sau dacă o componentă îl trage înapoi pe cealaltă.
+    """
+    Calculează bottleneck-ul între un CPU și GPU dintr-un build.
+    Returnează scorul fiecărei componente, procentajul de bottleneck
+    și care componentă limitează performanța.
+    Folosește când userul întreabă dacă un combo CPU+GPU e echilibrat
+    sau dacă o componentă îl trage înapoi pe cealaltă.
     """
     try:
         cpu = CPU.objects.get(id=cpu_id)

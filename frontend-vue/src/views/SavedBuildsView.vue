@@ -213,7 +213,7 @@ const openModal = async (build) => {
       const res = await api.get(`${slot.endpoint}/${id}/`)
       modalParts.value[slot.key] = res.data
     } catch {
-      modalParts.value[slot.key] = { nume: `ID #${id}`, pret: null }
+      modalParts.value[slot.key] = { id, nume: `ID #${id}`, pret: null }
     }
   })
 

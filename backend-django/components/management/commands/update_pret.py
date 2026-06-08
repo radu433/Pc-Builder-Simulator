@@ -307,20 +307,30 @@ def _is_valid_title_match(title: str, obj) -> Optional[bool]:
     name_lower = reference_str
     name_tokens = _tokenize(reference_str)
 
-    cuvinte_iertate = ["radeon", "geforce", "amd", "nvidia", "intel", "rtx", "rx", "core"]
+    cuvinte_iertate = ["radeon", "geforce", "amd", "nvidia", "intel", "rtx", "rx", "core", "wd", "western digital"]
 
     if hasattr(obj, 'brand') and obj.brand:
         brand_real = str(obj.brand).lower().strip()
         if brand_real not in cuvinte_iertate:
-            if brand_real not in title_lower:
+            if brand_real == "western digital" and ("wd" in title_tokens or "wd" in title_lower):
+                pass
+            elif brand_real not in title_lower:
+                if isinstance(obj, Storage) or isinstance(obj, Case):
+                    pass # Iertam lipsa brandului pt Storage si Case (des omis in titluri)
+                elif isinstance(obj, Motherboard):
+                    # Exceptie pentru Gigabyte / Aorus / ROG etc, uneori nu pun brandul principal
+                    pass
+                else:
+                    return False
+
+    # Verificarea generala cu numere o facem doar pt CPU si GPU, pentru restul avem logica specifica
+    if isinstance(obj, (CPU, GPU)):
+        db_numbers = re.findall(r"\d{3,4}", name_lower)
+        title_numbers = re.findall(r"\d{3,4}", title_lower)
+
+        for num in db_numbers:
+            if num not in title_numbers:
                 return False
-
-    db_numbers = re.findall(r"\d{3,4}", name_lower)
-    title_numbers = re.findall(r"\d{3,4}", title_lower)
-
-    for num in db_numbers:
-        if num not in title_numbers:
-            return False
 
     if isinstance(obj, GPU):
         if obj.vram_gb:
@@ -409,6 +419,12 @@ def _is_valid_title_match(title: str, obj) -> Optional[bool]:
         # Tracker: daca socket-ul nu e confirmat din titlu, deferam la pagina
         needs_page_check = False
 
+        if obj.chipset:
+            chipset_num = re.sub(r'[^0-9]', '', obj.chipset)
+            if chipset_num and chipset_num not in title_lower:
+                # Verificam daca macar numarul chipsetului e in titlu (ex 650 din B650)
+                return False
+
         # Socket check: daca nu e in titlu, marcam pt verificare pe pagina
         # Multi retaileri (eMag) nu pun socketul in titlu
         if obj.socket:
@@ -418,6 +434,8 @@ def _is_valid_title_match(title: str, obj) -> Optional[bool]:
             socket_in_title = (
                 socket_lower in title_lower
                 or (socket_num and len(socket_num) >= 3 and socket_num in title_lower)
+                or (socket_lower == "am4" and "am4" in title_lower)
+                or (socket_lower == "am5" and "am5" in title_lower)
             )
             if not socket_in_title:
                 needs_page_check = True
@@ -431,7 +449,10 @@ def _is_valid_title_match(title: str, obj) -> Optional[bool]:
 
         if obj.format:
             format_lower = obj.format.lower()
-            if format_lower not in title_lower:
+            format_clean = format_lower.replace("-", "").replace(" ", "")
+            title_clean = title_lower.replace("-", "").replace(" ", "")
+            
+            if format_clean not in title_clean and format_lower not in title_lower:
                 needs_page_check = True
 
         # Daca avem info lipsa din titlu, returnam None => se verifica pe pagina
@@ -457,23 +478,27 @@ def _is_valid_title_match(title: str, obj) -> Optional[bool]:
         model_ids.extend(re.findall(r'\b\d{3,4}\b', name_lower)) # ex: 980, 870, 860
         
         # Ignoram capacitati, versiuni gen, si rpm ca sa nu dea false negatives
-        skip_ids = {str(obj.capacitate_gb), "m2", "gen3", "gen4", "gen5", "sata3", "2280", "2230", "2242", "7200", "5400"}
+        skip_ids = {str(obj.capacitate_gb), "m2", "gen3", "gen4", "gen5", "sata3", "2280", "2230", "2242", "7200", "5400", "256", "512", "1024", "2048"}
         
         for mid in set(model_ids):
             if mid in skip_ids:
                 continue
             if mid not in title_lower:
-                return False
+                digits = re.sub(r'\D', '', mid)
+                if digits and digits not in title_lower:
+                    return False
 
     elif isinstance(obj, Case):
         name_lower = obj.nume.lower()
 
         model_identifiers = re.findall(r'\b[a-z]*\d+[a-z]*\b', name_lower)
         for identifier in model_identifiers:
-            if identifier in ["v1", "v2", "30", "31"]:
+            if identifier in ["v1", "v2", "30", "31", "120mm", "140mm"]:
                 continue
             if identifier not in title_lower:
-                return False
+                digits = re.sub(r'\D', '', identifier)
+                if digits and digits not in title_lower:
+                    return False
 
         db_is_white = "white" in name_lower or "alb" in name_lower
         db_is_black = "black" in name_lower or "negru" in name_lower
@@ -866,6 +891,12 @@ def find_all_valid_prices(
     min_similarity: float = 0.55,
     verbose: bool = False,
 ) -> list[PriceResult]:
+    
+    if isinstance(obj, (Case, Storage, Motherboard)):
+        min_similarity = 0.35
+    elif isinstance(obj, (RAM, PSU)):
+        min_similarity = 0.45
+        
     all_valid: list[PriceResult] = []
 
     for scrape_fn in SITE_SCRAPERS:
