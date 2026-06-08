@@ -85,7 +85,7 @@ const checkCurrentBuild = () => {
   const key = catToKeyMap[route.params.category] || route.params.category
   const currentBuild = JSON.parse(localStorage.getItem('current_build') || '{}')
   
-  if (currentBuild[key] && currentBuild[key].id === product.value.id) {
+  if (currentBuild[key] && currentBuild[key].id != null && currentBuild[key].id === product.value.id) {
     isAdded.value = true
   } else {
     isAdded.value = false
@@ -107,10 +107,13 @@ const addToBuild = () => {
   if (!product.value) return
   const category = route.params.category
   const key = catToKeyMap[category] || category
-  const currentBuild = JSON.parse(localStorage.getItem('current_build') || '{}')
+ const currentBuild = JSON.parse(localStorage.getItem('current_build') || '{}')
+if (product.value && product.value.id != null) {
   currentBuild[key] = product.value
-  localStorage.setItem('current_build', JSON.stringify(currentBuild))
-
+} else {
+  delete currentBuild[key]
+}
+localStorage.setItem('current_build', JSON.stringify(currentBuild))
   isAdded.value = true
   toast.value = `✅ ${product.value.nume} adăugat în build!`
   setTimeout(() => { toast.value = '' }, 3000)
