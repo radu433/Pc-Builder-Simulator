@@ -317,6 +317,7 @@
           </div>
         </div>
       </div>
+    </Teleport>
     <!-- MODAL 3: AI ANALYSIS (Teleported) -->
     <Teleport to="body">
       <div v-if="showAnalysisModal" class="modal-overlay" @click.self="showAnalysisModal = false">
