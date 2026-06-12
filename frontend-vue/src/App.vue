@@ -3,7 +3,7 @@
     <header class="customrig-navbar">
       <div class="container navbar-content">
         <!-- Left: Logo -->
-        <router-link to="/" class="brand-logo">
+        <router-link to="/" class="brand-logo" @click="handleLogoClick">
           <div class="logo-circle">C</div>
           <div class="brand-text">
             <span class="logo-title">CUSTOMRIG</span>
@@ -17,20 +17,20 @@
             <button class="nav-link">PC Parts <span class="arrow">▼</span></button>
             <div class="nav-submenu products-mega-menu glass-panel">
               <div class="mega-menu-grid">
-                <router-link to="/products/cpus" class="submenu-item"><span class="icon">🧠</span> Procesoare</router-link>
-                <router-link to="/products/gpus" class="submenu-item"><span class="icon">🎮</span> Plăci Video</router-link>
-                <router-link to="/products/motherboards" class="submenu-item"><span class="icon">🛹</span> Plăci de bază</router-link>
-                <router-link to="/products/rams" class="submenu-item"><span class="icon">⚡</span> Memorie RAM</router-link>
-                <router-link to="/products/storages" class="submenu-item"><span class="icon">💾</span> Stocare</router-link>
-                <router-link to="/products/psus" class="submenu-item"><span class="icon">🔌</span> Surse</router-link>
-                <router-link to="/products/cases" class="submenu-item"><span class="icon">🖥️</span> Carcase</router-link>
-                <router-link to="/products/coolers" class="submenu-item"><span class="icon">❄️</span> Coolere</router-link>
+                <router-link to="/products/cpus" class="submenu-item">Procesoare</router-link>
+                <router-link to="/products/gpus" class="submenu-item">Plăci Video</router-link>
+                <router-link to="/products/motherboards" class="submenu-item">Plăci de bază</router-link>
+                <router-link to="/products/rams" class="submenu-item">Memorie RAM</router-link>
+                <router-link to="/products/storages" class="submenu-item">Stocare</router-link>
+                <router-link to="/products/psus" class="submenu-item">Surse</router-link>
+                <router-link to="/products/cases" class="submenu-item">Carcase</router-link>
+                <router-link to="/products/coolers" class="submenu-item">Coolere</router-link>
               </div>
             </div>
           </div>
           
           <router-link to="/" class="nav-link" active-class="active-nav">Builds</router-link>
-          <router-link to="/completed-builds" class="nav-link" active-class="active-nav">Community</router-link>
+          <router-link to="/completed-builds" class="nav-link" active-class="active-nav">Your Builds</router-link>
           
           <router-link to="/chat-ai" class="nav-link" active-class="active-nav">✨ Build AI</router-link>
           <router-link to="/documentatii" class="nav-link" active-class="active-nav">📄 Documentații</router-link>
@@ -96,6 +96,12 @@ const router = useRouter()
 const route = useRoute()
 const dropdownOpen = ref(false)
 const accountMenuRef = ref(null)
+
+const handleLogoClick = () => {
+  if (route.path === '/') {
+    window.location.reload()
+  }
+}
 
 // ✅ ref reactiv în loc de computed direct pe localStorage
 const accessToken = ref(localStorage.getItem('access_token'))

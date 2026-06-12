@@ -86,15 +86,41 @@
 
        <!-- BROWSING GRID (Când o categorie este selectată) -->
        <div v-else-if="activeCategoryId" class="components-grid">
-         <div v-for="part in activeCategoryParts" :key="part.id" class="part-card glass-panel interactive-card">
-            <div class="part-info">
-               <h4 class="font-inter">{{ part.nume || part.name }}</h4>
+          <div 
+            v-for="part in activeCategoryParts" 
+            :key="part.id"
+            class="synth-product-card glass-panel interactive-card"
+          >
+            <div class="card-link" style="cursor: pointer;" @click="selectPart(part)">
+              <div class="card-glow"></div>
+              <div class="card-content">
+                <div class="card-top">
+                  <div class="card-brand">{{ part.brand || part.producator || 'N/A' }}</div>
+                </div>
+                
+                <div class="card-image-box">
+                  <img :src="part.imagine_url || 'https://placehold.co/200x200/111827/00f0ff?text=No+Image'" :alt="part.nume || part.name" />
+                </div>
+                
+                <h3 class="card-title">{{ part.nume || part.name }}</h3>
+                <div class="card-specs">
+                  <div class="spec-col">
+                    <span class="neon-price">{{ Number(part.pret || part.price).toLocaleString('ro-RO') }} RON</span>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div class="part-action">
-               <span class="price font-mono gradient-text-cyan">{{ part.pret || part.price }} RON</span>
-               <button class="btn-add font-mono" @click="selectPart(part)">ADAUGA</button>
+
+            <div class="card-footer">
+              <button 
+                class="btn-neon"
+                @click="selectPart(part)"
+                style="width: 100%"
+              >
+                ➕ Adaugă în Build
+              </button>
             </div>
-         </div>
+          </div>
        </div>
 
        <!-- SUMMARY VIEW -->
@@ -361,12 +387,54 @@ const showImageModal = ref(false)
 const isLoggedIn = ref(false)
 const imageGenerationsCount = ref(0)
 
+const saveCurrentBuildToStorage = () => {
+  const build = {}
+  categories.value.forEach(cat => {
+    if (cat.selectedPart) {
+      build[cat.id] = cat.selectedPart
+    }
+  })
+  localStorage.setItem('current_build', JSON.stringify(build))
+}
+
 onMounted(() => {
   const token = localStorage.getItem('access_token');
   isLoggedIn.value = !!token;
   const storedCount = localStorage.getItem('image_generations_count');
   if (storedCount) {
     imageGenerationsCount.value = parseInt(storedCount);
+  }
+  
+  // 1. Verificăm dacă venim din SavedBuildsView cu un "loadBuild"
+  const loadBuildStr = sessionStorage.getItem('loadBuild');
+  if (loadBuildStr) {
+    try {
+      const parts = JSON.parse(loadBuildStr);
+      categories.value.forEach(cat => {
+        if (parts[cat.id]) {
+          cat.selectedPart = parts[cat.id];
+        }
+      });
+      saveCurrentBuildToStorage(); // suprascriem current_build-ul cu cel încărcat
+    } catch (e) {
+      console.error("Eroare la încărcarea build-ului salvat:", e);
+    }
+    sessionStorage.removeItem('loadBuild');
+  } else {
+    // 2. Altfel, încărcăm ultimul build la care se lucra
+    const currentBuildStr = localStorage.getItem('current_build');
+    if (currentBuildStr) {
+      try {
+        const parts = JSON.parse(currentBuildStr);
+        categories.value.forEach(cat => {
+          if (parts[cat.id]) {
+            cat.selectedPart = parts[cat.id];
+          }
+        });
+      } catch (e) {
+        console.error("Eroare la citirea current_build:", e);
+      }
+    }
   }
 })
 
@@ -399,13 +467,19 @@ const openCategory = async (id) => {
 
 const selectPart = (part) => {
   const cat = categories.value.find(c => c.id === activeCategoryId.value)
-  if(cat) cat.selectedPart = part
+  if(cat) {
+    cat.selectedPart = part
+    saveCurrentBuildToStorage()
+  }
   activeCategoryId.value = null // Întoarcere la summary
 }
 
 const removePart = (id) => {
   const cat = categories.value.find(c => c.id === id)
-  if(cat) cat.selectedPart = null
+  if(cat) {
+    cat.selectedPart = null
+    saveCurrentBuildToStorage()
+  }
 }
 
 const openSaveModal = () => showSaveModal.value = true
@@ -832,17 +906,105 @@ const triggerCasePreview = async () => {
 .full-size-img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 12px; }
 
 .components-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1.5rem;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 25px; margin-bottom: 30px;
 }
-.part-card { border-radius: 12px; padding: 1.2rem; display: flex; flex-direction: column; }
-.part-img-placeholder { height: 160px; background: rgba(0,0,0,0.3); border-radius: 8px; margin-bottom: 1.2rem; display: flex; align-items: center; justify-content: center; color: var(--border-glass); }
-.part-img-placeholder svg { width: 40px; height: 40px; }
-.part-name { font-size: 1.1rem; margin: 0 0 0.5rem 0; font-weight: 600; line-height: 1.3;}
-.part-specs { font-size: 0.85rem; color: var(--text-secondary); margin: 0 0 1.5rem 0; }
-.part-footer { display: flex; justify-content: space-between; align-items: center; margin-top: auto; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.05); }
-.part-price { font-weight: 700; color: var(--neon-cyan); font-size: 1.1rem; }
-.btn-icon-add { background: var(--neon-violet); border: none; color: white; width: 32px; height: 32px; border-radius: 6px; cursor: pointer; font-size: 1.2rem; display: flex; align-items: center; justify-content: center; transition: 0.2s;}
-.btn-icon-add:hover { background: #9333ea; transform: scale(1.1); box-shadow: 0 0 10px rgba(124, 58, 237, 0.5);}
+
+.synth-product-card {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  transition: transform 0.3s ease, border-color 0.3s ease;
+}
+
+.synth-product-card:hover {
+  transform: translateY(-5px);
+  border-color: rgba(0, 240, 255, 0.5);
+}
+
+.card-top {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 15px;
+}
+.card-brand {
+  background: rgba(255,255,255,0.1);
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #94a3b8;
+}
+
+.card-image-box {
+  position: relative;
+  width: 100%;
+  height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20px;
+  background: rgba(255,255,255,0.02);
+  border-radius: 12px;
+}
+.card-image-box img {
+  max-width: 80%;
+  max-height: 80%;
+  object-fit: contain;
+  filter: drop-shadow(0 10px 15px rgba(0,0,0,0.5));
+}
+
+.card-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-bottom: 5px;
+  line-height: 1.3;
+  color: #e2e8f0;
+}
+
+.card-specs {
+  display: flex;
+  gap: 15px;
+  margin-bottom: 25px;
+  border-top: 1px solid rgba(255,255,255,0.05);
+  padding-top: 15px;
+}
+.spec-col span {
+  font-size: 0.7rem;
+  color: #64748b;
+  text-transform: uppercase;
+}
+.spec-col {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.neon-price {
+  color: #00f0ff;
+  font-weight: 800;
+  font-size: 1.3rem;
+  text-shadow: 0 0 10px rgba(0, 240, 255, 0.3);
+}
+
+.btn-neon {
+  background: linear-gradient(90deg, rgba(168, 85, 247, 0.8), rgba(0, 240, 255, 0.8));
+  border: none;
+  padding: 12px 20px;
+  border-radius: 20px;
+  color: white;
+  font-weight: 700;
+  cursor: pointer;
+  transition: 0.3s;
+}
+.btn-neon:hover:not(:disabled) {
+  box-shadow: 0 0 15px rgba(168, 85, 247, 0.6);
+  transform: scale(1.05);
+}
+.btn-neon:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.card-link { text-decoration: none; flex: 1; }
 
 /* ==========================================================================
    SUMMARY LAYOUT (Coloane stânga/dreapta)
