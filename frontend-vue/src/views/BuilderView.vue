@@ -386,7 +386,7 @@ const openCategory = async (id) => {
       const cat = categories.value.find(c => c.id === id)
       if (cat && cat.endpoint) {
         const response = await api.get(`/${cat.endpoint}/`)
-        activeCategoryParts.value = response.data
+        activeCategoryParts.value = response.data.results !== undefined ? response.data.results : response.data
       }
     } catch (err) {
       showToast('Eroare la încărcarea componentelor', 'error')
