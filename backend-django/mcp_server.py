@@ -936,22 +936,21 @@ def get_component_alternatives(component_type: str, component_id: int, limit: in
     if not orig.pret:
         return {"error": "Componenta originală nu are preț, deci nu putem căuta alternative mai ieftine."}
         
-    # Baza de căutare: pe stoc, mai ieftine
-    qs = model.objects.filter(stoc=True, pret__lt=orig.pret)
+    # Preluăm toate componentele în stoc
+    qs = model.objects.filter(stoc=True)
     
-    # Filtrare hardware-friendly ca să nu ne propună componente complet incompatibile
+    # Filtrare de bază pentru compatibilitate rezonabilă
     if component_type.lower() == "cpu":
-        qs = qs.filter(socket=orig.socket, nuclee__gte=orig.nuclee - 2)
+        qs = qs.filter(nuclee__gte=max(2, getattr(orig, 'nuclee', 2) - 2))
     elif component_type.lower() == "gpu":
-        qs = qs.filter(vram_gb__gte=max(2, orig.vram_gb - 4))
+        qs = qs.filter(vram_gb__gte=max(2, getattr(orig, 'vram_gb', 2) - 4))
     elif component_type.lower() == "ram":
-        qs = qs.filter(tip_memorie=orig.tip_memorie, capacitate_totala_gb__gte=orig.capacitate_totala_gb)
-    elif component_type.lower() == "motherboard":
-        qs = qs.filter(socket=orig.socket)
+        # Aici e esențial să păstrăm tipul de memorie (DDR4/DDR5) pentru a nu rupe complet build-ul
+        qs = qs.filter(tip_memorie=orig.tip_memorie, capacitate_totala_gb__gte=getattr(orig, 'capacitate_totala_gb', 8))
     elif component_type.lower() == "storage":
-        qs = qs.filter(tip=orig.tip, capacitate_gb__gte=orig.capacitate_gb * 0.75)
+        qs = qs.filter(capacitate_gb__gte=getattr(orig, 'capacitate_gb', 256) * 0.5)
     elif component_type.lower() == "psu":
-        qs = qs.filter(putere_w__gte=orig.putere_w - 100)
+        qs = qs.filter(putere_w__gte=getattr(orig, 'putere_w', 400) - 100)
     elif component_type.lower() == "case":
         qs = qs.filter(tip_carcasa=orig.tip_carcasa)
 
@@ -963,39 +962,67 @@ def get_component_alternatives(component_type: str, component_id: int, limit: in
         if tip == "psu": return getattr(c, 'putere_w', 0) or 0
         return 1
 
+    def get_brand(name):
+        n = name.lower()
+        if 'intel' in n or 'core i' in n: return 'intel'
+        if 'amd' in n or 'ryzen' in n or 'radeon' in n or 'rx ' in n: return 'amd'
+        if 'nvidia' in n or 'geforce' in n or 'rtx ' in n or 'gtx ' in n: return 'nvidia'
+        return n.split()[0] if n else 'other'
+
     scor_orig = calc_scor(orig, component_type.lower())
+    brand_orig = get_brand(orig.nume)
     alts = list(qs)
     
-    rezultate_valide = []
+    buget_alt = None
+    echivalent_alt = None
+    upgrade_alt = None
+
+    # Sortăm lista pentru a parcurge logic
+    alts.sort(key=lambda x: x.pret)
+
     for a in alts:
+        if a.id == orig.id: continue
+        
         scor_a = calc_scor(a, component_type.lower())
-        # Vrem o performanță estimată de cel puțin 85% din original
-        if scor_a >= scor_orig * 0.85:
-            economie = float(orig.pret - a.pret)
-            diff_proc = ((scor_a - scor_orig) / max(scor_orig, 1)) * 100
-            rezultate_valide.append({
-                "id": a.id,
-                "nume": a.nume,
-                "pret": float(a.pret),
-                "magazin": a.magazin,
-                "url": a.url_produs,
-                "economie_ron": round(economie, 2),
-                "diferenta_performanta_procent": round(diff_proc, 1),
-                "scor_performanta": round(scor_a, 1)
-            })
-            
-    # Le sortăm să le obținem pe cele cu cel mai bun raport calitate/preț 
-    # (adică performanță mare, economie mare)
-    rezultate_valide.sort(key=lambda x: (x["diferenta_performanta_procent"], x["economie_ron"]), reverse=True)
-    top_alts = rezultate_valide[:limit]
+        if scor_orig == 0: scor_orig = 1
+        diff_proc = ((scor_a - scor_orig) / scor_orig) * 100
+        economie = float(orig.pret - a.pret)
+        brand_a = get_brand(a.nume)
+
+        alt_dict = {
+            "id": a.id, "nume": a.nume, "pret": float(a.pret), "magazin": a.magazin, "url": a.url_produs,
+            "economie_ron": round(economie, 2), "diferenta_performanta_procent": round(diff_proc, 1),
+            "scor_performanta": round(scor_a, 1)
+        }
+
+        # 1. BUGET: Ieftin, performanță max -15%, brand irelevant
+        if diff_proc >= -15 and economie > 0:
+            if not buget_alt or economie > buget_alt["economie_ron"]:
+                # Preferăm cea mai mare economie care se încadrează în limită
+                alt_dict["tip_alternativa"] = "💰 Varianta de Buget"
+                buget_alt = alt_dict
+
+        # 2. ECHIVALENT CONCURENȚĂ: Performanță similară (-10% la +10%), brand diferit
+        if -10 <= diff_proc <= 10 and brand_a != brand_orig:
+            if not echivalent_alt or abs(diff_proc) < abs(echivalent_alt["diferenta_performanta_procent"]):
+                alt_dict["tip_alternativa"] = "⚖️ Echivalent Concurență"
+                echivalent_alt = alt_dict
+
+        # 3. UPGRADE: Mai bun cu 10% - 30%, același brand
+        if 10 <= diff_proc <= 30 and brand_a == brand_orig:
+            if not upgrade_alt or alt_dict["pret"] < upgrade_alt["pret"]:
+                alt_dict["tip_alternativa"] = "🚀 Upgrade (Aceeași Platformă)"
+                upgrade_alt = alt_dict
+
+    rezultate_valide = [alt for alt in [buget_alt, echivalent_alt, upgrade_alt] if alt]
     
     md = f"### 🔄 Alternative pentru {orig.nume} ({orig.pret} RON)\n\n"
-    if not top_alts:
+    if not rezultate_valide:
         md += "Nu am găsit alternative mai ieftine cu performanțe similare sau hardware compatibil.\n"
     else:
-        for a in top_alts:
+        for a in rezultate_valide:
             semn = "+" if a['diferenta_performanta_procent'] > 0 else ""
-            md += f"- **{a['nume']}** la **{a['pret']} RON** (-{a['economie_ron']} RON) | Perf estimată: {semn}{a['diferenta_performanta_procent']}% | Magazin: {a['magazin']}\n"
+            md += f"- **[{a['tip_alternativa']}] {a['nume']}** la **{a['pret']} RON** | Perf estimată: {semn}{a['diferenta_performanta_procent']}% | Economie: {a['economie_ron']} RON\n"
 
     return {
         "succes": True,
@@ -1004,7 +1031,7 @@ def get_component_alternatives(component_type: str, component_id: int, limit: in
             "pret": float(orig.pret),
             "scor_performanta": round(scor_orig, 1)
         },
-        "alternative": top_alts,
+        "alternative": rezultate_valide,
         "markdown": md
     }
 

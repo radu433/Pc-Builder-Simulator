@@ -302,9 +302,12 @@
             <div class="alternatives-grid">
               
               <div v-for="alt in alternatives" :key="alt.id" class="alt-card glass-panel-inner interactive-card">
-                <div class="alt-header">
-                  <span class="alt-icon">{{ modalTargetCategory?.icon }}</span>
-                  <h4 class="font-inter">{{ alt.name }}</h4>
+                <div class="alt-header-container mb-2">
+                  <div class="text-xs text-purple-400 font-bold tracking-wider mb-2 font-syne">{{ alt.tip_alternativa }}</div>
+                  <div class="alt-header">
+                    <span class="alt-icon">{{ modalTargetCategory?.icon }}</span>
+                    <h4 class="font-inter">{{ alt.name }}</h4>
+                  </div>
                 </div>
                 <div class="alt-price font-mono gradient-text-cyan">{{ alt.price }} RON</div>
                 <p class="alt-reason font-inter">{{ alt.reason }}</p>
