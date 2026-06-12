@@ -71,14 +71,14 @@ def get_bottleneck_score(cpu_id: int, gpu_id: int):
     except (CPU.DoesNotExist, GPU.DoesNotExist) as e:
         return {"error": str(e)}
 
-    scor_cpu = cpu.nuclee * cpu.frecventa_ghz * 10
-    if cpu.threaduri > cpu.nuclee:
+    scor_cpu = float(cpu.nuclee) * float(cpu.frecventa_ghz) * 10
+    if cpu.threaduri and cpu.threaduri > cpu.nuclee:
         scor_cpu *= 1.15
 
-    scor_gpu = gpu.vram_gb * 15 + gpu.consum_tdp * 0.8
+    scor_gpu = float(gpu.vram_gb) * 15 + float(gpu.consum_tdp) * 0.8
 
     scor_max = max(scor_cpu, scor_gpu)
-    procentaj = (abs(scor_cpu - scor_gpu) / scor_max) * 100
+    procentaj = (abs(scor_cpu - scor_gpu) / scor_max) * 100 if scor_max > 0 else 0
 
     are_bottleneck = procentaj >= PRAG_BOTTLENECK_PROCENT
     limitator = None
@@ -215,32 +215,45 @@ def check_compatibility(build: dict) -> dict:
 
 
 @mcp.tool()
-def benchmark_build(cpu: dict, gpu: dict, ram: dict, rezolutie: str = "1080p") -> dict:
-    """Rulează benchmark complet pentru un build și returnează FPS-uri estimate via Gemini."""
+def benchmark_build(cpu: dict, gpu: dict, ram: dict, rezolutie: str = "1080p", jocuri_preferate: list[str] = None, user_id: int = None) -> dict:
+    """Rulează benchmark complet pentru un build și returnează FPS-uri estimate via Gemini. Poți specifica 'jocuri_preferate'."""
     
-    scor_cpu = 0.0
-    if cpu:
-        nuclee    = int(cpu.get("nuclee", 4) or 4)
-        threaduri = int(cpu.get("threaduri", nuclee) or nuclee)
-        frecventa = float(cpu.get("frecventa_ghz", 3.0) or 3.0)
-        scor_cpu  = nuclee * frecventa * 10
-        if threaduri > nuclee:
-            scor_cpu *= 1.15
+    try:
+        if not jocuri_preferate and user_id:
+            try:
+                from accounts.models import UserPreferences
+                prefs = UserPreferences.objects.get(user_id=user_id)
+                if prefs.jocuri:
+                    jocuri_preferate = prefs.jocuri
+            except:
+                pass
+                
+        if not jocuri_preferate:
+            jocuri_preferate = ["CS2", "Cyberpunk 2077", "Minecraft", "Valorant"]
+            
+        scor_cpu = 0.0
+        if cpu:
+            nuclee    = int(cpu.get("nuclee", 4) or 4)
+            threaduri = int(cpu.get("threaduri", nuclee) or nuclee)
+            frecventa = float(cpu.get("frecventa_ghz", 3.0) or 3.0)
+            scor_cpu  = nuclee * frecventa * 10
+            if threaduri > nuclee:
+                scor_cpu *= 1.15
 
-    scor_gpu = 0.0
-    if gpu:
-        vram     = int(gpu.get("vram_gb", 4) or 4)
-        tdp_gpu  = int(gpu.get("consum_tdp", 100) or 100)
-        scor_gpu = vram * 15 + tdp_gpu * 0.8
+        scor_gpu = 0.0
+        if gpu:
+            vram     = int(gpu.get("vram_gb", 4) or 4)
+            tdp_gpu  = int(gpu.get("consum_tdp", 100) or 100)
+            scor_gpu = vram * 15 + tdp_gpu * 0.8
 
-    bottleneck_info = ""
-    if scor_cpu > 0 and scor_gpu > 0:
-        scor_max = max(scor_cpu, scor_gpu)
-        diff = (abs(scor_cpu - scor_gpu) / scor_max) * 100
-        if diff >= PRAG_BOTTLENECK_PROCENT and scor_cpu < scor_gpu:
-            bottleneck_info = f"\nATENTIE: Bottleneck CPU estimat ~{diff:.1f}%. CPU limitează GPU-ul."
+        bottleneck_info = ""
+        if scor_cpu > 0 and scor_gpu > 0:
+            scor_max = max(scor_cpu, scor_gpu)
+            diff = (abs(scor_cpu - scor_gpu) / scor_max) * 100
+            if diff >= PRAG_BOTTLENECK_PROCENT and scor_cpu < scor_gpu:
+                bottleneck_info = f"\nATENTIE: Bottleneck CPU estimat ~{diff:.1f}%. CPU limitează GPU-ul."
 
-    prompt = f"""Ești expert în benchmarking PC cu date din Digital Foundry, TechPowerUp și GamersNexus.
+        prompt = f"""Ești expert în benchmarking PC cu date din Digital Foundry, TechPowerUp și GamersNexus.
 
 CPU: {cpu.get('nume', '?')} | {cpu.get('nuclee', '?')} nuclee @ {cpu.get('frecventa_ghz', '?')}GHz | TDP {cpu.get('consum_tdp', '?')}W
 GPU: {gpu.get('nume', '?')} | {gpu.get('vram_gb', '?')}GB VRAM | TDP {gpu.get('consum_tdp', '?')}W
@@ -268,14 +281,11 @@ Returnează EXCLUSIV JSON valid (fără markdown, fără text adițional):
 }}
 
 Reguli:
-1. Exact 14 jocuri în ordinea asta: CS2, Valorant, Fortnite, Apex Legends, GTA V,
-   The Witcher 3 (Next-Gen), Elden Ring, Red Dead Redemption 2, Cyberpunk 2077,
-   Hogwarts Legacy, Alan Wake 2, Battlefield 2042, COD Warzone, Minecraft (BSL Shaders)
+1. Exact {len(jocuri_preferate)} jocuri în ordinea asta: {', '.join(jocuri_preferate)}
 2. FPS: Low > Medium > High > Ultra pentru fiecare rezoluție
 3. FPS: 1080p > 1440p > 4K pentru fiecare preset
 4. Rating: S=144+fps, A=90-143fps, B=60-89fps, C=30-59fps, D=sub 30fps (High preset, rezoluția țintă)"""
 
-    try:
         client = genai.Client(api_key=settings.GEMINI_API_KEY)
         response = client.models.generate_content(
             model="gemini-2.0-flash",
@@ -288,7 +298,8 @@ Reguli:
     except json.JSONDecodeError as e:
         return {"error": f"Gemini nu a returnat JSON valid: {e}"}
     except Exception as e:
-        return {"error": f"Eroare la apelul Gemini: {e}"}
+        import traceback
+        return {"error": f"Eroare internă în benchmark_build: {str(e)}", "traceback": traceback.format_exc()}
 
 
 @mcp.tool()

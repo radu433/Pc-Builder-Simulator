@@ -95,14 +95,20 @@ TOOL_DECLARATIONS = [
     },
     {
         "name": "benchmark_build",
-        "description": "Rulează benchmark complet și returnează FPS estimat pentru 14 jocuri populare.",
+        "description": "Rulează benchmark complet și returnează FPS estimat pentru jocurile preferate sau jocuri populare implicit.",
         "parameters": {
             "type": "object",
             "properties": {
                 "cpu": {"type": "object", "description": "Datele CPU-ului (nume, nuclee, frecventa_ghz, consum_tdp)"},
                 "gpu": {"type": "object", "description": "Datele GPU-ului (nume, vram_gb, consum_tdp)"},
                 "ram": {"type": "object", "description": "Datele RAM-ului (capacitate_totala_gb, tip_memorie, frecventa_mhz)"},
-                "rezolutie": {"type": "string", "description": "Rezoluția țintă: 1080p, 1440p, 4K", "enum": ["1080p", "1440p", "4K"]}
+                "rezolutie": {"type": "string", "description": "Rezoluția țintă: 1080p, 1440p, 4K", "enum": ["1080p", "1440p", "4K"]},
+                "jocuri_preferate": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Lista de jocuri specifice pentru care vrei estimări FPS. Opțional."
+                },
+                "user_id": {"type": "integer", "description": "ID-ul utilizatorului (pentru a încărca jocurile preferate salvate în cont)."}
             },
             "required": ["cpu", "gpu", "ram"]
         }
@@ -279,6 +285,7 @@ class ChatView(APIView):
             f"Dacă are, întreabă-l dacă vrea să le folosească sau altele noi. "
             f"Dacă nu are, întreabă-l de buget, jocuri și rezoluție. "
             f"Când ai toate datele, folosește create_build_from_preferences. "
+            f"Când utilizatorul îți cere estimări de FPS (benchmark), întreabă-l mai întâi pentru ce jocuri dorește estimarea (dacă nu au fost deja stabilite sau salvate), apoi apelează benchmark_build trimițând 'jocuri_preferate' și 'user_id' = {user_id}. "
             f"Răspunde ÎNTOTDEAUNA în limba română. "
             f"Fii prietenos și profesionist."
         )
@@ -502,19 +509,45 @@ class BenchmarkView(APIView):
             return Response({"cached": False})
 
     def post(self, request):
-        cpu = request.data.get("cpu", {})
-        gpu = request.data.get("gpu", {})
-        ram = request.data.get("ram", {})
+        from components.models import CPU, GPU, RAM
+        from django.forms.models import model_to_dict
+
+        cpu = request.data.get("cpu")
+        gpu = request.data.get("gpu")
+        ram = request.data.get("ram")
+
+        cpu_id = request.data.get("cpu_id")
+        gpu_id = request.data.get("gpu_id")
+        ram_id = request.data.get("ram_id")
+
+        if cpu_id and not cpu:
+            try: cpu = model_to_dict(CPU.objects.get(id=cpu_id))
+            except CPU.DoesNotExist: cpu = {}
+            
+        if gpu_id and not gpu:
+            try: gpu = model_to_dict(GPU.objects.get(id=gpu_id))
+            except GPU.DoesNotExist: gpu = {}
+            
+        if ram_id and not ram:
+            try: ram = model_to_dict(RAM.objects.get(id=ram_id))
+            except RAM.DoesNotExist: ram = {}
+
+        if not cpu: cpu = {}
+        if not gpu: gpu = {}
+        if not ram: ram = {}
+
         rezolutie = request.data.get("rezolutie", "1080p")
 
         if not gpu:
             return Response(
-                {"error": "Parametrul gpu este obligatoriu."},
+                {"error": "Parametrul gpu (sau gpu_id) este obligatoriu."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        user_id = request.user.id if hasattr(request.user, 'id') else None
+        
         result = benchmark_build(
-            cpu=cpu, gpu=gpu, ram=ram, rezolutie=str(rezolutie)
+            cpu=cpu, gpu=gpu, ram=ram, rezolutie=str(rezolutie), user_id=user_id
         )
         return Response(_convert_for_json(result))
 
@@ -600,3 +633,28 @@ class GenerateImageView(APIView):
             result["image_url"] = request.build_absolute_uri(settings.MEDIA_URL + 'builds/' + filename)
         
         return Response(_convert_for_json(result))
+
+class AlternativesView(APIView):
+    """POST /api/builder/alternatives/ — Caută alternative pentru componentă."""
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        component_type = request.data.get("component_type", "")
+        component_id = request.data.get("component_id", 0)
+        limit = request.data.get("limit", 3)
+
+        if not component_type or not component_id:
+            return Response(
+                {"error": "Parametrii component_type și component_id sunt obligatorii."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            result = get_component_alternatives(
+                component_type=str(component_type),
+                component_id=int(component_id),
+                limit=int(limit)
+            )
+            return Response(_convert_for_json(result))
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)
