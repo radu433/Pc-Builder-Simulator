@@ -1,134 +1,169 @@
 <template>
-  <div class="chat-container container">
-    <div class="chat-wrapper">
-      
-      <div class="chat-header">
-        <div class="ai-avatar">🤖</div>
-        <div class="ai-info">
-          <h2>AI PC Architect</h2>
-          <span class="status">● Online</span>
+  <div class="chat-page">
+    <!-- SIDEBAR STÂNGA (vizibil doar pe desktop) -->
+    <div class="chat-sidebar">
+      <!-- 1. AVATAR MARE AI -->
+      <div class="sidebar-avatar-section">
+        <div class="sidebar-avatar">
+          <span class="avatar-icon">💡</span>
         </div>
-        <button class="btn-reset" @click="resetChat" title="Conversație nouă">🗑️</button>
+        <div class="sidebar-titles">
+          <h2>RigMaster AI</h2>
+          <span class="sub-badge">v2.0 · Gemini Powered</span>
+        </div>
       </div>
 
-      <div class="chat-messages" ref="chatBox">
+      <!-- 2. BADGE STATUS -->
+      <div class="sidebar-status">
+        <div class="status-badge">
+          <span class="pulse-dot"></span> ONLINE
+        </div>
+      </div>
+
+      <div class="sidebar-divider"></div>
+
+      <!-- 4. CAPABILITĂȚI -->
+      <div class="sidebar-capabilities">
+        <h4 class="sidebar-heading">Ce poate face</h4>
+        <ul class="cap-list">
+          <li><span class="cap-icon">⚡</span> Recomandă build-uri pe buget</li>
+          <li><span class="cap-icon">🔍</span> Analizează bottleneck-uri</li>
+          <li><span class="cap-icon">💰</span> Compară prețuri din eMag/Altex</li>
+          <li><span class="cap-icon">🎮</span> Estimează FPS per joc</li>
+          <li><span class="cap-icon">🔧</span> Verifică compatibilitatea</li>
+        </ul>
+      </div>
+
+      <div class="sidebar-divider"></div>
+
+      <!-- 6. SESIUNE CURENTĂ -->
+      <div class="sidebar-session">
+        <h4 class="sidebar-heading">Sesiunea curentă</h4>
+        <div class="session-stat">
+          <span class="stat-label">Mesaje:</span>
+          <span class="stat-value">{{ messages.length }}</span>
+        </div>
+        <div class="session-stat">
+          <span class="stat-label">Total tokens:</span>
+          <span class="stat-value">~{{ messages.length * 150 }}</span>
+        </div>
+      </div>
+
+      <!-- 7. Bottom sidebar: Șterge conversația -->
+      <button class="btn-clear-chat" @click="resetChat">Șterge conversația</button>
+    </div>
+
+    <!-- CONTAINER CHAT PRINCIPAL -->
+    <div class="chat-main-container">
+      
+      <!-- HEADER CHAT -->
+      <div class="chat-main-header">
+        <div class="header-left">
+          <div class="header-avatar-small">AI</div>
+          <div class="header-titles">
+            <h3 class="title">RigMaster AI</h3>
+            <span class="subtitle">Asistent PC · Powered by Gemini</span>
+          </div>
+        </div>
+        
+        <div class="header-right">
+          <div class="badge-active">+ Active</div>
+          <button class="btn-icon-settings" title="Setări" @click="resetChat">⚙️</button>
+        </div>
+      </div>
+
+      <!-- ZONA MESAJE -->
+      <div class="chat-messages-area" ref="chatBox">
         <div 
           v-for="(msg, index) in messages" 
           :key="index" 
-          :class="['message-row', msg.role === 'user' ? 'user-row' : 'ai-row']"
+          :class="['message-wrapper', msg.role === 'user' ? 'user-message' : 'ai-message']"
         >
-          <div :class="['message-bubble', msg.role === 'user' ? 'user-bubble' : 'ai-bubble']">
-            
-            <p class="msg-text" v-html="formatMessage(msg.text)"></p>
+          <!-- Avatar User / AI -->
+          <div class="msg-avatar" :class="msg.role === 'user' ? 'user-avatar' : 'ai-avatar'">
+            {{ msg.role === 'user' ? '👤' : 'AI' }}
+          </div>
 
-            <div v-if="msg.isBuild && msg.buildData" class="build-card">
-              <h3 class="build-title">🖥️ Sistem Recomandat</h3>
-              
-              <!-- Lista componentelor -->
-              <ul class="build-parts-list">
-                <li v-if="msg.buildData.build && msg.buildData.build.cpu">
-                  <strong>CPU:</strong> {{ msg.buildData.build.cpu.nume }} 
-                  <span class="part-price">{{ msg.buildData.build.cpu.pret }} RON</span>
-                </li>
-                <li v-if="msg.buildData.build && msg.buildData.build.gpu">
-                  <strong>GPU:</strong> {{ msg.buildData.build.gpu.nume }}
-                  <span class="part-price">{{ msg.buildData.build.gpu.pret }} RON</span>
-                </li>
-                <li v-if="msg.buildData.build && msg.buildData.build.motherboard">
-                  <strong>Placă de bază:</strong> {{ msg.buildData.build.motherboard.nume }}
-                  <span class="part-price">{{ msg.buildData.build.motherboard.pret }} RON</span>
-                </li>
-                <li v-if="msg.buildData.build && msg.buildData.build.ram">
-                  <strong>RAM:</strong> {{ msg.buildData.build.ram.nume }}
-                  <span class="part-price">{{ msg.buildData.build.ram.pret }} RON</span>
-                </li>
-                <li v-if="msg.buildData.build && msg.buildData.build.storage">
-                  <strong>Storage:</strong> {{ msg.buildData.build.storage.nume }}
-                  <span class="part-price">{{ msg.buildData.build.storage.pret }} RON</span>
-                </li>
-                <li v-if="msg.buildData.build && msg.buildData.build.psu">
-                  <strong>Sursă:</strong> {{ msg.buildData.build.psu.nume }}
-                  <span class="part-price">{{ msg.buildData.build.psu.pret }} RON</span>
-                </li>
-              </ul>
-
-              <!-- Bottleneck info -->
-              <div v-if="msg.buildData.bottleneck" class="build-section">
-                <div :class="['bottleneck-badge', msg.buildData.bottleneck.are_bottleneck ? 'bottleneck-warn' : 'bottleneck-ok']">
-                  {{ msg.buildData.bottleneck.are_bottleneck 
-                    ? `⚠️ Bottleneck ${msg.buildData.bottleneck.componenta_limitatoare} (${msg.buildData.bottleneck.procentaj_bottleneck}%)`
-                    : '✅ Echilibru CPU/GPU bun' 
-                  }}
-                </div>
-              </div>
-
-              <!-- Compatibilitate -->
-              <div v-if="msg.buildData.compatibilitate" class="build-section">
-                <div :class="['compat-badge', msg.buildData.compatibilitate.compatibil ? 'compat-ok' : 'compat-warn']">
-                  {{ msg.buildData.compatibilitate.compatibil ? '✅ Toate componentele sunt compatibile' : '⚠️ Probleme de compatibilitate' }}
-                </div>
-                <ul v-if="msg.buildData.compatibilitate.probleme && msg.buildData.compatibilitate.probleme.length" class="compat-issues">
-                  <li v-for="(prob, i) in msg.buildData.compatibilitate.probleme" :key="i">{{ prob }}</li>
-                </ul>
-              </div>
-
-              <!-- FPS jocuri -->
-              <div v-if="msg.buildData.fps_jocuri_cerute && msg.buildData.fps_jocuri_cerute.length" class="build-section">
-                <h4 class="section-title">🎮 FPS Estimat</h4>
-                <div class="fps-grid">
-                  <div v-for="joc in msg.buildData.fps_jocuri_cerute" :key="joc.joc" class="fps-card">
-                    <span class="fps-game">{{ joc.joc }}</span>
-                    <span :class="['fps-rating', 'rating-' + (joc.rating || 'B').toLowerCase()]">{{ joc.rating }}</span>
-                    <span class="fps-preset">{{ joc.preset_optim }}</span>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Rating general -->
-              <div v-if="msg.buildData.rating_general" class="build-section">
-                <div class="rating-general">
-                  Rating: <span :class="'rating-' + msg.buildData.rating_general.toLowerCase()">{{ msg.buildData.rating_general }}</span>
-                </div>
-              </div>
-
-              <div class="build-footer">
-                <span class="build-price">Total: {{ msg.buildData.pret_total }} RON</span>
-                <span v-if="msg.buildData.diferenta > 0" class="build-savings">
-                  Economie: {{ msg.buildData.diferenta }} RON
-                </span>
-                <button @click="incarcaInBuilder(msg.buildData)" class="btn-load-build">
-                  ⚡ Încarcă în Builder
-                </button>
-              </div>
+          <div class="msg-content">
+            <div class="msg-header-row">
+              <span class="msg-author">{{ msg.role === 'ai' ? 'RigMaster AI' : 'Tu' }}</span>
+              <span class="msg-time">{{ new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) }}</span>
             </div>
 
+            <div class="msg-bubble">
+              <p class="msg-text" v-html="formatMessage(msg.text)"></p>
+            </div>
+
+            <!-- CARDURI COMPONENTE RECOMANDATE (AI Message Only) -->
+            <div class="recommended-components" v-if="msg.role === 'ai' && msg.isBuild && msg.buildData?.build">
+              <div 
+                class="comp-card" 
+                v-for="(comp, type) in msg.buildData.build" 
+                :key="type" 
+                v-if="comp"
+              >
+                <button class="comp-close" title="Remove">×</button>
+                <div class="comp-header-row">
+                  <span class="comp-type">{{ type }}</span>
+                  <span class="comp-price-small">{{ comp.pret }} RON</span>
+                </div>
+                <img :src="comp.imagine_url || 'https://placehold.co/100x90/111827/00e5ff?text=' + type" alt="Component" class="comp-img" />
+                <h4 class="comp-name">{{ (comp.nume || "").substring(0, 25) }}...</h4>
+                <p class="comp-desc">Recomandat pt. sistemul tău</p>
+                <div class="comp-price-large">{{ comp.pret }} RON</div>
+                <button class="comp-add-btn" @click="incarcaInBuilder(msg.buildData)">Add to Build</button>
+              </div>
+            </div>
           </div>
         </div>
 
-        <div v-if="isTyping" class="message-row ai-row">
-          <div class="message-bubble ai-bubble typing-indicator">
-            <span></span><span></span><span></span>
+        <!-- Typing Indicator -->
+        <div v-if="isTyping" class="message-wrapper ai-message">
+          <div class="msg-avatar ai-avatar">AI</div>
+          <div class="msg-content">
+            <div class="msg-header-row">
+              <span class="msg-author">RigMaster AI</span>
+            </div>
+            <div class="msg-bubble">
+              <div class="typing-dots">
+                <span></span><span></span><span></span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- Mesaj dacă nu e logat -->
-      <div v-if="!isLoggedIn" class="login-prompt">
-        <p>🔒 Trebuie să fii autentificat pentru a folosi AI PC Architect.</p>
-        <router-link to="/login" class="btn-login">Autentifică-te</router-link>
+      <!-- STAREA "NEAUTENTIFICAT" -->
+      <div class="auth-gate" v-if="!isLoggedIn">
+        <div class="auth-gate-icon">🔐</div>
+        <h3>Autentifică-te pentru a continua</h3>
+        <p>RigMaster AI îți poate recomanda build-uri personalizate, analiza bottleneck-uri și estima FPS-ul pentru jocurile tale.</p>
+        <div class="auth-gate-actions">
+          <button class="btn-primary" @click="$router.push('/login')">Log In</button>
+          <button class="btn-outline" @click="$router.push('/register')">Creează cont gratuit</button>
+        </div>
+        <p class="auth-gate-note">✓ Gratuit · ✓ Fără card · ✓ Acces instant</p>
       </div>
 
-      <div v-else class="chat-input-area">
-        <input 
-          v-model="userInput" 
-          @keyup.enter="sendMessage"
-          type="text" 
-          placeholder="Ex: Vreau un PC de 5000 RON pentru CS2 și programare..." 
-          :disabled="isTyping"
-        />
-        <button @click="sendMessage" :disabled="isTyping || !userInput.trim()" class="send-btn">
-          Trimite
-        </button>
+      <!-- INPUT BAR -->
+      <div class="input-bar-container" :class="{ 'is-disabled': !isLoggedIn }">
+        <div class="input-wrapper" :title="!isLoggedIn ? 'Autentifică-te pentru a scrie' : ''">
+          <textarea 
+            v-model="userInput" 
+            @keyup.enter.prevent="sendMessage"
+            class="chat-input"
+            placeholder="Întreabă RigMaster despre build-ul tău..." 
+            :disabled="isTyping || !isLoggedIn"
+            rows="1"
+          ></textarea>
+          
+          <div class="input-actions-right">
+            <button class="btn-icon-attachment">✨</button>
+            <button @click="sendMessage" :disabled="isTyping || !userInput.trim() || !isLoggedIn" class="send-btn">
+              ➔
+            </button>
+          </div>
+        </div>
       </div>
 
     </div>
@@ -212,7 +247,6 @@ watch(messages, (newMessages) => {
   localStorage.setItem('ai_chat_history', JSON.stringify(newMessages))
 }, { deep: true })
 
-
 // ── 6. Trimiterea mesajului către Django Backend ──
 const sendMessage = async () => {
   if (!userInput.value.trim() || isTyping.value) return
@@ -277,237 +311,676 @@ const incarcaInBuilder = (buildData) => {
 </script>
 
 <style scoped>
-.chat-container {
+/* =====================================================================
+   BACKGROUND GLOBAL AL PAGINII
+===================================================================== */
+.chat-page {
   display: flex;
-  justify-content: center;
-  padding: 30px 15px;
+  height: calc(100vh - 64px);
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px 24px 0;
+  gap: 24px;
+  background: radial-gradient(ellipse 80% 60% at 50% 0%,
+    rgba(124,58,237,0.12) 0%, transparent 70%),
+    radial-gradient(ellipse 60% 40% at 80% 100%,
+    rgba(37,99,235,0.08) 0%, transparent 60%),
+    #08070f;
+  font-family: 'Inter', sans-serif;
 }
 
-.chat-wrapper {
-  width: 100%;
-  max-width: 800px;
-  background-color: #1a1b26;
-  border: 1px solid #2a2d3e;
+/* =====================================================================
+   SIDEBAR STÂNGA
+===================================================================== */
+.chat-sidebar {
+  width: 280px;
+  flex-shrink: 0;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.07);
   border-radius: 16px;
+  padding: 20px;
+  height: calc(100% - 24px); /* Păstrăm spațiu jos din cauza paddingului general */
+  margin-bottom: 24px;
   display: flex;
   flex-direction: column;
-  height: 75vh;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-  overflow: hidden;
 }
 
-.chat-header {
+.sidebar-avatar-section {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  padding: 20px;
-  background-color: #0f111a;
-  border-bottom: 1px solid #2a2d3e;
+  margin-bottom: 16px;
 }
-
-.ai-avatar {
-  font-size: 2rem;
-  background: rgba(168, 85, 247, 0.2);
-  border-radius: 50%;
-  width: 50px;
-  height: 50px;
+.sidebar-avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #5b21b6, #2563eb);
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-right: 15px;
+  margin-bottom: 12px;
+}
+.avatar-icon {
+  font-size: 32px;
+  color: white;
+}
+.sidebar-titles {
+  text-align: center;
+}
+.sidebar-titles h2 {
+  font-weight: bold;
+  color: #fff;
+  margin: 0 0 4px;
+  font-size: 1.1rem;
+}
+.sub-badge {
+  font-size: 0.75rem;
+  color: #8b9db5;
 }
 
-.ai-info { flex-grow: 1; }
-.ai-info h2 { color: white; font-size: 1.2rem; margin-bottom: 3px; }
-.ai-info .status { color: #10b981; font-size: 0.85rem; font-weight: 600; }
-
-.btn-reset {
-  background: none;
-  border: 1px solid #2a2d3e;
-  border-radius: 8px;
-  padding: 8px 12px;
-  cursor: pointer;
-  font-size: 1.2rem;
-  transition: 0.2s;
+.sidebar-status {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 16px;
 }
-.btn-reset:hover { border-color: #ef4444; background: rgba(239,68,68,0.1); }
+.status-badge {
+  background: rgba(0,229,160,0.1);
+  border: 1px solid rgba(0,229,160,0.25);
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-size: 0.75rem;
+  color: #00e5a0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+.pulse-dot {
+  width: 8px;
+  height: 8px;
+  background: #00e5a0;
+  border-radius: 50%;
+  animation: pulse-dot-anim 1.5s infinite;
+}
+@keyframes pulse-dot-anim {
+  0% { opacity: 1; }
+  50% { opacity: 0.3; }
+  100% { opacity: 1; }
+}
 
-.chat-messages {
-  flex-grow: 1;
-  padding: 20px;
-  overflow-y: auto;
+.sidebar-divider {
+  height: 1px;
+  background: rgba(255,255,255,0.07);
+  margin: 16px 0;
+}
+
+.sidebar-heading {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #8b9db5;
+  margin: 0 0 12px;
+}
+.cap-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 15px;
+  gap: 8px;
 }
-
-.message-row { display: flex; width: 100%; }
-.user-row { justify-content: flex-end; }
-.ai-row { justify-content: flex-start; }
-
-.message-bubble {
-  max-width: 75%;
-  padding: 12px 18px;
-  border-radius: 18px;
-  font-size: 0.95rem;
-  line-height: 1.5;
-}
-
-.user-bubble {
-  background-color: #3b82f6;
-  color: white;
-  border-bottom-right-radius: 4px;
-}
-
-.ai-bubble {
-  background-color: #232533;
-  color: #e2e8f0;
-  border-bottom-left-radius: 4px;
-  border: 1px solid #2a2d3e;
-}
-
-/* ── Build Card ── */
-.build-card {
-  margin-top: 15px;
-  background-color: #0f111a;
-  border: 1px solid #a855f7;
-  border-radius: 12px;
-  padding: 15px;
-  color: white;
-}
-
-.build-title { color: #c084fc; font-size: 1.1rem; margin-bottom: 10px; border-bottom: 1px solid #2a2d3e; padding-bottom: 8px;}
-.build-parts-list { list-style: none; padding: 0; margin-bottom: 15px; font-size: 0.9rem;}
-.build-parts-list li { margin-bottom: 6px; display: flex; justify-content: space-between; }
-.build-parts-list strong { color: #94a3b8; }
-.part-price { color: #10b981; font-weight: 600; font-size: 0.85rem; }
-
-.build-section { margin: 10px 0; }
-.section-title { color: #c084fc; font-size: 0.95rem; margin-bottom: 8px; }
-
-/* Bottleneck badge */
-.bottleneck-badge {
-  padding: 6px 12px;
-  border-radius: 6px;
-  font-size: 0.85rem;
-  font-weight: 600;
-}
-.bottleneck-ok { background: rgba(16,185,129,0.15); color: #10b981; }
-.bottleneck-warn { background: rgba(245,158,11,0.15); color: #f59e0b; }
-
-/* Compatibilitate */
-.compat-badge {
-  padding: 6px 12px;
-  border-radius: 6px;
-  font-size: 0.85rem;
-  font-weight: 600;
-}
-.compat-ok { background: rgba(16,185,129,0.15); color: #10b981; }
-.compat-warn { background: rgba(239,68,68,0.15); color: #ef4444; }
-.compat-issues { list-style: disc; padding-left: 20px; margin-top: 6px; font-size: 0.82rem; color: #fca5a5; }
-
-/* FPS Grid */
-.fps-grid { display: flex; flex-wrap: wrap; gap: 8px; }
-.fps-card {
-  background: #1a1b26;
-  border: 1px solid #2a2d3e;
-  border-radius: 8px;
-  padding: 8px 12px;
+.cap-list li {
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 0.82rem;
+  color: #c4c9d4;
 }
-.fps-game { color: #e2e8f0; font-weight: 600; }
-.fps-preset { color: #94a3b8; }
+.cap-icon {
+  font-size: 16px;
+}
 
-/* Rating-uri */
-.rating-general { font-size: 0.9rem; color: #94a3b8; }
-.rating-s { color: #10b981; font-weight: bold; font-size: 1.2em; }
-.rating-a { color: #3b82f6; font-weight: bold; font-size: 1.2em; }
-.rating-b { color: #f59e0b; font-weight: bold; font-size: 1.2em; }
-.rating-c { color: #ef4444; font-weight: bold; font-size: 1.2em; }
-.rating-d { color: #6b7280; font-weight: bold; font-size: 1.2em; }
+.sidebar-session {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+}
+.session-stat {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+}
+.stat-label {
+  color: #8b9db5;
+}
+.stat-value {
+  color: #00e5ff;
+  font-weight: 600;
+}
 
-.fps-rating {
-  padding: 2px 6px;
-  border-radius: 4px;
+.btn-clear-chat {
+  width: 100%;
+  background: transparent;
+  border: 1px solid rgba(239,68,68,0.3);
+  color: rgba(239,68,68,0.7);
+  padding: 10px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-top: auto;
+}
+.btn-clear-chat:hover {
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+/* =====================================================================
+   CONTAINER CHAT PRINCIPAL
+===================================================================== */
+.chat-main-container {
+  background: rgba(10, 8, 25, 0.9);
+  border: 1px solid rgba(124, 58, 237, 0.3);
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  height: calc(100% - 24px); /* Păstrăm spațiu jos */
+  margin-bottom: 24px;
+  overflow: hidden;
+  box-shadow: 0 0 60px rgba(124,58,237,0.15), inset 0 0 80px rgba(37,99,235,0.05);
+  position: relative; /* for auth-gate overlay */
+}
+
+/* HEADER CHAT */
+.chat-main-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  background: rgba(255,255,255,0.02);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.header-avatar-small {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #7c3aed, #2563eb);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
   font-weight: bold;
   font-size: 0.8rem;
 }
-.fps-rating.rating-s { background: rgba(16,185,129,0.2); }
-.fps-rating.rating-a { background: rgba(59,130,246,0.2); }
-.fps-rating.rating-b { background: rgba(245,158,11,0.2); }
-.fps-rating.rating-c { background: rgba(239,68,68,0.2); }
-
-.build-footer { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-.build-price { font-weight: bold; color: #10b981; font-size: 1.1rem; }
-.build-savings { color: #3b82f6; font-size: 0.85rem; }
-
-.btn-load-build {
-  background: #a855f7; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.2s;
-}
-.btn-load-build:hover { background: #c084fc; }
-
-/* ── Login prompt ── */
-.login-prompt {
+.header-titles {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  padding: 20px;
-  background-color: #0f111a;
-  border-top: 1px solid #2a2d3e;
-  gap: 10px;
 }
-.login-prompt p { color: #94a3b8; margin: 0; }
-.btn-login {
-  background: #3b82f6;
-  color: white;
-  padding: 10px 24px;
-  border-radius: 8px;
-  text-decoration: none;
-  font-weight: bold;
-  transition: 0.2s;
+.header-titles .title {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #f0f4ff;
+  margin: 0;
 }
-.btn-login:hover { background: #2563eb; }
-
-/* ── Input area ── */
-.chat-input-area {
+.header-titles .subtitle {
+  font-size: 0.75rem;
+  color: #8b9db5;
+}
+.header-right {
   display: flex;
-  padding: 20px;
-  background-color: #0f111a;
-  border-top: 1px solid #2a2d3e;
-  gap: 10px;
+  align-items: center;
+  gap: 8px;
 }
-
-.chat-input-area input {
-  flex-grow: 1;
-  background-color: #1a1b26;
-  border: 1px solid #2a2d3e;
-  padding: 15px;
+.badge-active {
+  background: rgba(0,229,160,0.12);
+  border: 1px solid rgba(0,229,160,0.3);
+  color: #00e5a0;
+  border-radius: 20px;
+  padding: 3px 10px;
+  font-size: 0.75rem;
+}
+.btn-icon-settings {
+  width: 32px;
+  height: 32px;
   border-radius: 8px;
-  color: white;
-  font-size: 1rem;
-}
-.chat-input-area input:focus { outline: none; border-color: #a855f7; }
-
-.send-btn {
-  background-color: #3b82f6;
-  color: white;
+  background: rgba(255,255,255,0.05);
+  color: #8b9db5;
   border: none;
-  padding: 0 25px;
-  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+.btn-icon-settings:hover {
+  background: rgba(255,255,255,0.1);
+}
+
+/* ZONA MESAJE */
+.chat-messages-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.chat-messages-area::-webkit-scrollbar { width: 4px; }
+.chat-messages-area::-webkit-scrollbar-track { background: transparent; }
+.chat-messages-area::-webkit-scrollbar-thumb { background: rgba(124,58,237,0.4); border-radius: 4px; }
+
+.message-wrapper {
+  display: flex;
+  width: 100%;
+}
+
+.msg-content {
+  display: flex;
+  flex-direction: column;
+  max-width: 80%;
+}
+
+/* AI Message */
+.ai-message {
+  flex-direction: row;
+  gap: 12px;
+  align-items: flex-start;
+}
+.ai-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #7c3aed, #2563eb);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
   font-weight: bold;
+  font-size: 0.65rem;
+  flex-shrink: 0;
+}
+.ai-message .msg-bubble {
+  background: rgba(37,99,235,0.08);
+  border: 1px solid rgba(124,58,237,0.2);
+  border-radius: 4px 14px 14px 14px;
+  padding: 12px 16px;
+}
+.ai-message .msg-header-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  padding-left: 4px;
+}
+.ai-message .msg-author {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #818cf8;
+}
+
+/* User Message */
+.user-message {
+  flex-direction: row-reverse;
+  gap: 12px;
+  align-items: flex-start;
+}
+.user-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #8b9db5;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.user-message .msg-bubble {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 14px 4px 14px 14px;
+  padding: 12px 16px;
+}
+.user-message .msg-header-row {
+  display: flex;
+  flex-direction: row-reverse;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  padding-right: 4px;
+}
+.user-message .msg-author {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #94a3b8;
+}
+
+.msg-time {
+  font-size: 0.72rem;
+  color: #4a5568;
+}
+
+.msg-text {
+  font-size: 0.9rem;
+  color: #e2e8f0;
+  line-height: 1.6;
+  margin: 0;
+  word-wrap: break-word;
+}
+
+/* =====================================================================
+   CARDURI COMPONENTE RECOMANDATE
+===================================================================== */
+.recommended-components {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 12px;
+  overflow-x: auto;
+  margin-top: 14px;
+  padding-bottom: 10px;
+}
+.recommended-components::-webkit-scrollbar { height: 4px; }
+.recommended-components::-webkit-scrollbar-track { background: transparent; }
+.recommended-components::-webkit-scrollbar-thumb { background: rgba(0, 229, 255, 0.3); border-radius: 4px; }
+
+.comp-card {
+  min-width: 170px;
+  max-width: 200px;
+  flex-shrink: 0;
+  background: rgba(15, 10, 30, 0.9);
+  border: 1px solid rgba(124, 58, 237, 0.35);
+  border-radius: 12px;
+  padding: 12px;
+  position: relative;
+  transition: all 0.2s ease;
+}
+.comp-card:hover {
+  border-color: rgba(0, 229, 255, 0.5);
+  box-shadow: 0 0 16px rgba(0, 229, 255, 0.15);
+}
+
+.comp-close {
+  position: absolute;
+  top: 8px; right: 8px;
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: #8b9db5;
+  font-size: 0.75rem;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+}
+.comp-close:hover { background: rgba(255, 255, 255, 0.2); }
+
+.comp-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.comp-type {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #00e5ff;
+  text-transform: uppercase;
+}
+.comp-price-small {
+  font-size: 0.72rem;
+  color: #8b9db5;
+  margin-right: 20px;
+}
+.comp-img {
+  width: 100%;
+  height: 90px;
+  object-fit: contain;
+  margin-bottom: 8px;
+}
+.comp-name {
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: #fff;
+  margin: 4px 0;
+}
+.comp-desc {
+  font-size: 0.75rem;
+  color: #8b9db5;
+  margin-bottom: 6px;
+}
+.comp-price-large {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #00e5a0;
+  margin-bottom: 10px;
+}
+.comp-add-btn {
+  width: 100%;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.comp-add-btn:hover {
+  background: rgba(0, 229, 160, 0.15);
+  border-color: #00e5a0;
+  color: #00e5a0;
+}
+
+/* =====================================================================
+   TYPING INDICATOR
+===================================================================== */
+.typing-dots {
+  display: flex;
+  align-items: center;
+  height: 100%;
+}
+.typing-dots span {
+  display: inline-block; 
+  width: 6px; 
+  height: 6px; 
+  background: #818cf8; 
+  border-radius: 50%; 
+  margin: 0 3px; 
+  animation: typing-anim 0.6s infinite ease both;
+}
+.typing-dots span:nth-child(1) { animation-delay: 0s; }
+.typing-dots span:nth-child(2) { animation-delay: 0.15s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes typing-anim {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+/* =====================================================================
+   STAREA NEAUTENTIFICAT (AUTH GATE)
+===================================================================== */
+.auth-gate {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  width: 90%;
+  max-width: 380px;
+  background: rgba(10, 8, 25, 0.95);
+  padding: 30px;
+  border-radius: 16px;
+  border: 1px solid rgba(124,58,237,0.3);
+  box-shadow: 0 0 40px rgba(0,0,0,0.8);
+  z-index: 10;
+}
+.auth-gate-icon {
+  font-size: 3rem;
+  margin-bottom: 16px;
+}
+.auth-gate h3 {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #f0f4ff;
+  margin: 0 0 8px;
+}
+.auth-gate p {
+  font-size: 0.88rem;
+  color: #8b9db5;
+  line-height: 1.6;
+  margin: 0 0 20px;
+}
+.auth-gate-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+.btn-primary {
+  background: #7c3aed;
+  color: #fff;
+  border-radius: 8px;
+  padding: 10px 24px;
+  border: none;
+  font-weight: 600;
   cursor: pointer;
   transition: 0.2s;
 }
-.send-btn:hover:not(:disabled) { background-color: #2563eb; }
-.send-btn:disabled { background-color: #3f4455; color: #94a3b8; cursor: not-allowed; }
-
-/* Animație Typing */
-.typing-indicator span {
-  display: inline-block; width: 6px; height: 6px; background-color: #94a3b8; border-radius: 50%; margin: 0 2px; animation: bounce 1.4s infinite ease-in-out both;
+.btn-primary:hover {
+  background: #6d28d9;
 }
-.typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
-.typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
-@keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
+.btn-outline {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.2);
+  color: #fff;
+  border-radius: 8px;
+  padding: 10px 24px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 0.2s;
+}
+.btn-outline:hover {
+  border-color: rgba(255,255,255,0.4);
+}
+.auth-gate-note {
+  font-size: 0.75rem !important;
+  color: #4a5568 !important;
+  margin: 16px 0 0 !important;
+}
+
+/* =====================================================================
+   INPUT BAR
+===================================================================== */
+.input-bar-container {
+  padding: 16px 20px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  background: rgba(5,4,15,0.8);
+}
+.input-bar-container.is-disabled {
+  opacity: 0.4;
+}
+.input-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 14px;
+  padding: 10px 14px;
+  transition: border-color 0.2s;
+}
+.input-wrapper:focus-within {
+  border-color: rgba(124,58,237,0.5);
+  box-shadow: 0 0 0 3px rgba(124,58,237,0.1);
+}
+.chat-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #e2e8f0;
+  font-size: 0.9rem;
+  resize: none;
+  max-height: 120px;
+}
+.chat-input::placeholder {
+  color: #4a5568;
+}
+.input-actions-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.btn-icon-attachment {
+  width: 32px;
+  height: 32px;
+  background: rgba(255,255,255,0.05);
+  border-radius: 8px;
+  border: none;
+  color: #8b9db5;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.btn-icon-attachment:hover {
+  background: rgba(255,255,255,0.1);
+}
+.send-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #7c3aed, #2563eb);
+  border: none;
+  color: #fff;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.send-btn:hover:not(:disabled) {
+  filter: brightness(1.15);
+  box-shadow: 0 0 16px rgba(124,58,237,0.4);
+}
+.send-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* =====================================================================
+   RESPONSIVE
+===================================================================== */
+@media (max-width: 768px) {
+  .chat-sidebar {
+    display: none;
+  }
+  .chat-page {
+    padding: 0;
+    gap: 0;
+  }
+  .chat-main-container {
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    height: calc(100vh - 64px); /* Păstrăm tot ecranul - navbar */
+    margin-bottom: 0;
+  }
+  .user-message .msg-bubble, .ai-message .msg-bubble {
+    max-width: 90%;
+  }
+  .auth-gate {
+    width: 90%;
+    padding: 20px;
+  }
+}
 </style>

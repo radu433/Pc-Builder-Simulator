@@ -130,157 +130,198 @@ const getDiffIcon = (diff) => {
 <style scoped>
 .docs-container {
   padding: 40px 15px;
+  color: #e2e8f0;
 }
 
 /* --- HERO SECTION --- */
 .hero-section {
-  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-  border: 1px solid #2a2d3e;
-  border-radius: 16px;
-  padding: 50px 40px;
-  margin-bottom: 40px;
+  background: rgba(15, 23, 42, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(0, 240, 255, 0.2);
+  border-radius: 24px;
+  padding: 60px 50px;
+  margin-bottom: 50px;
   position: relative;
   overflow: hidden;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.5), inset 0 0 20px rgba(0, 240, 255, 0.05);
 }
 
 .hero-section::before {
   content: '';
   position: absolute;
   top: -50%; right: -10%;
-  width: 300px; height: 300px;
-  background: radial-gradient(circle, rgba(59,130,246,0.15) 0%, transparent 70%);
+  width: 400px; height: 400px;
+  background: radial-gradient(circle, rgba(0, 240, 255, 0.15) 0%, transparent 70%);
   border-radius: 50%;
 }
 
+.hero-section::after {
+  content: '';
+  position: absolute;
+  bottom: -20%; left: -5%;
+  width: 300px; height: 300px;
+  background: radial-gradient(circle, rgba(168, 85, 247, 0.15) 0%, transparent 70%);
+  border-radius: 50%;
+}
+
+.hero-content {
+  position: relative;
+  z-index: 2;
+}
+
 .featured-badge {
-  background-color: rgba(245, 158, 11, 0.1);
-  color: #f59e0b;
-  padding: 6px 12px;
-  border-radius: 20px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  border: 1px solid rgba(245, 158, 11, 0.2);
+  background-color: rgba(0, 240, 255, 0.1);
+  color: #00f0ff;
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 800;
+  border: 1px solid rgba(0, 240, 255, 0.3);
   display: inline-block;
-  margin-bottom: 20px;
+  margin-bottom: 25px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
 }
 
 .hero-title {
-  font-size: 2.2rem;
+  font-size: 2.8rem;
   color: white;
-  margin-bottom: 15px;
-  font-weight: 800;
+  margin-bottom: 20px;
+  font-weight: 900;
+  line-height: 1.2;
+  text-shadow: 0 0 20px rgba(0, 240, 255, 0.3);
 }
 
 .hero-desc {
-  color: #94a3b8;
-  font-size: 1.1rem;
-  max-width: 600px;
-  line-height: 1.6;
-  margin-bottom: 25px;
+  color: #c0caf5;
+  font-size: 1.15rem;
+  max-width: 650px;
+  line-height: 1.7;
+  margin-bottom: 35px;
 }
 
 .btn-primary {
-  display: inline-block;
-  background-color: #3b82f6;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: linear-gradient(90deg, #10b981, #00f0ff);
   color: white;
-  padding: 12px 24px;
-  border-radius: 8px;
+  padding: 14px 30px;
+  border-radius: 12px;
   text-decoration: none;
-  font-weight: 600;
-  transition: background 0.2s;
+  font-weight: 800;
+  font-size: 1.1rem;
+  transition: 0.3s;
+  border: none;
+  box-shadow: 0 5px 20px rgba(16, 185, 129, 0.3);
 }
-.btn-primary:hover { background-color: #2563eb; }
+.btn-primary:hover { 
+  transform: translateY(-3px); 
+  box-shadow: 0 10px 30px rgba(0, 240, 255, 0.4); 
+}
 
 /* --- FILTRE --- */
 .filters-container {
   display: flex;
   gap: 15px;
-  margin-bottom: 30px;
+  margin-bottom: 40px;
   overflow-x: auto;
   padding-bottom: 10px;
 }
 
+.filters-container::-webkit-scrollbar { height: 6px; }
+.filters-container::-webkit-scrollbar-thumb { background: rgba(0, 240, 255, 0.3); border-radius: 3px; }
+
 .filter-btn {
-  background-color: #1a1b26;
-  border: 1px solid #2a2d3e;
+  background-color: rgba(0,0,0,0.3);
+  border: 1px solid rgba(255,255,255,0.05);
   color: #94a3b8;
-  padding: 10px 20px;
-  border-radius: 30px;
-  font-weight: 600;
+  padding: 12px 24px;
+  border-radius: 12px;
+  font-weight: 700;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: 0.3s;
   white-space: nowrap;
 }
 
 .filter-btn:hover {
-  background-color: #232533;
-  color: white;
+  background-color: rgba(0, 240, 255, 0.05);
+  border-color: rgba(0, 240, 255, 0.3);
+  color: #00f0ff;
 }
 
 .filter-btn.active {
-  background-color: #3b82f6;
+  background: linear-gradient(90deg, rgba(168, 85, 247, 0.8), rgba(0, 240, 255, 0.8));
   color: white;
-  border-color: #3b82f6;
+  border-color: transparent;
+  box-shadow: 0 5px 15px rgba(168, 85, 247, 0.3);
 }
 
 /* --- GRID ARTICOLE --- */
 .articles-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 25px;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 30px;
 }
 
 .article-card {
-  background-color: #1a1b26;
-  border: 1px solid #2a2d3e;
-  border-radius: 12px;
-  padding: 25px;
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 16px;
+  padding: 30px;
   display: flex;
   flex-direction: column;
-  transition: transform 0.2s, border-color 0.2s;
+  transition: 0.3s;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.2);
 }
 
 .article-card:hover {
-  transform: translateY(-5px);
-  border-color: #3f4455;
-  box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+  transform: translateY(-8px);
+  border-color: rgba(168, 85, 247, 0.5);
+  box-shadow: 0 15px 40px rgba(168, 85, 247, 0.2);
 }
 
 .card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 15px;
+  margin-bottom: 20px;
 }
 
 .category-badge {
   font-size: 0.75rem;
-  font-weight: 700;
-  padding: 4px 10px;
-  border-radius: 6px;
+  font-weight: 800;
+  padding: 6px 12px;
+  border-radius: 8px;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 1px;
 }
 
-.bg-blue { background: rgba(59,130,246,0.1); color: #60a5fa; border: 1px solid rgba(59,130,246,0.2); }
-.bg-green { background: rgba(16,185,129,0.1); color: #34d399; border: 1px solid rgba(16,185,129,0.2); }
-.bg-purple { background: rgba(168,85,247,0.1); color: #c084fc; border: 1px solid rgba(168,85,247,0.2); }
+.bg-blue { background: rgba(0, 240, 255, 0.1); color: #00f0ff; border: 1px solid rgba(0, 240, 255, 0.3); }
+.bg-green { background: rgba(16, 185, 129, 0.1); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); }
+.bg-purple { background: rgba(168, 85, 247, 0.1); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); }
 
 .diff-badge {
   font-size: 0.8rem;
-  color: #94a3b8;
-  background: #0f111a;
-  padding: 4px 8px;
-  border-radius: 6px;
-  border: 1px solid #2a2d3e;
+  color: #cbd5e1;
+  background: rgba(0,0,0,0.4);
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.05);
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .card-title {
   color: white;
-  font-size: 1.15rem;
-  font-weight: 700;
-  line-height: 1.4;
-  margin-bottom: 20px;
+  font-size: 1.25rem;
+  font-weight: 800;
+  line-height: 1.5;
+  margin-bottom: 25px;
   flex-grow: 1;
 }
 
@@ -288,39 +329,52 @@ const getDiffIcon = (diff) => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-top: 1px solid #2a2d3e;
-  padding-top: 15px;
+  border-top: 1px solid rgba(255,255,255,0.05);
+  padding-top: 20px;
   margin-top: auto;
 }
 
 .meta-info {
   font-size: 0.85rem;
-  color: #64748b;
+  color: #94a3b8;
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 8px;
+  font-weight: 500;
 }
 
 .read-btn {
-  background: none;
-  border: none;
-  color: #3b82f6;
-  font-weight: 600;
+  background: rgba(0, 240, 255, 0.1);
+  border: 1px solid rgba(0, 240, 255, 0.3);
+  padding: 8px 16px;
+  border-radius: 8px;
+  color: #00f0ff;
+  font-weight: 700;
   font-size: 0.9rem;
   cursor: pointer;
   text-decoration: none;
-  transition: color 0.2s;
+  transition: 0.3s;
 }
 
 .read-btn:hover {
-  color: #60a5fa;
-  text-decoration: underline;
+  background: rgba(0, 240, 255, 0.2);
+  box-shadow: 0 0 10px rgba(0, 240, 255, 0.3);
+  color: white;
 }
 
 .read-btn.external {
-  color: #a855f7;
+  background: rgba(168, 85, 247, 0.1);
+  border-color: rgba(168, 85, 247, 0.3);
+  color: #c084fc;
 }
 .read-btn.external:hover {
-  color: #c084fc;
+  background: rgba(168, 85, 247, 0.2);
+  box-shadow: 0 0 10px rgba(168, 85, 247, 0.3);
+  color: white;
+}
+
+@media (max-width: 768px) {
+  .hero-section { padding: 40px 30px; }
+  .hero-title { font-size: 2.2rem; }
 }
 </style>

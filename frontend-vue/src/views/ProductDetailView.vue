@@ -123,33 +123,59 @@ onMounted(fetchProductDetail)
 </script>
 
 <style scoped>
-.detail-page { padding: 40px 15px; }
-.product-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 50px; }
-.main-image { background: white; border-radius: 12px; padding: 40px; display: flex; justify-content: center; align-items: center; border: 1px solid #2a2d3e; height: 100%; }
-.main-image img { max-width: 100%; max-height: 400px; object-fit: contain; }
-.brand-badge { display: inline-block; background: #232533; color: #3b82f6; padding: 6px 12px; border-radius: 6px; font-weight: 700; letter-spacing: 1px; font-size: 0.85rem; margin-bottom: 15px; }
-.product-name { color: white; font-size: 2.5rem; line-height: 1.2; margin-bottom: 20px; }
-.status-row { display: flex; gap: 20px; margin-bottom: 30px; font-size: 0.9rem; }
-.status { font-weight: 600; }
+/* =========== CYBERPUNK MOCKUP 1:1 UI =========== */
+.detail-page { padding: 40px 15px; display: flex; justify-content: center; font-family: 'Inter', sans-serif; }
+.product-layout { 
+  display: grid; grid-template-columns: 1fr 1fr; gap: 40px; 
+  background: #111520;
+  border: 1px solid rgba(34, 211, 238, 0.3);
+  border-radius: 16px;
+  padding: 40px;
+  max-width: 1000px;
+  width: 100%;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8);
+}
+
+.main-image { 
+  background: #1a1e2b; border-radius: 12px; padding: 40px; display: flex; justify-content: center; align-items: center; 
+  border: 1px solid rgba(255,255,255,0.05); height: 100%; 
+}
+.main-image img { max-width: 100%; max-height: 400px; object-fit: contain; filter: drop-shadow(0 20px 30px rgba(0,0,0,0.6)); transition: transform 0.3s; }
+.main-image img:hover { transform: scale(1.05); }
+
+.brand-badge { display: inline-block; background: #1a1e2b; color: #94a3b8; padding: 6px 14px; border-radius: 6px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; font-size: 0.85rem; margin-bottom: 15px; border: 1px solid rgba(255,255,255,0.1); }
+.product-name { color: white; font-size: 2.2rem; font-weight: 800; line-height: 1.2; margin-bottom: 20px; }
+
+.status-row { display: flex; gap: 20px; margin-bottom: 30px; font-size: 0.95rem; background: #1a1e2b; padding: 10px 15px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); width: fit-content; }
+.status { font-weight: 700; }
 .in-stock { color: #10b981; }
-.out-stock { color: #f43f5e; }
-.part-number { color: #64748b; }
-.price-box { background: #1a1b26; border: 1px solid #2a2d3e; padding: 30px; border-radius: 12px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
-.price-box .price { color: white; font-size: 2rem; font-weight: 800; }
-.add-btn { background: #3b82f6; color: white; border: none; padding: 15px 30px; border-radius: 8px; font-size: 1.1rem; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 10px; transition: background 0.2s; }
-.add-btn:hover:not(:disabled) { background: #2563eb; }
-.add-btn:disabled { background: #3f4455; cursor: not-allowed; color: #94a3b8; }
-.action-buttons { display: flex; flex-direction: column; gap: 10px; }
-.buy-btn { background: #10b981; color: white; text-decoration: none; padding: 10px 15px; border-radius: 8px; font-size: 0.95rem; font-weight: 700; text-align: center; display: block; transition: background 0.2s; }
-.buy-btn:hover { background: #059669; }
-.store-link { color: #94a3b8; margin-bottom: 30px; font-size: 0.95rem; }
-.store-link a { color: #3b82f6; text-decoration: none; font-weight: 600; }
-.specs-card { background: #1a1b26; border: 1px solid #2a2d3e; border-radius: 12px; padding: 30px; }
-.specs-card h3 { color: white; margin-bottom: 20px; font-size: 1.3rem; }
-.specs-grid { display: flex; flex-direction: column; gap: 15px; }
-.spec-row { display: flex; justify-content: space-between; border-bottom: 1px solid #2a2d3e; padding-bottom: 10px; }
-.spec-label { color: #94a3b8; }
-.spec-value { color: white; font-weight: 500; }
-.toast-notif { position: fixed; bottom: 30px; right: 30px; background: #1a1b26; border: 1px solid #10b981; color: white; padding: 14px 22px; border-radius: 8px; font-weight: 600; box-shadow: 0 10px 25px rgba(0,0,0,0.4); z-index: 9999; animation: slideIn 0.3s ease-out; }
-@keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+.out-stock { color: #ef4444; }
+.part-number { color: #94a3b8; }
+
+.price-box { background: #1a1e2b; border: 1px solid rgba(255,255,255,0.1); padding: 30px; border-radius: 12px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
+.price-box .price { color: #22d3ee; font-size: 2.2rem; font-weight: 900; }
+
+.action-buttons { display: flex; flex-direction: column; gap: 12px; }
+.add-btn { background: #10b981; color: white; border: none; padding: 15px 30px; border-radius: 8px; font-size: 1.1rem; font-weight: 800; cursor: pointer; display: flex; align-items: center; gap: 10px; transition: 0.3s; text-transform: uppercase; }
+.add-btn:hover:not(:disabled) { background: #059669; transform: translateY(-2px); }
+.add-btn:disabled { background: #1a1e2b; cursor: not-allowed; color: #64748b; border: 1px solid rgba(255,255,255,0.1); }
+
+.buy-btn { background: #1a1e2b; border: 1px solid rgba(255,255,255,0.1); color: #d8b4fe; text-decoration: none; padding: 12px 15px; border-radius: 8px; font-size: 0.95rem; font-weight: 700; text-align: center; display: block; transition: 0.3s; }
+.buy-btn:hover { border-color: #d8b4fe; color: white; }
+
+.store-link { color: #94a3b8; margin-bottom: 30px; font-size: 0.95rem; text-align: right; }
+.store-link a { color: #d946ef; text-decoration: none; font-weight: 700; transition: 0.2s; }
+.store-link a:hover { color: #c026d3; }
+
+.specs-card { background: #1a1e2b; border: 1px solid rgba(255,255,255,0.05); border-radius: 12px; padding: 25px; }
+.specs-card h3 { color: #d946ef; margin-bottom: 20px; font-size: 1.2rem; text-transform: uppercase; letter-spacing: 1px; font-weight: 800; }
+.specs-grid { display: flex; flex-direction: column; gap: 12px; }
+.spec-row { display: flex; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 12px; }
+.spec-label { color: #94a3b8; font-size: 0.95rem; }
+.spec-value { color: white; font-weight: 600; font-size: 0.95rem; }
+
+.toast-notif { position: fixed; bottom: 30px; right: 30px; background: #10b981; color: white; padding: 16px 24px; border-radius: 8px; font-weight: 700; box-shadow: 0 10px 30px rgba(0,0,0,0.5); z-index: 9999; animation: slideIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); border: 1px solid rgba(255,255,255,0.2); }
+@keyframes slideIn { from { transform: translateX(100%) scale(0.9); opacity: 0; } to { transform: translateX(0) scale(1); opacity: 1; } }
+
+@media (max-width: 768px) { .product-layout { grid-template-columns: 1fr; } }
 </style>

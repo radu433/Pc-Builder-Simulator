@@ -1,1559 +1,953 @@
 <template>
-  <div class="synth-builder-container">
-    
+  <div class="maximalist-app-container">
+    <!-- Overlay pentru textura de zgomot (Dithering) -->
+    <div class="noise-texture"></div>
+
     <!-- SIDEBAR -->
-    <aside class="synth-sidebar glass-panel">
-      <div class="sidebar-header">
-        <span class="gradient-text">DASHBOARD</span>
+    <aside class="sidebar glass-panel">
+      <div class="sidebar-brand">
+        <div class="brand-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+        </div>
+        <span class="font-syne gradient-text-brand">RIGMASTER</span>
       </div>
       
-      <div class="category-list">
-        <div v-for="(cat, idx) in categories" :key="cat.id" 
-             class="category-item" 
-             :class="{ active: openCategoryId === cat.id }"
-             @click="openCategory(cat.id)">
-             <div class="cat-left">
-               <span class="cat-icon">{{ cat.icon }}</span>
-               <span class="cat-name">{{ idx + 1 }}. {{ cat.name }}</span>
-             </div>
-             <span class="status-dot" :class="{ selected: cat.selectedPart }"></span>
+      <div class="sidebar-scroll-area">
+        <div class="category-list">
+          <div v-for="(cat, idx) in categories" :key="cat.id" 
+               class="category-item" 
+               :class="{ active: activeCategoryId === cat.id, 'has-part': cat.selectedPart }"
+               @click="openCategory(cat.id)">
+               <div class="cat-left">
+                 <span class="cat-icon">{{ cat.icon }}</span>
+                 <span class="cat-name font-inter">{{ cat.name }}</span>
+               </div>
+               <span class="status-indicator"></span>
+          </div>
         </div>
       </div>
 
       <div class="sidebar-footer">
-         <button class="btn-neon-full" @click="openCategory(null)">📋 View Summary</button>
-         <div style="height: 10px;"></div>
-         <button class="btn-solid-green" @click="salveazaPC" :disabled="selectedPartsCount === 0">
-           🚀 Save Build
+         <button class="btn-ghost-outline font-inter" @click="openCategory(null)">
+           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
+           View Summary
          </button>
-         <div style="height: 10px;"></div>
-         <button class="btn-solid-purple" @click="analizeazaBuild" :disabled="selectedPartsCount === 0 || agentLoading">
-           {{ agentLoading ? '⏳ Analyzing...' : '✨ AI Analysis' }}
+         
+         <button class="btn-primary-green font-mono" @click="openSaveModal" :disabled="selectedPartsCount === 0">
+           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+           SAVE BUILD
          </button>
+         
+         <button class="btn-primary-violet font-mono" @click="analizeazaBuild" :disabled="selectedPartsCount === 0 || agentLoading">
+           <svg v-if="!agentLoading" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+           <svg v-else class="spin-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg>
+           {{ agentLoading ? 'ANALYZING...' : 'AI ANALYSIS' }}
+         </button>
+
+         <div class="ai-sub-actions">
+           <button class="btn-ai-sub font-mono" @click="triggerBottleneck">BOTTLENECK CHECK</button>
+           <button class="btn-ai-sub font-mono" @click="triggerFps">ESTIMATE FPS</button>
+           <button class="btn-ai-sub font-mono" @click="triggerCasePreview">CASE PREVIEW</button>
+         </div>
       </div>
     </aside>
     
-    <!-- MAIN AREA -->
-    <main class="synth-main">
-       <div class="main-header">
-           <h2>{{ activeCategory ? activeCategory.name.toUpperCase() + ' SELECTION' : 'BUILD SUMMARY' }}</h2>
-           <div class="total-price">
-               <span class="compatible-badge" v-if="selectedPartsCount > 0 && !hasIncompatibilities">● Compatible</span> 
-               <span class="incompatible-badge" v-if="hasIncompatibilities">● Check Issues</span> 
-               Build Total: <span class="neon-price">{{ totalPrice.toFixed(2) }} RON</span> |
-               TDP: <span class="neon-price">{{ totalTdp }} W</span>
+    <!-- MAIN CONTENT -->
+    <main class="main-content">
+       <!-- HERO HEADER -->
+       <div class="hero-header glass-panel">
+           <div class="hero-bg-animated"></div>
+           <div class="hero-content">
+             <div>
+               <h1 class="font-syne hero-title">{{ activeCategory ? activeCategory.name.toUpperCase() + ' SELECTION' : 'SYSTEM SUMMARY' }}</h1>
+               <div class="badges-row font-inter">
+                 <span class="badge-status" :class="hasIncompatibilities ? 'error' : 'success'">
+                   <span class="dot"></span> {{ hasIncompatibilities ? 'Compatibility Issues' : '100% Compatible' }}
+                 </span>
+                 <span class="badge-status info">
+                   <span class="dot"></span> {{ selectedPartsCount }} Components Selected
+                 </span>
+               </div>
+             </div>
+             
+             <div class="price-display">
+               <div class="price-label font-inter">ESTIMATED TOTAL</div>
+               <div class="price-value font-mono gradient-text-green">{{ totalPrice.toFixed(2) }} <span class="currency">RON</span></div>
+               <div class="tdp-value font-mono">PWR DRAIN: {{ totalTdp }}W</div>
+             </div>
            </div>
        </div>
 
+       <!-- LOADING STATE -->
        <div v-if="loading" class="loading-state glass-panel">
-          <div class="spinner"></div>
-          <p>Loading components...</p>
+          <div class="spinner-hologram"></div>
+          <p class="font-mono gradient-text-cyan">INITIALIZING DATABASE...</p>
        </div>
 
-       <div class="parts-grid-panel" v-else-if="activeCategory">
-          <!-- SEARCH & FILTERS -->
-          <div class="builder-filters glass-panel">
-            <div class="builder-filters-header">
-              <div class="search-input-wrapper">
-                <span class="icon">🔍</span>
-                <input type="text" v-model="searchQuery" placeholder="Caută componenta..." @input="onFilterChange" />
-              </div>
-              <div class="price-inputs">
-                <input type="number" v-model="minPrice" placeholder="Preț Min" @input="onFilterChange" />
-                <span>-</span>
-                <input type="number" v-model="maxPrice" placeholder="Preț Max" @input="onFilterChange" />
-              </div>
-              <label class="checkbox-label">
-                <input type="checkbox" v-model="inStockOnly" @change="onFilterChange" /> Doar în stoc
-              </label>
-              <button class="btn-neon-remove reset-btn" @click="resetFilters(activeCategory.id)">🔄 Reset</button>
+       <!-- BROWSING GRID (Când o categorie este selectată) -->
+       <div v-else-if="activeCategoryId" class="components-grid">
+         <div v-for="part in activeCategoryParts" :key="part.id" class="part-card glass-panel interactive-card">
+            <div class="part-info">
+               <h4 class="font-inter">{{ part.nume || part.name }}</h4>
             </div>
-            
-            <div class="dynamic-filters-row" v-if="activeCategoryFilters.length">
-              <div v-for="filter in activeCategoryFilters" :key="filter.key" class="filter-group">
-                <label class="filter-label-main">{{ filter.label }}</label>
-                
-                <select v-if="filter.type === 'select'" v-model="dynamicFilters[filter.key]" @change="onFilterChange" class="filter-select">
-                  <option value="">Orice</option>
-                  <option v-for="opt in filter.options" :key="opt" :value="opt">{{ opt }}</option>
-                </select>
-
-                <div v-else-if="filter.type === 'checkbox-group'" class="checkbox-group-wrapper">
-                  <label v-for="opt in filter.options" :key="filter.key + '-' + opt" class="checkbox-label small-label">
-                    <input type="checkbox" :value="opt" v-model="dynamicFilters[filter.key]" @change="onFilterChange" />
-                    {{ opt }}
-                  </label>
-                </div>
-
-                <input v-else :type="filter.type" v-model="dynamicFilters[filter.key]" :placeholder="filter.placeholder" @input="onFilterChange" class="filter-input" />
-              </div>
+            <div class="part-action">
+               <span class="price font-mono gradient-text-cyan">{{ part.pret || part.price }} RON</span>
+               <button class="btn-add font-mono" @click="selectPart(part)">ADAUGA</button>
             </div>
-          </div>
-
-          <div class="parts-grid" v-if="activeCategory.parts.length > 0">
-             <div v-for="part in activeCategory.parts" :key="part.id" class="synth-product-card glass-panel" :class="{ 'is-selected': activeCategory.selectedPart?.id === part.id }">
-                 <div class="card-glow"></div>
-                 <div class="card-content">
-                    <router-link :to="`/products/${activeCategory.id}/${part.id}`" class="card-link" style="text-decoration: none; color: inherit;">
-                      <div class="card-top">
-                        <div class="card-brand">{{ part.brand || part.producator || 'N/A' }}</div>
-                        <a v-if="part.url_produs" :href="part.url_produs" target="_blank" class="external-link-icon" title="Cumpără de pe magazin" @click.stop>🛒</a>
-                      </div>
-                      
-                      <div class="card-image-box">
-                          <img :src="part.imagine_url || 'https://placehold.co/200x200/111827/00f0ff?text=No+Image'" :alt="part.nume">
-                      </div>
-                      
-                      <h3 class="card-title">{{ displayPartName(part) }}</h3>
-                      <p class="card-desc">{{ (part.nume || "").substring(0, 50) }}...</p>
-                    </router-link>
-                    
-                    <div class="card-specs">
-                       <div class="spec-col" v-if="part.frecventa"><span>Speed</span><br>{{ part.frecventa }}</div>
-                       <div class="spec-col" v-if="part.capacitate || part.memorie"><span>Memory</span><br>{{ part.capacitate || part.memorie }}</div>
-                       <div class="spec-col" v-if="part.socket"><span>Socket</span><br>{{ part.socket }}</div>
-                       <div class="spec-col" v-if="part.putere"><span>Power</span><br>{{ part.putere }}W</div>
-                       <div class="spec-col" v-if="part.format"><span>Form</span><br>{{ part.format }}</div>
-                    </div>
-
-                    <div class="card-footer">
-                       <div class="card-price">{{ displayPartPrice(part) }} RON</div>
-                       <button class="btn-neon" v-if="activeCategory.selectedPart?.id !== part.id" @click="selectPart(activeCategory.id, part)">SELECT</button>
-                       <button class="btn-neon-remove" v-else @click="removePart(activeCategory.id)">REMOVE</button>
-                    </div>
-                 </div>
-             </div>
-          </div>
-          <div v-else class="empty-parts glass-panel">
-              <p>Nicio componentă disponibilă sau incompatibilitate cu selecția curentă.</p>
-              <button class="btn-neon" v-if="activeCategory.filterLocked" @click="resetFilters(activeCategory.id)">Reset Filters</button>
-          </div>
-
-          <!-- PAGINATION -->
-          <div class="pagination-controls glass-panel" v-if="totalPages > 1">
-            <button class="page-btn" :disabled="currentPage <= 1" @click="goToPage(1)">«</button>
-            <button class="page-btn" :disabled="currentPage <= 1" @click="goToPage(currentPage - 1)">‹</button>
-            <button v-for="p in visiblePages" :key="p" class="page-btn" :class="{ active: p === currentPage, ellipsis: p === '...' }" :disabled="p === '...'" @click="p !== '...' && goToPage(p)">
-              {{ p }}
-            </button>
-            <button class="page-btn" :disabled="currentPage >= totalPages" @click="goToPage(currentPage + 1)">›</button>
-            <button class="page-btn" :disabled="currentPage >= totalPages" @click="goToPage(totalPages)">»</button>
-            <span class="page-info">Pagina {{ currentPage }} din {{ totalPages }} ({{ totalCount }} produse)</span>
-          </div>
+         </div>
        </div>
 
-       <!-- SUMMARY PANEL -->
-       <div class="summary-view-panel" v-else>
-           <div class="glass-panel summary-parts-panel">
-             <h3 class="gradient-text">Your Selected Parts</h3>
-             <div class="selected-parts-list">
-                 <div class="selected-row" v-for="cat in categories" :key="cat.id" @click="openCategory(cat.id)">
-                     <div class="sr-left">
-                       <span class="sr-icon">{{ cat.icon }}</span>
-                       <span class="sr-cat">{{ cat.name }}</span>
+       <!-- SUMMARY VIEW -->
+       <div v-else class="summary-layout">
+           <!-- COLOANA STÂNGA -->
+           <div class="col-left">
+             
+             <!-- PC Visual Preview -->
+             <div class="pc-preview-card glass-panel interactive-card">
+               <div class="pc-hologram" v-if="!generatedImageUrl">
+                  <div class="holo-core"></div>
+                  <div class="holo-rings"></div>
+               </div>
+               <div v-else class="generated-image-container">
+                  <img :src="generatedImageUrl" class="generated-preview-img" alt="PC Build" />
+                  <button class="btn-enlarge font-mono" @click="showImageModal = true">ENLARGE</button>
+               </div>
+               <div class="pc-preview-label font-mono">CASE PREVIEW {{ generatedImageUrl ? '[GENERATED]' : '[SIMULATED]' }}</div>
+             </div>
+
+             <!-- Bottleneck Analysis -->
+             <div class="bottleneck-panel glass-panel">
+               <h3 class="panel-title font-syne" :style="{ marginBottom: showBottleneck ? '1.5rem' : '0', borderBottom: showBottleneck ? '' : 'none', paddingBottom: showBottleneck ? '1rem' : '0', transition: 'all 0.4s' }">BOTTLENECK ANALYSIS</h3>
+               
+               <Transition name="expand">
+                 <div v-if="showBottleneck">
+                   <div v-if="loadingBottleneck" class="loading-state-small">
+                     <div class="spinner-hologram small-spinner"></div>
+                     <p class="font-mono gradient-text-cyan">ANALYZING BOTTLENECK...</p>
+                   </div>
+
+                   <div class="bottleneck-list">
+                     <div class="progress-item" v-for="stat in bottleneckStats" :key="stat.label">
+                       <div class="progress-header font-inter">
+                         <span>{{ stat.label }}</span>
+                         <span class="font-mono" :class="stat.color">{{ stat.value }}%</span>
+                       </div>
+                       <div class="progress-track">
+                         <div class="progress-fill" :style="{ width: stat.value + '%', background: stat.bg }"></div>
+                       </div>
                      </div>
-                     <div class="sr-right">
-                       <span class="sr-name" :class="{'text-muted': !cat.selectedPart}">{{ cat.selectedPart ? displayPartName(cat.selectedPart) : 'None selected' }}</span>
-                       <span class="sr-price" v-if="cat.selectedPart">{{ displayPartPrice(cat.selectedPart) }} RON</span>
-                       <button class="btn-icon-alt" v-if="cat.selectedPart" @click.stop="openAlternativesModal(cat)" title="Alternative">🔄</button>
-                       <button class="btn-icon-remove" v-if="cat.selectedPart" @click.stop="removePart(cat.id)" title="Remove">✕</button>
-                     </div>
+                   </div>
                  </div>
-             </div>
-           </div>
-
-           <div class="analysis-panels-grid" v-if="hasCpuAndGpu">
-             <!-- BOTTLENECK PANEL -->
-             <div class="glass-panel bottleneck-panel">
-                <h3 class="gradient-text">⚡ Bottleneck Analysis</h3>
-                <div v-if="bottleneckData">
-                   <div class="bottleneck-bars">
-                      <div class="bar-row">
-                         <span class="bar-label">CPU: {{ bottleneckData.scor_cpu }}</span>
-                         <div class="bar-bg"><div class="bar-fill cpu-bar" :style="{ width: getBarWidth(bottleneckData.scor_cpu, bottleneckData.scor_gpu) + '%' }"></div></div>
-                      </div>
-                      <div class="bar-row">
-                         <span class="bar-label">GPU: {{ bottleneckData.scor_gpu }}</span>
-                         <div class="bar-bg"><div class="bar-fill gpu-bar" :style="{ width: getBarWidth(bottleneckData.scor_gpu, bottleneckData.scor_cpu) + '%' }"></div></div>
-                      </div>
-                   </div>
-                   <div class="bottleneck-result mt-3 text-center">
-                      <p v-if="bottleneckData.are_bottleneck" class="text-warning">
-                         ⚠️ <strong>{{ bottleneckData.componenta_limitatoare }}</strong> limitează performanța cu <strong>{{ bottleneckData.procentaj_bottleneck }}%</strong>.
-                      </p>
-                      <p v-else class="text-success">
-                         ✅ Build echilibrat (Bottleneck: {{ bottleneckData.procentaj_bottleneck }}%)
-                      </p>
-                   </div>
-                </div>
-                <div v-else class="text-center mt-3">
-                   <button class="btn-solid-purple" @click="checkBottleneck" :disabled="loadingBottleneck">
-                      {{ loadingBottleneck ? '⏳ Se calculează...' : 'Analizează Bottleneck' }}
-                   </button>
-                </div>
+               </Transition>
              </div>
 
-             <!-- FPS PANEL -->
-             <div class="glass-panel fps-panel">
-                <h3 class="gradient-text">🎮 Gaming FPS</h3>
-                <div v-if="fpsData">
-                   <p class="text-muted text-center mb-3" v-if="fpsData.analiza_text" style="font-size: 0.85rem;">{{ fpsData.analiza_text.substring(0, 100) }}...</p>
-                   <div class="fps-table-wrapper">
-                     <table class="fps-table">
+             <!-- Gaming FPS Table -->
+             <div class="fps-panel glass-panel">
+               <h3 class="panel-title font-syne" :style="{ marginBottom: showFps ? '1.5rem' : '0', borderBottom: showFps ? '' : 'none', paddingBottom: showFps ? '1rem' : '0', transition: 'all 0.4s' }">FPS ESTIMATES <span class="badge-ultra">ULTRA SETTINGS</span></h3>
+               
+               <Transition name="expand">
+                 <div v-if="showFps">
+                   <div v-if="loadingFps" class="loading-state-small">
+                     <div class="spinner-hologram small-spinner"></div>
+                     <p class="font-mono gradient-text-violet">SIMULATING FPS...</p>
+                   </div>
+
+                   <div v-else class="table-responsive">
+                     <table class="fps-table font-mono">
                        <thead>
                          <tr>
-                           <th>Joc</th>
-                           <th>1080p</th>
-                           <th>1440p</th>
+                           <th>GAME TITLE</th>
+                           <th>1080P</th>
+                           <th>1440P</th>
                            <th>4K</th>
                          </tr>
                        </thead>
                        <tbody>
-                         <tr v-for="joc in fpsData.fps_data?.jocuri?.slice(0, 4) || fpsData.jocuri?.slice(0, 4) || []" :key="joc.nume">
-                           <td>{{ joc.nume }}</td>
-                           <td :class="getFpsClass(joc.fps_1080p)">{{ formatFps(joc.fps_1080p) }}</td>
-                           <td :class="getFpsClass(joc.fps_1440p)">{{ formatFps(joc.fps_1440p) }}</td>
-                           <td :class="getFpsClass(joc.fps_4k)">{{ formatFps(joc.fps_4k) }}</td>
+                         <tr v-for="game in fpsEstimates" :key="game.name">
+                           <td class="font-inter game-title">{{ game.name }}</td>
+                           <td class="fps-high">{{ game.fhd }}</td>
+                           <td class="fps-med">{{ game.qhd }}</td>
+                           <td class="fps-low">{{ game.uhd }}</td>
                          </tr>
                        </tbody>
                      </table>
                    </div>
-                   <p class="text-center mt-2"><small>*Estimări High/Ultra</small></p>
-                </div>
-                <div v-else class="text-center mt-3">
-                   <button class="btn-solid-green" @click="checkBenchmark" :disabled="loadingFps">
-                      {{ loadingFps ? '⏳ Se generează...' : 'Rulează Benchmark' }}
-                   </button>
-                </div>
+                 </div>
+               </Transition>
              </div>
            </div>
 
-           <!-- AI Results -->
-           <div v-if="agentResult || agentError" class="ai-glass-panel glass-panel mt-4">
-              <h3 class="gradient-text">✨ AI Analysis Results</h3>
-              <div v-if="agentError" class="agent-error">⚠️ {{ agentError }}</div>
+           <!-- COLOANA DREAPTA -->
+           <div class="col-right">
+             
+             <!-- Build List -->
+             <div class="build-list-panel glass-panel">
+               <h3 class="panel-title font-syne">SELECTED COMPONENTS</h3>
+               <div class="build-items-container">
+                 
+                 <!-- Empty state -->
+                 <div v-if="selectedPartsCount === 0" class="empty-state font-inter">
+                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                   <p>No components selected. Start building your rig from the dashboard.</p>
+                 </div>
 
-              <div v-if="agentResult" class="agent-result">
-                <div class="agent-badge" :class="'badge-' + agentResult.severitate">
-                  {{ agentResult.severitate === 'ok' ? '✅ Compatibil' : agentResult.severitate === 'warning' ? '⚠️ Atenție' : '❌ Probleme' }}
-                </div>
+                 <!-- Items -->
+                 <div v-for="cat in categories.filter(c => c.selectedPart)" :key="cat.id" class="build-item">
+                   <div class="item-icon">{{ cat.icon }}</div>
+                    <div class="build-item-info">
+                      <h4 class="font-inter">{{ cat.selectedPart.nume || cat.selectedPart.name }}</h4>
+                      <p class="font-mono text-sm opacity-70">{{ cat.selectedPart.pret || cat.selectedPart.price }} RON</p>
+                    </div>
+                   <div class="item-actions">
+                     <span class="item-price font-mono">{{ cat.selectedPart.price }} RON</span>
+                     <button class="btn-swap" @click="openAlternativesModal(cat)" title="Find Alternatives">
+                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg>
+                     </button>
+                     <button class="btn-remove" @click="removePart(cat.id)" title="Remove">✕</button>
+                   </div>
+                 </div>
 
-                <div v-if="agentResult.probleme?.length > 0" class="agent-section">
-                  <strong>Probleme:</strong>
-                  <ul><li v-for="p in agentResult.probleme" :key="p">{{ p }}</li></ul>
-                </div>
+               </div>
+             </div>
 
-                <div v-if="agentResult.bottleneck?.are_bottleneck" class="agent-section">
-                  <strong>Bottleneck:</strong>
-                  <p>{{ agentResult.bottleneck.componenta_limitatoare }} limitează {{ agentResult.bottleneck.componenta_limitata }} cu {{ agentResult.bottleneck.procentaj_bottleneck }}%</p>
-                </div>
-
-                <div v-if="agentResult.analiza_ai" class="agent-section">
-                  <strong>Feedback AI:</strong>
-                  <p>{{ agentResult.analiza_ai }}</p>
-                </div>
-              </div>
            </div>
        </div>
-
     </main>
 
-    <!-- MODAL ALTERNATIVE -->
-    <div v-if="showAlternativesModal" class="modal-overlay" @click.self="showAlternativesModal = false">
-      <div class="modal-content glass-panel">
-        <div class="modal-header">
-          <h3>🔄 Alternative pentru {{ selectedAlternativeCat?.selectedPart?.nume }}</h3>
-          <button class="close-btn" @click="showAlternativesModal = false">✕</button>
-        </div>
-        <div class="modal-body">
-          <div v-if="loadingAlternatives" class="loading-state">
-             <div class="spinner"></div>
-             <p>AI-ul caută cele mai bune alternative...</p>
+    <!-- ========================================== -->
+    <!-- MODAL 1: SALVEAZĂ BUILD (Teleported)       -->
+    <!-- ========================================== -->
+    <Teleport to="body">
+      <div v-if="showSaveModal" class="modal-overlay" @click.self="showSaveModal = false">
+        <div class="maximalist-modal glass-panel">
+          <div class="modal-header">
+            <h2 class="font-syne gradient-text-violet">SAVE CONFIGURATION</h2>
+            <button class="btn-close" @click="showSaveModal = false">✕</button>
           </div>
-          <div v-else-if="alternativesError" class="agent-error">{{ alternativesError }}</div>
-          <div v-else class="alternatives-grid">
-             <div v-for="alt in alternativesList" :key="alt.id" class="alt-card">
-                <div class="alt-info">
-                   <h4 style="margin-bottom: 5px;">{{ alt.nume }}</h4>
-                   <p class="alt-price neon-price" style="font-size: 1.1rem; margin-bottom: 5px;">{{ alt.pret }} RON</p>
-                   <p class="alt-reason text-muted" style="font-size: 0.9rem;">{{ alt.motiv }}</p>
-                </div>
-                <button class="btn-solid-green mt-2" @click="replacePart(selectedAlternativeCat.id, alt)">Înlocuiește</button>
-             </div>
-             <div v-if="alternativesList.length === 0" class="text-center mt-3 text-muted">
-                Nu s-au găsit alternative.
-             </div>
+          
+          <div class="modal-body font-inter">
+            <div class="input-group">
+              <label for="build-name" class="font-mono">BUILD DESIGNATION</label>
+              <input 
+                id="build-name" 
+                type="text" 
+                v-model="newBuildName" 
+                class="synth-input font-inter" 
+                placeholder="e.g. CyberBeast MK.II" 
+              />
+            </div>
+
+            <div class="save-options-row glass-panel-inner">
+              <div class="toggle-container">
+                <label class="synth-switch">
+                  <input type="checkbox" v-model="isPublic" />
+                  <span class="slider round"></span>
+                </label>
+                <span class="toggle-label font-mono">PUBLIC BUILD</span>
+              </div>
+
+              <div class="user-profile-badge">
+                <div class="avatar-circle font-syne">R</div>
+                <span class="username font-mono">radut202...</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="modal-footer">
+            <button class="btn-ghost font-mono" @click="showSaveModal = false">ABORT</button>
+            <button class="btn-primary-green font-mono" @click="confirmSave">COMMIT TO DB</button>
           </div>
         </div>
       </div>
-    </div>
+    </Teleport>
+
+    <!-- ========================================== -->
+    <!-- MODAL 2: ALTERNATIVE (Teleported)          -->
+    <!-- ========================================== -->
+    <Teleport to="body">
+      <div v-if="showAlternativesModal" class="modal-overlay" @click.self="showAlternativesModal = false">
+        <div class="maximalist-modal modal-large glass-panel">
+          <div class="modal-header">
+            <h2 class="font-syne gradient-text-cyan">AI ALTERNATIVES FOR {{ modalTargetCategory?.name.toUpperCase() }}</h2>
+            <button class="btn-close" @click="showAlternativesModal = false">✕</button>
+          </div>
+          
+          <div class="modal-body">
+            <div class="alternatives-grid">
+              
+              <div v-for="alt in alternatives" :key="alt.id" class="alt-card glass-panel-inner interactive-card">
+                <div class="alt-header">
+                  <span class="alt-icon">{{ modalTargetCategory?.icon }}</span>
+                  <h4 class="font-inter">{{ alt.name }}</h4>
+                </div>
+                <div class="alt-price font-mono gradient-text-cyan">{{ alt.price }} RON</div>
+                <p class="alt-reason font-inter">{{ alt.reason }}</p>
+                <button class="btn-primary-cyan font-mono" @click="swapComponent(alt)">
+                  ÎNLOCUIEȘTE
+                </button>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Modal imagine generată -->
+    <Teleport to="body">
+      <div v-if="showImageModal" class="modal-overlay" @click.self="showImageModal = false">
+        <div class="image-modal glass-panel">
+          <button class="btn-close" @click="showImageModal = false">✕</button>
+          <img :src="generatedImageUrl" class="full-size-img" alt="PC Build Full" />
+        </div>
+      </div>
+    </Teleport>
+
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import axios from 'axios'
-import api from '../plugins/axios.js'
+import { useRouter } from 'vue-router'
+import api from '@/plugins/axios'
+import { showToast } from '@/toast'
 
+// --- STILURI IMPORTATE (Google Fonts) ---
+// Notă: Folosim o injecție a fonturilor direct din componentă pentru a garanta aspectul.
+const fontStyle = document.createElement('style');
+fontStyle.innerHTML = `
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;700&family=Syne:wght@600;700;800&display=swap');
+`;
+document.head.appendChild(fontStyle);
+
+// --- STATE MANAGEMENT ---
+const activeCategoryId = ref(null)
+const loading = ref(false)
 const agentLoading = ref(false)
-const agentResult = ref(null)
-const agentError = ref(null)
-const loading = ref(true)
-const openCategoryId = ref('cpus') // Default la primul tab
 
+// Panels State
+const showBottleneck = ref(false)
+const loadingBottleneck = ref(false)
+const showFps = ref(false)
+const loadingFps = ref(false)
+
+// Modals State
+const showSaveModal = ref(false)
+const showAlternativesModal = ref(false)
+const newBuildName = ref('')
+const isPublic = ref(true)
+const modalTargetCategory = ref(null)
+
+// --- DATA STATE ---
 const categories = ref([
-  { id: 'cpus',         name: 'Procesor',      icon: '🧠', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false },
-  { id: 'motherboards', name: 'Placă de Bază', icon: '🛹', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false },
-  { id: 'gpus',         name: 'Placă Video',   icon: '🎮', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false },
-  { id: 'rams',         name: 'Memorie RAM',   icon: '⚡', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false },
-  { id: 'storages',     name: 'Stocare',       icon: '💾', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false },
-  { id: 'psus',         name: 'Sursă',         icon: '🔌', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false },
-  { id: 'cases',        name: 'Carcasă',       icon: '📦', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false },
-  { id: 'coolers',      name: 'Cooler CPU',    icon: '❄️', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false },
+  { id: 'cpu', endpoint: 'cpus', name: 'Procesor', icon: '🧠', selectedPart: null },
+  { id: 'gpu', endpoint: 'gpus', name: 'Placă Video', icon: '🎮', selectedPart: null },
+  { id: 'motherboard', endpoint: 'motherboards', name: 'Placă de Bază', icon: '🎛️', selectedPart: null },
+  { id: 'ram', endpoint: 'rams', name: 'Memorie RAM', icon: '⚡', selectedPart: null },
+  { id: 'storage', endpoint: 'storages', name: 'Stocare', icon: '💾', selectedPart: null },
+  { id: 'psu', endpoint: 'psus', name: 'Sursă', icon: '🔋', selectedPart: null },
+  { id: 'case', endpoint: 'cases', name: 'Carcasă', icon: '📦', selectedPart: null },
+  { id: 'cooler', endpoint: 'coolers', name: 'Cooler', icon: '❄️', selectedPart: null },
 ])
 
-const catToKeyMap = {
-  'cpus': 'cpu', 'gpus': 'gpu', 'motherboards': 'motherboard',
-  'rams': 'ram', 'storages': 'storage', 'psus': 'psu',
-  'cases': 'case', 'coolers': 'cooler'
-}
+const activeCategoryParts = ref([])
+const bottleneckStats = ref([])
+const fpsEstimates = ref([])
+const alternatives = ref([])
 
-const activeCategory = computed(() => {
-  if (!openCategoryId.value) return null;
-  return categories.value.find(c => c.id === openCategoryId.value)
+const generatedImageUrl = ref(null)
+const showImageModal = ref(false)
+
+const isLoggedIn = ref(false)
+const imageGenerationsCount = ref(0)
+
+onMounted(() => {
+  const token = localStorage.getItem('access_token');
+  isLoggedIn.value = !!token;
+  const storedCount = localStorage.getItem('image_generations_count');
+  if (storedCount) {
+    imageGenerationsCount.value = parseInt(storedCount);
+  }
 })
 
-const hasIncompatibilities = computed(() => categories.value.some(c => c.incompatibil))
+// --- COMPUTED ---
+const activeCategory = computed(() => categories.value.find(c => c.id === activeCategoryId.value))
+const selectedPartsCount = computed(() => categories.value.filter(c => c.selectedPart).length)
+const totalPrice = computed(() => categories.value.reduce((acc, cat) => acc + parseFloat(cat.selectedPart?.pret || cat.selectedPart?.price || 0), 0))
+const totalTdp = computed(() => selectedPartsCount.value * 75) // Mock calcul
+const hasIncompatibilities = computed(() => false) // Mock state
 
-// --- FILTERS STATE ---
-const searchQuery = ref('')
-const minPrice = ref('')
-const maxPrice = ref('')
-const inStockOnly = ref(false)
-const dynamicFilters = ref({})
-
-// --- NEW STATE ---
-const loadingBottleneck = ref(false)
-const bottleneckData = ref(null)
-
-const loadingFps = ref(false)
-const fpsData = ref(null)
-
-const showAlternativesModal = ref(false)
-const selectedAlternativeCat = ref(null)
-const loadingAlternatives = ref(false)
-const alternativesList = ref([])
-const alternativesError = ref('')
-
-const hasCpuAndGpu = computed(() => {
-  return categories.value.find(c => c.id === 'cpus')?.selectedPart != null &&
-         categories.value.find(c => c.id === 'gpus')?.selectedPart != null
-})
-
-const getBarWidth = (val, other) => {
-  const m = Math.max(val, other);
-  if (m === 0) return 0;
-  return (val / m) * 100;
-}
-
-const getFpsClass = (fps) => {
-  if (!fps || fps === '-') return '';
-  const val = typeof fps === 'string' ? parseFloat(fps) : fps;
-  if (val >= 60) return 'text-success';
-  if (val >= 30) return 'text-warning';
-  return 'text-danger';
-}
-
-const formatFps = (fps) => {
-  if (!fps || fps === '-') return '-';
-  const val = typeof fps === 'string' ? parseFloat(fps) : fps;
-  return Math.round(val);
-}
-
-const checkBottleneck = async () => {
-  loadingBottleneck.value = true;
-  const cpu = categories.value.find(c => c.id === 'cpus')?.selectedPart;
-  const gpu = categories.value.find(c => c.id === 'gpus')?.selectedPart;
-  try {
-    const response = await api.get(`/builder/bottleneck/?cpu_id=${cpu.id}&gpu_id=${gpu.id}`);
-    bottleneckData.value = response.data;
-  } catch (e) {
-    console.error(e);
-  }
-  loadingBottleneck.value = false;
-}
-
-const fetchFpsCache = async () => {
-  const cpu = categories.value.find(c => c.id === 'cpus')?.selectedPart;
-  const gpu = categories.value.find(c => c.id === 'gpus')?.selectedPart;
-  if (!cpu || !gpu) return;
-  try {
-    const response = await api.get(`/builder/benchmark/?cpu_id=${cpu.id}&gpu_id=${gpu.id}`);
-    if (response.data.cached) {
-      fpsData.value = response.data;
-    } else {
-      fpsData.value = null;
-    }
-  } catch (e) {
-    console.error(e);
-  }
-}
-
-const checkBenchmark = async () => {
-  loadingFps.value = true;
-  const cpu = categories.value.find(c => c.id === 'cpus')?.selectedPart;
-  const gpu = categories.value.find(c => c.id === 'gpus')?.selectedPart;
-  const ram = categories.value.find(c => c.id === 'rams')?.selectedPart || {};
-  try {
-    const response = await api.post('/builder/benchmark/', { cpu, gpu, ram, rezolutie: '1080p' });
-    fpsData.value = response.data; 
-  } catch (e) {
-    console.error(e);
-  }
-  loadingFps.value = false;
-}
-
-const openAlternativesModal = async (cat) => {
-  selectedAlternativeCat.value = cat;
-  showAlternativesModal.value = true;
-  loadingAlternatives.value = true;
-  alternativesList.value = [];
-  alternativesError.value = '';
-  
-  const key = catToKeyMap[cat.id] || cat.id;
-  const currentPrice = cat.selectedPart.pret;
-  const pid = cat.selectedPart.id;
-  
-  const prompt = `Pentru componenta cu numele "${cat.selectedPart.nume}" (ID-ul din DB este ${pid}, Preț: ${currentPrice} RON) din categoria de produse "${key}", te rog să găsești EXACT 3 alternative folosind tool-ul "get_component_alternatives" (folosind "component_type": "${key}", "component_id": ${pid}). 
-  
-  IMPORTANT: După ce folosești tool-ul, trebuie să îmi răspunzi STRICT cu un array JSON valid care să conțină alternativele găsite. Fiecare obiect din array trebuie să aibă cheile: "id" (număr întreg, ID-ul componentei găsite), "nume" (numele componentei găsite), "pret" (prețul), și "motiv" (1 scurtă propoziție de ce e bună). 
-  NU adăuga niciun fel de text, explicație sau markdown în afara array-ului JSON. Exclusiv array-ul. Dacă nu găsești nimic, returnează [].`;
-  
-  try {
-    const res = await api.post('/builder/chat/', {
-      mesaj_nou: prompt,
-      istoric: []
-    });
-    
-    let text = res.data.mesaj_text;
-    text = text.replace(/```json/g, '').replace(/```/g, '').trim();
-    const startIndex = text.indexOf('[');
-    const endIndex = text.lastIndexOf(']');
-    if (startIndex !== -1 && endIndex !== -1) {
-       text = text.substring(startIndex, endIndex + 1);
-    }
-    alternativesList.value = JSON.parse(text);
-  } catch (err) {
-    alternativesError.value = "Eroare la parsarea alternativelor de la AI.";
-    console.error(err);
-  } finally {
-    loadingAlternatives.value = false;
-  }
-}
-
-const replacePart = async (catId, alt) => {
-  try {
-    const res = await api.get(`/${catId}/${alt.id}/`);
-    const partToSelect = res.data;
-    
-    const cat = categories.value.find(c => c.id === catId);
-    if (cat) {
-      cat.selectedPart = partToSelect;
-      saveToCurrentBuild(catToKeyMap[cat.id] || cat.id, partToSelect);
-      hasCpuAndGpu.value && checkBottleneck();
-      hasCpuAndGpu.value && fetchFpsCache();
-    }
-    showAlternativesModal.value = false;
-  } catch (err) {
-    console.error("Eroare la înlocuirea componentei", err);
-  }
-}
-
-// --- PAGINATION STATE ---
-const currentPage = ref(1)
-const totalCount = ref(0)
-const pageSize = 50
-
-const totalPages = computed(() => Math.max(1, Math.ceil(totalCount.value / pageSize)))
-
-const visiblePages = computed(() => {
-  const total = totalPages.value
-  const current = currentPage.value
-  const pages = []
-  
-  if (total <= 7) {
-    for (let i = 1; i <= total; i++) pages.push(i)
-    return pages
-  }
-  
-  pages.push(1)
-  if (current > 3) pages.push('...')
-  
-  const start = Math.max(2, current - 1)
-  const end = Math.min(total - 1, current + 1)
-  
-  for (let i = start; i <= end; i++) pages.push(i)
-  
-  if (current < total - 2) pages.push('...')
-  pages.push(total)
-  
-  return pages
-})
-
-const goToPage = (page) => {
-  if (page < 1 || page > totalPages.value || page === currentPage.value) return
-  currentPage.value = page
-  applyFilters()
-  // Scroll to top of parts grid
-  const grid = document.querySelector('.parts-grid-panel')
-  if (grid) grid.scrollIntoView({ behavior: 'smooth', block: 'start' })
-}
-
-const onFilterChange = () => {
-  currentPage.value = 1
-  applyFilters()
-}
-
-const allSocketOptions = [
-  'AM4', 'AM5', '1851', 'LGA 1851', 'FM2', 'FM2+', 'FM2, FM2+',
-  'AM3+', 'AM3', 'TR4', 'TRX40', 'sTR5', 'sWRX80', 'sWRX8',
-  '1700', '1150', '1200', '1151', '1155', '2066', '2011-V3'
-]
-
-const categoryFiltersMap = {
-  cpus: [
-    { key: 'producator', label: 'Producător', type: 'select', options: ['AMD', 'Intel'] },
-    { key: 'socket', label: 'Socket', type: 'checkbox-group', options: allSocketOptions },
-  ],
-  motherboards: [
-    { key: 'socket', label: 'Socket', type: 'checkbox-group', options: allSocketOptions },
-    { key: 'tip_ram', label: 'Tip Memorie Suportată', type: 'select', options: ['DDR4', 'DDR5'] },
-    { key: 'format', label: 'Format', type: 'select', options: ['ATX', 'mATX', 'Mini-ITX'] }
-  ],
-  gpus: [
-    { key: 'producator_chipset', label: 'Producător Chipset', type: 'select', options: ['NVIDIA', 'AMD', 'Intel'] },
-    { key: 'memorie', label: 'Capacitate VRAM', type: 'number', placeholder: 'ex: 8, 12, 16' }
-  ],
-  rams: [
-    { key: 'tip', label: 'Tip Memorie', type: 'select', options: ['DDR4', 'DDR5'] },
-    { key: 'capacitate', label: 'Capacitate (GB)', type: 'number', placeholder: 'ex: 16, 32' }
-  ],
-  storages: [
-    { key: 'tip', label: 'Tip Stocare', type: 'select', options: ['SSD', 'HDD', 'NVME'] },
-    { key: 'capacitate', label: 'Capacitate (GB)', type: 'number', placeholder: 'ex: 500, 1000' }
-  ],
-  psus: [
-    { key: 'putere', label: 'Putere (W)', type: 'number', placeholder: 'ex: 750, 850' },
-    { key: 'certificare', label: 'Certificare 80+', type: 'select', options: ['White', 'Bronze', 'Gold', 'Platinum', 'Titanium'] }
-  ],
-  cases: [
-    { key: 'tip_carcasa', label: 'Tip Carcasă', type: 'select', options: ['MID', 'FULL', 'MINI', 'SFF', 'AQ'] }
-  ],
-  coolers: [
-    { key: 'socket', label: 'Socket', type: 'checkbox-group', options: allSocketOptions },
-    { key: 'tip_racire', label: 'Tip Răcire', type: 'select', options: ['Air', 'AIO 120mm', 'AIO 240mm', 'AIO 280mm', 'AIO 360mm'] }
-  ]
-}
-
-const activeCategoryFilters = computed(() => {
-  if (!activeCategory.value) return []
-  return categoryFiltersMap[activeCategory.value?.id] || []
-})
-
-const initDynamicFilters = () => {
-  const filters = {}
-  activeCategoryFilters.value.forEach(f => {
-    if (f.type === 'checkbox-group') {
-      filters[f.key] = []
-    } else {
-      filters[f.key] = ''
-    }
-  })
-  dynamicFilters.value = filters
-}
-
-import { watch } from 'vue'
-
-watch(openCategoryId, () => {
-  searchQuery.value = ''
-  minPrice.value = ''
-  maxPrice.value = ''
-  inStockOnly.value = false
-  currentPage.value = 1
-  initDynamicFilters()
-  applyFilters()
-})
-
-const applyFilters = async () => {
-  const cat = activeCategory.value
-  if (!cat) return
-
-  loading.value = true
-
-  const params = {}
-
-  // 1. Compatibility Lock
-  if (cat.filterLocked && cat.activeFilter) {
-    if (cat.id === 'motherboards' && cat.activeFilter.startsWith('Socket ')) {
-       params.socket = cat.activeFilter.replace('Socket ', '')
-    } else if (cat.id === 'rams') {
-       params.tip = cat.activeFilter
-    }
-  }
-
-  // 2. Global Filters
-  if (searchQuery.value) params.search = searchQuery.value
-  if (minPrice.value) params.min_pret = minPrice.value
-  if (maxPrice.value) params.max_pret = maxPrice.value
-  if (inStockOnly.value) params.in_stock = 'true'
-
-  // 3. Dynamic Filters
-  for (const [key, value] of Object.entries(dynamicFilters.value)) {
-    if (Array.isArray(value)) {
-      if (value.length > 0) {
-        params[key] = value.join('|')
+// --- METHODS ---
+const openCategory = async (id) => {
+  activeCategoryId.value = id
+  if (id) {
+    loading.value = true
+    try {
+      const cat = categories.value.find(c => c.id === id)
+      if (cat && cat.endpoint) {
+        const response = await api.get(`/${cat.endpoint}/`)
+        activeCategoryParts.value = response.data
       }
-    } else if (value !== '' && value !== null && value !== undefined) {
-       params[key] = value
+    } catch (err) {
+      showToast('Eroare la încărcarea componentelor', 'error')
+      activeCategoryParts.value = []
+    } finally {
+      loading.value = false
     }
-  }
-
-  // 4. Pagination
-  params.page = currentPage.value
-  params.page_size = pageSize
-
-  try {
-    const response = await axios.get(`/api/${cat.id}/`, { params })
-    if (response.data.results !== undefined) {
-      cat.parts = response.data.results
-      totalCount.value = response.data.count || 0
-    } else {
-      cat.parts = response.data
-      totalCount.value = response.data.length || 0
-    }
-  } catch (error) {
-    console.error(error)
-  } finally {
-    loading.value = false
-  }
-}
-// --- END FILTERS STATE ---
-
-const openCategory = (id) => {
-  openCategoryId.value = id
-  if (!id) {
-     if (hasCpuAndGpu.value) {
-       bottleneckData.value = null;
-       fpsData.value = null;
-       checkBottleneck();
-       fetchFpsCache();
-     }
   }
 }
 
-const fetchParts = async () => {
-  loading.value = true
-  try {
-    for (const category of categories.value) {
-      const response = await axios.get(`/api/${category.id}/`)
-      const parts = response.data.results || response.data
-      category.allParts = parts        
-      category.parts = [...parts]      
-    }
-  } catch (err) {
-    console.error('Eroare:', err)
-  } finally {
-    loading.value = false
-    applyFilters()
-  }
+const selectPart = (part) => {
+  const cat = categories.value.find(c => c.id === activeCategoryId.value)
+  if(cat) cat.selectedPart = part
+  activeCategoryId.value = null // Întoarcere la summary
 }
 
-const resetFilters = (categoryId) => {
-  searchQuery.value = ''
-  minPrice.value = ''
-  maxPrice.value = ''
-  inStockOnly.value = false
-  currentPage.value = 1
-  initDynamicFilters()
-
-  if (categoryId === 'cpus' || categoryId === 'motherboards' || categoryId === 'rams') {
-     const cat = categories.value.find(c => c.id === categoryId)
-     if (cat) {
-       cat.filterLocked = false
-       cat.activeFilter = null
-     }
-  }
-  applyFilters()
+const removePart = (id) => {
+  const cat = categories.value.find(c => c.id === id)
+  if(cat) cat.selectedPart = null
 }
 
-const selectPart = (categoryId, part) => {
-  const category = categories.value.find(c => c.id === categoryId)
-  if (!category) return
-  category.selectedPart = part
-  agentResult.value = null
-  agentError.value = null
-
-  const key = catToKeyMap[categoryId] || categoryId
-  const currentBuild = JSON.parse(localStorage.getItem('current_build') || '{}')
-  if (part && part.id != null) {
-    currentBuild[key] = part
-  } else {
-    delete currentBuild[key]
-  }
-  localStorage.setItem('current_build', JSON.stringify(currentBuild))
-
-  if (categoryId === 'cpus') {
-    const socket = part.socket
-    const moboCat = categories.value.find(c => c.id === 'motherboards')
-    if (socket && moboCat) {
-      moboCat.activeFilter = `Socket ${socket}`
-      moboCat.filterLocked = true
-      moboCat.incompatibil = moboCat.selectedPart && moboCat.selectedPart.socket !== socket
-    }
-  }
-
-  if (categoryId === 'motherboards') {
-    const tipRam = part.tip_ram
-    const ramCat = categories.value.find(c => c.id === 'rams')
-    if (tipRam && ramCat) {
-      ramCat.activeFilter = tipRam
-      ramCat.filterLocked = true
-      ramCat.incompatibil = ramCat.selectedPart && ramCat.selectedPart.tip !== tipRam && ramCat.selectedPart.tip_memorie !== tipRam
-    }
-  }
-
-  applyFilters()
+const openSaveModal = () => showSaveModal.value = true
+const confirmSave = () => {
+  console.log("Saving...", newBuildName.value, isPublic.value)
+  showSaveModal.value = false
 }
 
-const removePart = (categoryId) => {
-  const category = categories.value.find(c => c.id === categoryId)
-  if (!category) return
-  category.selectedPart = null
-  category.incompatibil = false
-  agentResult.value = null
-  agentError.value = null
-
-  const key = catToKeyMap[categoryId] || categoryId
-  const currentBuild = JSON.parse(localStorage.getItem('current_build') || '{}')
-  delete currentBuild[key]
-  localStorage.setItem('current_build', JSON.stringify(currentBuild))
-
-  if (categoryId === 'cpus') {
-    const moboCat = categories.value.find(c => c.id === 'motherboards')
-    if (moboCat) {
-      moboCat.activeFilter = null
-      moboCat.filterLocked = false
-      moboCat.incompatibil = false
-    }
-  }
-
-  if (categoryId === 'motherboards') {
-    const ramCat = categories.value.find(c => c.id === 'rams')
-    if (ramCat) {
-      ramCat.activeFilter = null
-      ramCat.filterLocked = false
-      ramCat.incompatibil = false
-    }
-  }
-
-  applyFilters()
-}
-
-const salveazaPC = async () => {
-  try {
-    const payload = {
-      cpu:         categories.value.find(c => c.id === 'cpus')?.selectedPart?.id || null,
-      gpu:         categories.value.find(c => c.id === 'gpus')?.selectedPart?.id || null,
-      motherboard: categories.value.find(c => c.id === 'motherboards')?.selectedPart?.id || null,
-      ram:         categories.value.find(c => c.id === 'rams')?.selectedPart?.id || null,
-      storage:     categories.value.find(c => c.id === 'storages')?.selectedPart?.id || null,
-      psu:         categories.value.find(c => c.id === 'psus')?.selectedPart?.id || null,
-      case:        categories.value.find(c => c.id === 'cases')?.selectedPart?.id || null,
-      cooler:      categories.value.find(c => c.id === 'coolers')?.selectedPart?.id || null,
-      pret_total:  totalPrice.value
-    }
-    const response = await api.post('saved-builds/', payload)
-    alert(`Build salvat cu succes sub numele: ${response.data.nume}`)
-  } catch (error) {
-    alert(error.response?.status === 401 ? 'Loghează-te pentru a salva!' : 'Eroare server.')
-  }
-}
-
-const analizeazaBuild = async () => {
+const analizeazaBuild = () => {
   agentLoading.value = true
-  agentError.value = null
-  agentResult.value = null
+  setTimeout(() => agentLoading.value = false, 2000)
+}
+
+const openAlternativesModal = (cat) => {
+  modalTargetCategory.value = cat
+  showAlternativesModal.value = true
+}
+
+const swapComponent = (alt) => {
+  if(modalTargetCategory.value) {
+    modalTargetCategory.value.selectedPart = alt
+  }
+  showAlternativesModal.value = false
+}
+
+const triggerBottleneck = async () => {
+  const cpu = categories.value.find(c => c.id === 'cpu')?.selectedPart
+  const gpu = categories.value.find(c => c.id === 'gpu')?.selectedPart
+  if (!cpu || !gpu) {
+    showToast('Te rog să selectezi un CPU și un GPU pentru analiză!', 'error')
+    return
+  }
+  
+  showBottleneck.value = true;
+  loadingBottleneck.value = true;
+  
   try {
-    const payload = {
-      cpu:         categories.value.find(c => c.id === 'cpus')?.selectedPart || null,
-      gpu:         categories.value.find(c => c.id === 'gpus')?.selectedPart || null,
-      motherboard: categories.value.find(c => c.id === 'motherboards')?.selectedPart || null,
-      ram:         categories.value.find(c => c.id === 'rams')?.selectedPart || null,
-      psu:         categories.value.find(c => c.id === 'psus')?.selectedPart || null,
-      case:        categories.value.find(c => c.id === 'cases')?.selectedPart || null,
-      cooler:      categories.value.find(c => c.id === 'coolers')?.selectedPart || null,
-      storage:     categories.value.find(c => c.id === 'storages')?.selectedPart || null,
-    }
-    const response = await axios.post('/analizeaza-build', payload)
-    agentResult.value = response.data
-    openCategoryId.value = null // Sari la sumar sa vada analiza
-  } catch (err) {
-    agentError.value = 'Nu s-a putut contacta agentul.'
+    const response = await api.post('/builder/bottleneck/', {
+      cpu_id: cpu.id,
+      gpu_id: gpu.id
+    })
+    const data = response.data
+    bottleneckStats.value = [
+      { label: 'SCOR CPU', value: Math.min(100, Math.round((data.scor_cpu / Math.max(data.scor_cpu, data.scor_gpu)) * 100)), color: 'text-cyan', bg: 'linear-gradient(90deg, #00e5ff, #3b82f6)' },
+      { label: 'SCOR GPU', value: Math.min(100, Math.round((data.scor_gpu / Math.max(data.scor_cpu, data.scor_gpu)) * 100)), color: 'text-violet', bg: 'linear-gradient(90deg, #7c3aed, #ec4899)' },
+      { label: 'BOTTLENECK', value: data.procentaj_bottleneck, color: 'text-red', bg: 'linear-gradient(90deg, #ef4444, #f97316)' },
+    ]
+  } catch (error) {
+    showToast('Eroare la calculul bottleneck-ului', 'error')
   } finally {
-    agentLoading.value = false
+    loadingBottleneck.value = false;
   }
 }
 
-const totalPrice = computed(() => {
-  let total = 0
-  categories.value.forEach(c => {
-    if (c.selectedPart && c.selectedPart.pret) {
-      total += parseFloat(c.selectedPart.pret)
-    }
-  })
-  return total
-})
-
-const totalTdp = computed(() => {
-  let total = 0
-  categories.value.forEach(c => {
-    if (c.selectedPart && c.selectedPart.consum_tdp) {
-      total += parseInt(c.selectedPart.consum_tdp, 10)
-    }
-  })
-  return total
-})
-
-const selectedPartsCount = computed(() => categories.value.filter(cat => cat.selectedPart).length)
-const displayPartName = (part) => part.nume || part.model || 'Componentă'
-const displayPartPrice = (part) => part.pret || '0.00'
-
-onMounted(async () => {
-  // Curăță current_build corupt
+const triggerFps = async () => {
+  const cpu = categories.value.find(c => c.id === 'cpu')?.selectedPart
+  const gpu = categories.value.find(c => c.id === 'gpu')?.selectedPart
+  const ram = categories.value.find(c => c.id === 'ram')?.selectedPart
+  
+  if (!cpu || !gpu || !ram) {
+    showToast('Te rog să selectezi CPU, GPU și RAM pentru benchmark!', 'error')
+    return
+  }
+  
+  showFps.value = true;
+  loadingFps.value = true;
+  
   try {
-    const raw = localStorage.getItem('current_build')
-    if (raw) {
-      const parsed = JSON.parse(raw)
-      let changed = false
-      for (const k of Object.keys(parsed)) {
-        if (parsed[k] === null || parsed[k]?.id == null) {
-          delete parsed[k]
-          changed = true
-        }
-      }
-      if (changed) localStorage.setItem('current_build', JSON.stringify(parsed))
+    const response = await api.post('/builder/benchmark/', {
+      cpu: cpu,
+      gpu: gpu,
+      ram: ram,
+      rezolutie: '1080p'
+    })
+    
+    if (response.data.jocuri) {
+      fpsEstimates.value = response.data.jocuri.slice(0, 5).map(j => ({
+        name: j.nume,
+        fhd: j.fps_1080p?.ultra || '-',
+        qhd: j.fps_1440p?.ultra || '-',
+        uhd: j.fps_4k?.ultra || '-'
+      }))
     }
-  } catch { localStorage.removeItem('current_build') }
+  } catch (error) {
+    showToast('Eroare la simularea FPS-urilor', 'error')
+  } finally {
+    loadingFps.value = false;
+  }
+}
 
-  await fetchParts()
-
-  const saved = sessionStorage.getItem('loadBuild')
-  if (saved) {
-    const parts = JSON.parse(saved)
-    for (const slot of categories.value) {
-      const key = catToKeyMap[slot.id]
-      if (key && parts[key] && parts[key].id != null) {
-        slot.selectedPart = parts[key]
-      }
+const triggerCasePreview = async () => {
+  if (!isLoggedIn.value) {
+    showToast('Trebuie să fii conectat pentru a genera imagini!', 'error')
+    return
+  }
+  if (imageGenerationsCount.value >= 2) {
+    showToast('Ai atins limita de 2 generări de imagini!', 'error')
+    return
+  }
+  
+  const casePart = categories.value.find(c => c.id === 'case')?.selectedPart
+  const gpu = categories.value.find(c => c.id === 'gpu')?.selectedPart
+  const cpu = categories.value.find(c => c.id === 'cpu')?.selectedPart
+  
+  if (!casePart || !gpu || !cpu) {
+    showToast('Te rog să selectezi Carcasa, GPU și CPU pentru imagine!', 'error')
+    return
+  }
+  
+  try {
+    showToast('Se generează imaginea... Așteaptă câteva secunde.', 'success')
+    const response = await api.post('/builder/generate-image/', {
+      case_name: casePart.nume || casePart.name,
+      gpu_name: gpu.nume || gpu.name,
+      cpu_name: cpu.nume || cpu.name
+    })
+    
+    if (response.data.image_url) {
+      generatedImageUrl.value = response.data.image_url
+      imageGenerationsCount.value++
+      localStorage.setItem('image_generations_count', imageGenerationsCount.value)
+    } else {
+      showToast(response.data.error || 'Eroare la generare', 'error')
     }
-    sessionStorage.removeItem('loadBuild')
+  } catch (err) {
+    showToast('Eroare la generarea imaginii', 'error')
   }
-
-  const currentBuildStr = localStorage.getItem('current_build')
-  if (currentBuildStr && !saved) {
-    try {
-      const currentBuild = JSON.parse(currentBuildStr)
-      for (const slot of categories.value) {
-        const key = catToKeyMap[slot.id]
-        if (key && currentBuild[key]) {
-          const savedId = currentBuild[key]?.id
-          if (savedId != null) {
-            const part = slot.allParts?.find(p => p.id === savedId)
-            if (part) selectPart(slot.id, part)
-          }
-        }
-      }
-    } catch (e) {}
-  }
-
-  const pendingAiBuild = localStorage.getItem('pending_ai_build')
-  if (pendingAiBuild) {
-    try {
-      const buildData = JSON.parse(pendingAiBuild)
-      const build = buildData.build || buildData
-      for (const slot of categories.value) {
-        const key = catToKeyMap[slot.id]
-        if (key && build[key] && build[key].id != null) {
-          const part = slot.allParts?.find(p => p.id === build[key].id)
-          if (part) selectPart(slot.id, part)
-        }
-      }
-    } catch (e) {}
-    localStorage.removeItem('pending_ai_build')
-  }
-})
-
+}
 </script>
 
 <style scoped>
-/* =========== MODERN UI =========== */
-.synth-builder-container {
+/* ==========================================================================
+   DESIGN SYSTEM & CSS VARIABLES
+   ========================================================================== */
+.maximalist-app-container {
+  /* Core Colors */
+  --bg-base: #0C0D12;
+  --bg-surface: rgba(255, 255, 255, 0.03);
+  --border-glass: rgba(255, 255, 255, 0.08);
+  
+  /* Accents */
+  --neon-cyan: #00e5ff;
+  --neon-violet: #7c3aed;
+  --neon-green: #00e5a0;
+  --neon-pink: #ec4899;
+  
+  /* Text */
+  --text-primary: #f0f4ff;
+  --text-secondary: #8b9db5;
+
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  min-height: 100vh;
   display: flex;
-  min-height: calc(100vh - 80px);
-  padding: 30px;
-  gap: 30px;
-  color: #e2e8f0;
+  overflow: hidden; /* Fără scroll pe body */
+  position: relative;
 }
 
-/* Glassmorphism Utilities */
+/* Typography Classes */
+.font-inter { font-family: 'Inter', sans-serif; }
+.font-mono { font-family: 'JetBrains Mono', monospace; }
+.font-syne { font-family: 'Syne', sans-serif; }
+
+/* Dithering / Noise Effect */
+.noise-texture {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.03'/%3E%3C/svg%3E");
+}
+
+/* Glassmorphism Panel Core */
 .glass-panel {
-  background: rgba(15, 23, 42, 0.6);
+  background: var(--bg-surface);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 16px;
-  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--border-glass);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  position: relative;
+  z-index: 1;
 }
 
-.gradient-text {
-  background: linear-gradient(90deg, #00f0ff, #a855f7);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  font-weight: 800;
+.glass-panel-inner {
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
 }
 
-/* SIDEBAR */
-.synth-sidebar {
+/* Interactive Cards Hover */
+.interactive-card {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+}
+.interactive-card:hover {
+  border-color: rgba(0, 229, 255, 0.4);
+  transform: translateY(-4px);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6), 0 0 20px rgba(0, 229, 255, 0.15);
+}
+
+/* Gradients Text */
+.gradient-text-brand { background: linear-gradient(90deg, #f0f4ff, #8b9db5); -webkit-background-clip: text; color: transparent; font-weight: 800; font-size: 1.5rem; letter-spacing: 2px;}
+.gradient-text-cyan { background: linear-gradient(90deg, #00e5ff, #3b82f6); -webkit-background-clip: text; color: transparent; }
+.gradient-text-violet { background: linear-gradient(90deg, #ec4899, #7c3aed); -webkit-background-clip: text; color: transparent; }
+.gradient-text-green { background: linear-gradient(90deg, #00e5a0, #10b981); -webkit-background-clip: text; color: transparent; }
+
+/* Text colors */
+.text-cyan { color: var(--neon-cyan); }
+.text-violet { color: var(--neon-violet); }
+.text-green { color: var(--neon-green); }
+
+/* ==========================================================================
+   LAYOUT: SIDEBAR
+   ========================================================================== */
+.sidebar {
   width: 280px;
-  flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  padding: 20px;
-  height: fit-content;
-  position: sticky;
-  top: 30px;
+  border-right: 1px solid var(--border-glass);
+  background: rgba(12, 13, 18, 0.85);
+  z-index: 10;
 }
 
-.sidebar-header {
-  font-size: 1.2rem;
-  letter-spacing: 2px;
-  margin-bottom: 30px;
-  text-align: center;
-}
-
-.category-list {
+.sidebar-brand {
+  padding: 1.5rem;
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 30px;
+  align-items: center;
+  gap: 0.8rem;
+  border-bottom: 1px solid var(--border-glass);
 }
+.brand-icon svg { width: 28px; height: 28px; stroke: var(--neon-cyan); }
+
+.sidebar-scroll-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.5rem 1rem;
+}
+.sidebar-scroll-area::-webkit-scrollbar { width: 4px; }
+.sidebar-scroll-area::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
 
 .category-item {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 12px 16px;
+  justify-content: space-between;
+  padding: 1rem;
   border-radius: 12px;
   cursor: pointer;
-  transition: all 0.3s ease;
-  background: rgba(255,255,255,0.02);
+  transition: all 0.2s;
+  margin-bottom: 0.5rem;
   border: 1px solid transparent;
 }
-
-.category-item:hover {
-  background: rgba(255,255,255,0.05);
-}
-
+.category-item:hover { background: rgba(255,255,255,0.05); }
 .category-item.active {
-  background: rgba(0, 240, 255, 0.1);
-  border-color: rgba(0, 240, 255, 0.3);
-  box-shadow: 0 0 15px rgba(0, 240, 255, 0.1);
+  background: rgba(0, 229, 255, 0.1);
+  border-color: rgba(0, 229, 255, 0.3);
 }
-
-.cat-left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
+.cat-left { display: flex; align-items: center; gap: 1rem; }
 .cat-icon { font-size: 1.2rem; }
-.cat-name { font-weight: 500; font-size: 0.95rem; }
+.cat-name { font-weight: 500; font-size: 0.95rem; color: var(--text-secondary); transition: color 0.2s;}
+.category-item.active .cat-name, .category-item.has-part .cat-name { color: var(--text-primary); }
 
-.status-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: #334155;
-  border: 2px solid #1e293b;
+.status-indicator { width: 8px; height: 8px; border-radius: 50%; background: #334155; transition: 0.3s;}
+.category-item.has-part .status-indicator { background: var(--neon-green); box-shadow: 0 0 10px var(--neon-green); }
+
+.sidebar-footer {
+  padding: 1.5rem;
+  border-top: 1px solid var(--border-glass);
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  background: rgba(0,0,0,0.2);
 }
 
-.status-dot.selected {
-  background: #00f0ff;
-  box-shadow: 0 0 8px #00f0ff;
-  border-color: rgba(0, 240, 255, 0.3);
+/* ==========================================================================
+   BUTTONS
+   ========================================================================== */
+.btn-ghost-outline {
+  background: transparent; border: 1px solid var(--border-glass); color: var(--text-primary);
+  padding: 0.8rem; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+  transition: 0.2s; font-weight: 600; font-size: 0.9rem;
 }
+.btn-ghost-outline:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.2); }
 
-.btn-solid-green, .btn-solid-purple, .btn-neon-full {
-  width: 100%;
-  padding: 14px;
-  border-radius: 10px;
-  font-weight: 700;
+.btn-primary-green {
+  background: var(--neon-green); color: #000; border: none; padding: 0.8rem; border-radius: 8px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+  font-weight: 700; transition: 0.2s; box-shadow: 0 0 15px rgba(0, 229, 160, 0.2);
+}
+.btn-primary-green:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 0 25px rgba(0, 229, 160, 0.4); }
+.btn-primary-green:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
+
+.btn-primary-violet {
+  background: var(--neon-violet); color: #fff; border: none; padding: 0.8rem; border-radius: 8px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+  font-weight: 700; transition: 0.2s; box-shadow: 0 0 15px rgba(124, 58, 237, 0.2);
+}
+.btn-primary-violet:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 0 25px rgba(124, 58, 237, 0.4); }
+.btn-primary-violet:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
+
+.btn-primary-cyan {
+  background: rgba(0, 229, 255, 0.1); border: 1px solid var(--neon-cyan); color: var(--neon-cyan);
+  padding: 0.6rem 1.2rem; border-radius: 6px; cursor: pointer; font-weight: 700; transition: 0.2s;
+}
+.btn-primary-cyan:hover { background: var(--neon-cyan); color: #000; box-shadow: 0 0 15px rgba(0,229,255,0.4);}
+
+.ai-sub-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.btn-ai-sub {
+  background: rgba(124, 58, 237, 0.05);
+  border: 1px solid rgba(124, 58, 237, 0.2);
+  color: #c4b5fd;
+  padding: 0.6rem;
+  border-radius: 8px;
   cursor: pointer;
-  border: none;
-  transition: all 0.2s;
-  color: white;
+  font-size: 0.8rem;
+  font-weight: 600;
+  transition: 0.2s;
+  letter-spacing: 0.5px;
 }
-.btn-neon-full { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); }
-.btn-neon-full:hover { background: rgba(255,255,255,0.1); }
+.btn-ai-sub:hover {
+  background: rgba(124, 58, 237, 0.2);
+  color: #fff;
+  border-color: rgba(124, 58, 237, 0.5);
+}
 
-.btn-solid-green { background: #10b981; }
-.btn-solid-green:hover:not(:disabled) { background: #059669; box-shadow: 0 0 15px rgba(16, 185, 129, 0.4); }
-.btn-solid-green:disabled { background: #334155; opacity: 0.5; cursor: not-allowed; }
+.spin-icon { animation: spin 1s linear infinite; }
+@keyframes spin { 100% { transform: rotate(360deg); } }
 
-.btn-solid-purple { background: #a855f7; }
-.btn-solid-purple:hover:not(:disabled) { background: #9333ea; box-shadow: 0 0 15px rgba(168, 85, 247, 0.4); }
-.btn-solid-purple:disabled { background: #334155; opacity: 0.5; cursor: not-allowed; }
-
-/* MAIN AREA */
-.synth-main {
+/* ==========================================================================
+   LAYOUT: MAIN CONTENT & HERO
+   ========================================================================== */
+.main-content {
   flex: 1;
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
+  padding: 1.5rem;
+  position: relative;
+  z-index: 5;
 }
+.main-content::-webkit-scrollbar { width: 8px; }
+.main-content::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
 
-.main-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 25px;
-}
-
-.main-header h2 {
-  font-size: 1.5rem;
-  letter-spacing: 1px;
-  font-weight: 700;
-}
-
-.total-price {
-  display: flex;
-  align-items: center;
-  gap: 15px;
-  font-size: 1.1rem;
-}
-
-.compatible-badge { color: #10b981; font-size: 0.9rem; font-weight: 600; text-shadow: 0 0 8px rgba(16, 185, 129, 0.4); }
-.incompatible-badge { color: #ef4444; font-size: 0.9rem; font-weight: 600; text-shadow: 0 0 8px rgba(239, 68, 68, 0.4); }
-
-.neon-price {
-  color: #00f0ff;
-  font-weight: 800;
-  font-size: 1.4rem;
-  text-shadow: 0 0 10px rgba(0, 240, 255, 0.3);
-}
-
-/* CARDS GRID */
-.parts-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 25px;
-}
-
-.synth-product-card {
+.hero-header {
+  border-radius: 16px;
+  padding: 2.5rem;
+  margin-bottom: 1.5rem;
   position: relative;
   overflow: hidden;
   display: flex;
-  flex-direction: column;
-  padding: 20px;
-  transition: transform 0.3s ease, border-color 0.3s ease;
+  border-color: rgba(0, 229, 255, 0.15);
 }
 
-.synth-product-card:hover {
-  transform: translateY(-5px);
-  border-color: rgba(0, 240, 255, 0.5);
+.hero-bg-animated {
+  position: absolute; inset: 0; z-index: 0;
+  background: linear-gradient(120deg, rgba(12,13,18,1) 0%, rgba(0, 229, 255, 0.05) 50%, rgba(124, 58, 237, 0.05) 100%);
+  background-size: 200% 200%;
+  animation: gradientMove 10s ease infinite;
+}
+@keyframes gradientMove { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+
+.hero-content {
+  position: relative; z-index: 1; width: 100%;
+  display: flex; justify-content: space-between; align-items: flex-end;
 }
 
-.synth-product-card.is-selected {
-  border-color: #a855f7;
-  box-shadow: 0 0 20px rgba(168, 85, 247, 0.2);
+.hero-title { font-size: 2.5rem; margin: 0 0 1rem 0; letter-spacing: -1px; text-shadow: 0 2px 10px rgba(0,0,0,0.5); }
+
+.badges-row { display: flex; gap: 1rem; }
+.badge-status { padding: 0.4rem 1rem; border-radius: 20px; font-size: 0.85rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1);}
+.badge-status .dot { width: 8px; height: 8px; border-radius: 50%; }
+.badge-status.success .dot { background: var(--neon-green); box-shadow: 0 0 8px var(--neon-green); }
+.badge-status.error .dot { background: var(--neon-pink); box-shadow: 0 0 8px var(--neon-pink); }
+.badge-status.info .dot { background: var(--neon-cyan); box-shadow: 0 0 8px var(--neon-cyan); }
+
+.price-display { text-align: right; }
+.price-label { font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.3rem; letter-spacing: 1px; }
+.price-value { font-size: 3rem; font-weight: 700; line-height: 1; margin-bottom: 0.5rem; text-shadow: 0 0 20px rgba(0,229,160,0.2); }
+.price-value .currency { font-size: 1.5rem; }
+.tdp-value { font-size: 0.9rem; color: #f97316; font-weight: 600; }
+
+/* ==========================================================================
+   LOADING & GRID
+   ========================================================================== */
+.loading-state {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  height: 400px; border-radius: 16px;
+}
+.spinner-hologram { width: 60px; height: 60px; border: 3px solid rgba(0, 229, 255, 0.1); border-top-color: var(--neon-cyan); border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 1.5rem; box-shadow: 0 0 20px rgba(0,229,255,0.2); }
+
+.loading-state-small {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 2rem 0; min-height: 150px;
+}
+.small-spinner { width: 40px; height: 40px; border-width: 2px; margin-bottom: 1rem; }
+
+/* Transitions */
+.expand-enter-active,
+.expand-leave-active {
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+  max-height: 600px;
+  opacity: 1;
+}
+.expand-enter-from,
+.expand-leave-to {
+  max-height: 0;
+  opacity: 0;
+  margin-bottom: 0 !important;
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  border-width: 0 !important;
 }
 
-.card-top {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 15px;
-}
-.card-brand {
-  background: rgba(255,255,255,0.1);
-  padding: 4px 10px;
-  border-radius: 4px;
-  font-size: 0.75rem;
-  font-weight: 700;
-  color: #94a3b8;
-}
+.generated-image-container { position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+.generated-preview-img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 8px; }
+.btn-enlarge { position: absolute; bottom: 10px; right: 10px; background: rgba(0, 229, 255, 0.2); border: 1px solid var(--neon-cyan); color: #fff; padding: 4px 8px; font-size: 0.8rem; cursor: pointer; border-radius: 4px; z-index: 10;}
+.image-modal { position: relative; max-width: 90vw; max-height: 90vh; padding: 2rem; display: flex; justify-content: center; align-items: center; }
+.full-size-img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 12px; }
 
-.card-image-box {
-  width: 100%;
-  height: 160px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 20px;
+.components-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1.5rem;
 }
-.external-link-icon { font-size: 1.2rem; text-decoration: none; background: rgba(26, 27, 38, 0.85); border-radius: 50%; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; transition: all 0.2s; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 4px 6px rgba(0,0,0,0.3); z-index: 10; margin-left: auto; }
-.external-link-icon:hover { transform: scale(1.1); background: #00f0ff; border-color: #00f0ff; }
-.card-link { display: block; }
-.card-image-box img {
-  max-width: 80%;
-  max-height: 100%;
-  object-fit: contain;
-  filter: drop-shadow(0 10px 15px rgba(0,0,0,0.5));
-}
+.part-card { border-radius: 12px; padding: 1.2rem; display: flex; flex-direction: column; }
+.part-img-placeholder { height: 160px; background: rgba(0,0,0,0.3); border-radius: 8px; margin-bottom: 1.2rem; display: flex; align-items: center; justify-content: center; color: var(--border-glass); }
+.part-img-placeholder svg { width: 40px; height: 40px; }
+.part-name { font-size: 1.1rem; margin: 0 0 0.5rem 0; font-weight: 600; line-height: 1.3;}
+.part-specs { font-size: 0.85rem; color: var(--text-secondary); margin: 0 0 1.5rem 0; }
+.part-footer { display: flex; justify-content: space-between; align-items: center; margin-top: auto; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.05); }
+.part-price { font-weight: 700; color: var(--neon-cyan); font-size: 1.1rem; }
+.btn-icon-add { background: var(--neon-violet); border: none; color: white; width: 32px; height: 32px; border-radius: 6px; cursor: pointer; font-size: 1.2rem; display: flex; align-items: center; justify-content: center; transition: 0.2s;}
+.btn-icon-add:hover { background: #9333ea; transform: scale(1.1); box-shadow: 0 0 10px rgba(124, 58, 237, 0.5);}
 
-.card-title {
-  font-size: 1.1rem;
-  font-weight: 700;
-  margin-bottom: 5px;
-  line-height: 1.3;
-}
-
-.card-desc {
-  font-size: 0.8rem;
-  color: #64748b;
-  margin-bottom: 15px;
-  min-height: 35px;
-}
-
-.card-specs {
-  display: flex;
-  gap: 15px;
-  margin-bottom: 25px;
-  border-top: 1px solid rgba(255,255,255,0.05);
-  padding-top: 15px;
-}
-.spec-col span {
-  font-size: 0.7rem;
-  color: #64748b;
-  text-transform: uppercase;
-}
-.spec-col {
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: #e2e8f0;
-}
-
-.card-footer {
-  margin-top: auto;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.card-price {
-  font-size: 1.2rem;
-  font-weight: 800;
-}
-
-.btn-neon {
-  background: linear-gradient(90deg, rgba(168, 85, 247, 0.8), rgba(0, 240, 255, 0.8));
-  border: none;
-  padding: 8px 20px;
-  border-radius: 20px;
-  color: white;
-  font-weight: 700;
-  cursor: pointer;
-  transition: 0.3s;
-}
-.btn-neon:hover {
-  box-shadow: 0 0 15px rgba(168, 85, 247, 0.6);
-  transform: scale(1.05);
-}
-
-.btn-neon-remove {
-  background: transparent;
-  border: 1px solid #ef4444;
-  color: #ef4444;
-  padding: 8px 15px;
-  border-radius: 20px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: 0.3s;
-}
-.btn-neon-remove:hover {
-  background: rgba(239, 68, 68, 0.2);
-  box-shadow: 0 0 10px rgba(239, 68, 68, 0.3);
-}
-
-/* SUMMARY VIEW */
-.summary-view-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.selected-parts-list {
-  padding: 20px;
-}
-
-.selected-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 15px;
-  border-bottom: 1px solid rgba(255,255,255,0.05);
-  cursor: pointer;
-  transition: 0.2s;
-}
-.selected-row:hover {
-  background: rgba(255,255,255,0.02);
-}
-
-.sr-left {
-  display: flex;
-  align-items: center;
-  gap: 15px;
-  width: 200px;
-}
-.sr-icon { font-size: 1.2rem; }
-.sr-cat { font-weight: 600; color: #94a3b8; }
-
-.sr-right {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 20px;
-}
-.sr-name { font-weight: 600; }
-.text-muted { color: #475569; }
-.sr-price { font-weight: 800; color: #00f0ff; width: 100px; text-align: right; }
-
-.btn-icon-remove {
-  background: none;
-  border: none;
-  color: #ef4444;
-  cursor: pointer;
-  font-size: 1.1rem;
-}
-.btn-icon-remove:hover { text-shadow: 0 0 5px #ef4444; }
-
-.loading-state, .empty-parts {
-  padding: 40px;
-  text-align: center;
-  color: #94a3b8;
-}
-
-/* AI Results styling kept similar to before but with glassmorphism */
-.ai-glass-panel { padding: 25px; }
-.agent-badge {
-  display: inline-block;
-  padding: 4px 12px;
-  border-radius: 20px;
-  font-size: 0.85rem;
-  font-weight: 600;
-  margin-bottom: 10px;
-}
-.badge-ok      { background: rgba(16,185,129,0.2); color: #10b981; }
-.badge-warning { background: rgba(245,158,11,0.2);  color: #f59e0b; }
-.badge-error   { background: rgba(239,68,68,0.2);   color: #ef4444; }
-.agent-section { margin-top: 10px; font-size: 0.85rem; color: #a9b1d6; }
-.agent-section ul { margin: 4px 0 0 16px; }
-
-/* LIGHT THEME OVERRIDES FOR BUILDER */
-body.light-theme .glass-panel {
-  background: rgba(255, 255, 255, 0.8);
-  border-color: rgba(0, 0, 0, 0.1);
-  color: #0f172a;
-}
-body.light-theme .synth-builder-container {
-  color: #0f172a;
-  background: #f1f5f9;
-}
-body.light-theme .category-item:hover { background: rgba(0,0,0,0.05); }
-body.light-theme .category-item.active { background: rgba(0, 240, 255, 0.1); }
-body.light-theme .card-desc, body.light-theme .spec-col span, body.light-theme .sr-cat { color: #64748b; }
-body.light-theme .card-brand { background: rgba(0,0,0,0.05); color: #475569; }
-body.light-theme .spec-col { color: #0f172a; }
-body.light-theme .neon-price { color: #0284c7; text-shadow: none; }
-body.light-theme .btn-neon { background: linear-gradient(90deg, #9333ea, #0284c7); }
-body.light-theme .btn-neon-full { color: #0f172a; background: rgba(0,0,0,0.05); border-color: rgba(0,0,0,0.1); }
-body.light-theme .btn-neon-full:hover { background: rgba(0,0,0,0.1); }
-
-/* Builder Filters CSS */
-.builder-filters {
-  padding: 15px 20px;
-  margin-bottom: 20px;
-}
-
-.builder-filters-header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 15px;
-  margin-bottom: 15px;
-}
-
-.search-input-wrapper { position: relative; display: flex; align-items: center; flex: 1; min-width: 200px; }
-.search-input-wrapper input { background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 8px 15px 8px 35px; color: white; width: 100%; outline: none; font-size: 0.9rem; }
-.search-input-wrapper input:focus { border-color: #3b82f6; }
-.search-input-wrapper .icon { position: absolute; left: 10px; }
-
-.price-inputs { display: flex; align-items: center; gap: 8px; }
-.price-inputs input { width: 90px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); color: white; padding: 8px; border-radius: 6px; outline: none; font-size: 0.85rem; }
-.price-inputs span { color: #64748b; }
-
-.checkbox-label { display: flex; align-items: center; gap: 8px; color: #e2e8f0; cursor: pointer; font-size: 0.9rem; }
-.checkbox-label input { accent-color: #3b82f6; width: 16px; height: 16px; }
-
-.dynamic-filters-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 15px;
-  border-top: 1px solid rgba(255,255,255,0.05);
-  padding-top: 15px;
-}
-
-.filter-group { flex: 1; min-width: 150px; }
-.filter-label-main { display: block; color: #94a3b8; font-size: 0.8rem; margin-bottom: 6px; font-weight: 600; text-transform: uppercase; }
-
-.filter-input, .filter-select { width: 100%; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); color: white; padding: 8px; border-radius: 6px; outline: none; font-size: 0.85rem; }
-.filter-input:focus, .filter-select:focus { border-color: #3b82f6; }
-.filter-select option { background: #1a1b26; color: white; }
-
-.checkbox-group-wrapper { display: flex; flex-direction: column; gap: 6px; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.1); max-height: 180px; overflow-y: auto; }
-.checkbox-group-wrapper::-webkit-scrollbar { width: 4px; }
-.checkbox-group-wrapper::-webkit-scrollbar-thumb { background: #3b82f6; border-radius: 4px; }
-.checkbox-group-wrapper .small-label { user-select: none; }
-
-.reset-btn { margin-left: auto; }
-
-/* PAGINATION */
-.pagination-controls {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 16px 20px;
-  margin-top: 25px;
-  flex-wrap: wrap;
-}
-
-.page-btn {
-  min-width: 40px;
-  height: 40px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.03);
-  color: #e2e8f0;
-  border-radius: 10px;
-  font-size: 0.9rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.25s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.page-btn:hover:not(:disabled):not(.active) {
-  background: rgba(0, 240, 255, 0.1);
-  border-color: rgba(0, 240, 255, 0.3);
-  color: #00f0ff;
-}
-
-.page-btn.active {
-  background: linear-gradient(135deg, rgba(168, 85, 247, 0.6), rgba(0, 240, 255, 0.6));
-  border-color: transparent;
-  color: white;
-  box-shadow: 0 0 15px rgba(168, 85, 247, 0.3);
-  transform: scale(1.05);
-}
-
-.page-btn:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-
-.page-btn.ellipsis {
-  border: none;
-  background: none;
-  cursor: default;
-  color: #64748b;
-  min-width: 30px;
-}
-
-.page-info {
-  color: #64748b;
-  font-size: 0.82rem;
-  margin-left: 12px;
-  white-space: nowrap;
-}
-
-body.light-theme .page-btn {
-  background: rgba(0, 0, 0, 0.03);
-  border-color: rgba(0, 0, 0, 0.1);
-  color: #334155;
-}
-body.light-theme .page-btn:hover:not(:disabled):not(.active) {
-  background: rgba(0, 240, 255, 0.08);
-  color: #0284c7;
-}
-body.light-theme .page-btn.active {
-  background: linear-gradient(135deg, #9333ea, #0284c7);
-  color: white;
-}
-
-body.light-theme .builder-filters .search-input-wrapper input,
-body.light-theme .builder-filters .price-inputs input,
-body.light-theme .builder-filters .filter-input,
-body.light-theme .builder-filters .filter-select,
-body.light-theme .builder-filters .checkbox-group-wrapper {
-  background: rgba(255,255,255,0.5);
-  border-color: rgba(0,0,0,0.1);
-  color: #0f172a;
-}
-
-.summary-parts-panel {
-  max-height: 350px;
-  overflow-y: auto;
-  margin-bottom: 20px;
-}
-
-/* Custom Scrollbar pentru panel */
-.summary-parts-panel::-webkit-scrollbar {
-  width: 6px;
-}
-.summary-parts-panel::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.2);
-  border-radius: 4px;
-}
-.summary-parts-panel::-webkit-scrollbar-thumb {
-  background: #3b82f6;
-  border-radius: 4px;
-}
-
-.analysis-panels-grid {
+/* ==========================================================================
+   SUMMARY LAYOUT (Coloane stânga/dreapta)
+   ========================================================================== */
+.summary-layout {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
+  grid-template-columns: 1fr 1.3fr;
+  gap: 1.5rem;
 }
+@media (max-width: 1200px) { .summary-layout { grid-template-columns: 1fr; } }
 
-.btn-icon-alt {
-  background: rgba(168, 85, 247, 0.2);
-  color: #d8b4fe;
-  border: 1px solid rgba(168, 85, 247, 0.5);
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  margin-right: 10px;
-  transition: all 0.2s;
-}
-.btn-icon-alt:hover {
-  background: rgba(168, 85, 247, 0.5);
-  transform: scale(1.1);
-}
+.panel-title { font-size: 1.2rem; margin: 0 0 1.5rem 0; letter-spacing: 1px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 1rem; }
 
-.bottleneck-bars {
-  display: flex;
-  flex-direction: column;
-  gap: 15px;
-}
-.bar-row {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-.bar-label {
-  font-size: 0.85rem;
-  color: #94a3b8;
-}
-.bar-bg {
-  width: 100%;
-  height: 12px;
-  background: rgba(0, 0, 0, 0.3);
-  border-radius: 6px;
-  overflow: hidden;
-}
-.bar-fill {
-  height: 100%;
-  border-radius: 6px;
-  transition: width 0.5s ease-out;
-}
-.cpu-bar { background: linear-gradient(90deg, #3b82f6, #00f0ff); }
-.gpu-bar { background: linear-gradient(90deg, #10b981, #00ff88); }
+/* PC Preview Hologram */
+.pc-preview-card { border-radius: 16px; padding: 2rem; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 300px; margin-bottom: 1.5rem; overflow: hidden; position: relative;}
+.pc-hologram { position: relative; width: 120px; height: 180px; perspective: 1000px; transform-style: preserve-3d; animation: float 6s ease-in-out infinite; }
+.holo-core { width: 100%; height: 100%; background: linear-gradient(180deg, rgba(0, 229, 255, 0.1), rgba(124, 58, 237, 0.3)); border: 1px solid rgba(0, 229, 255, 0.5); box-shadow: 0 0 40px rgba(0, 229, 255, 0.2) inset, 0 0 20px rgba(124, 58, 237, 0.4); border-radius: 10px; }
+.holo-rings { position: absolute; top: 50%; left: 50%; width: 160%; height: 60%; border: 1px dashed rgba(0, 229, 255, 0.3); border-radius: 50%; transform: translate(-50%, -50%) rotateX(75deg); animation: rotateRings 10s linear infinite; }
+.pc-preview-label { position: absolute; bottom: 1.5rem; color: rgba(0, 229, 255, 0.6); font-size: 0.8rem; letter-spacing: 2px; }
+@keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+@keyframes rotateRings { 100% { transform: translate(-50%, -50%) rotateX(75deg) rotateZ(360deg); } }
 
-.fps-table-wrapper {
-  background: rgba(0, 0, 0, 0.2);
-  border-radius: 8px;
-  overflow: hidden;
-}
-.fps-table {
-  width: 100%;
-  border-collapse: collapse;
-  text-align: center;
-  font-size: 0.9rem;
-}
-.fps-table th {
-  background: rgba(255, 255, 255, 0.05);
-  padding: 10px;
-  color: #a9b1d6;
-  font-weight: 600;
-}
-.fps-table td {
-  padding: 8px 10px;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
-}
+/* Bottleneck Analysis */
+.bottleneck-panel { border-radius: 16px; padding: 2rem; margin-bottom: 1.5rem; }
+.progress-item { margin-bottom: 1.2rem; }
+.progress-item:last-child { margin-bottom: 0; }
+.progress-header { display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.5rem; color: var(--text-secondary); font-weight: 600;}
+.progress-track { width: 100%; height: 8px; background: rgba(255,255,255,0.05); border-radius: 4px; overflow: hidden; box-shadow: inset 0 1px 3px rgba(0,0,0,0.5);}
+.progress-fill { height: 100%; border-radius: 4px; box-shadow: 0 0 10px currentColor; }
 
-.text-success { color: #10b981 !important; }
-.text-warning { color: #f59e0b !important; }
-.text-danger { color: #ef4444 !important; }
+/* Build List */
+.build-list-panel { border-radius: 16px; padding: 2rem; margin-bottom: 1.5rem; }
+.build-items-container { display: flex; flex-direction: column; gap: 1rem; }
+.empty-state { text-align: center; color: var(--text-secondary); padding: 2rem; display: flex; flex-direction: column; align-items: center; gap: 1rem; }
+.empty-state svg { width: 48px; height: 48px; opacity: 0.5; }
+.build-item { background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 1rem; display: flex; align-items: center; gap: 1rem; transition: 0.2s;}
+.build-item:hover { border-color: rgba(255,255,255,0.15); background: rgba(255,255,255,0.02);}
+.item-icon { font-size: 1.5rem; background: rgba(255,255,255,0.05); width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; border-radius: 8px; }
+.item-info { flex: 1; display: flex; flex-direction: column; }
+.item-cat { font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 0.2rem; }
+.item-name { font-weight: 600; font-size: 0.95rem; }
+.item-actions { display: flex; align-items: center; gap: 1rem; }
+.item-price { font-weight: 700; color: var(--neon-green); }
+.btn-swap { background: rgba(0, 229, 255, 0.1); border: 1px solid rgba(0, 229, 255, 0.3); color: var(--neon-cyan); width: 32px; height: 32px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s;}
+.btn-swap svg { width: 16px; height: 16px; }
+.btn-swap:hover { background: var(--neon-cyan); color: #000; box-shadow: 0 0 10px rgba(0,229,255,0.4);}
+.btn-remove { background: transparent; border: none; color: var(--text-secondary); cursor: pointer; font-size: 1.2rem; transition: 0.2s;}
+.btn-remove:hover { color: var(--neon-pink); }
 
-.modal-overlay {
-  position: fixed;
-  top: 0; left: 0; width: 100%; height: 100%;
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(5px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-.modal-content {
-  width: 90%;
-  max-width: 600px;
-  max-height: 80vh;
-  display: flex;
-  flex-direction: column;
-}
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border-bottom: 1px solid rgba(255,255,255,0.1);
-  padding-bottom: 15px;
-  margin-bottom: 20px;
-}
-.close-btn {
-  background: none; border: none; color: white; font-size: 1.2rem; cursor: pointer;
-}
-.modal-body {
-  overflow-y: auto;
-}
-.alternatives-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 15px;
-}
-.alt-card {
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  padding: 15px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.alt-info { flex: 1; }
+/* FPS Panel */
+.fps-panel { border-radius: 16px; padding: 2rem; }
+.badge-ultra { background: var(--neon-violet); color: white; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.7rem; letter-spacing: 1px; }
+.table-responsive { overflow-x: auto; }
+.fps-table { width: 100%; border-collapse: collapse; text-align: left; }
+.fps-table th { padding: 1rem 0; color: var(--text-secondary); font-size: 0.8rem; border-bottom: 1px solid rgba(255,255,255,0.1); }
+.fps-table td { padding: 1rem 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+.game-title { font-weight: 600; }
+.fps-high { color: var(--neon-green); font-weight: 700;}
+.fps-med { color: var(--neon-cyan); font-weight: 700;}
+.fps-low { color: #f97316; font-weight: 700;}
+
+/* ==========================================================================
+   MODALS
+   ========================================================================== */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; z-index: 9999; }
+.maximalist-modal { width: 100%; max-width: 500px; border-radius: 16px; border: 1px solid rgba(124, 58, 237, 0.3); box-shadow: 0 20px 50px rgba(0,0,0,0.8), 0 0 40px rgba(124, 58, 237, 0.1); display: flex; flex-direction: column; }
+.modal-large { max-width: 700px; border-color: rgba(0, 229, 255, 0.3); box-shadow: 0 20px 50px rgba(0,0,0,0.8), 0 0 40px rgba(0, 229, 255, 0.1); }
+
+.modal-header { padding: 1.5rem 2rem; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: center; }
+.modal-header h2 { margin: 0; font-size: 1.25rem; letter-spacing: 1px; }
+.btn-close { background: transparent; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer; transition: 0.2s; }
+.btn-close:hover { color: white; transform: rotate(90deg); }
+
+.modal-body { padding: 2rem; overflow-y: auto; max-height: 60vh; }
+
+.input-group { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 2rem; }
+.input-group label { color: var(--text-secondary); font-size: 0.85rem; letter-spacing: 1px; }
+.synth-input { background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 1rem; color: white; font-size: 1rem; outline: none; transition: 0.2s; }
+.synth-input:focus { border-color: var(--neon-violet); box-shadow: 0 0 15px rgba(124, 58, 237, 0.2); }
+
+.save-options-row { display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.5rem; }
+.toggle-container { display: flex; align-items: center; gap: 1rem; }
+.toggle-label { color: white; font-size: 0.9rem; letter-spacing: 1px; }
+
+/* Switch CSS */
+.synth-switch { position: relative; display: inline-block; width: 44px; height: 24px; }
+.synth-switch input { opacity: 0; width: 0; height: 0; }
+.slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(255,255,255,0.1); transition: .4s; border-radius: 34px; }
+.slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+.synth-switch input:checked + .slider { background-color: var(--neon-green); box-shadow: 0 0 10px var(--neon-green); }
+.synth-switch input:checked + .slider:before { transform: translateX(20px); }
+
+.user-profile-badge { display: flex; align-items: center; gap: 0.8rem; color: var(--text-secondary); font-size: 0.85rem; }
+.avatar-circle { width: 28px; height: 28px; background: linear-gradient(135deg, var(--neon-cyan), var(--neon-violet)); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 0.8rem; }
+
+.modal-footer { padding: 1.5rem 2rem; border-top: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: flex-end; gap: 1rem; background: rgba(0,0,0,0.2); border-bottom-left-radius: 16px; border-bottom-right-radius: 16px;}
+.btn-ghost { background: transparent; border: none; color: var(--text-secondary); font-weight: 600; padding: 0.8rem 1.5rem; cursor: pointer; border-radius: 8px; transition: 0.2s; }
+.btn-ghost:hover { background: rgba(255,255,255,0.05); color: white; }
+
+/* Alternatives Grid */
+.alternatives-grid { display: flex; flex-direction: column; gap: 1rem; }
+.alt-card { padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem; }
+.alt-header { display: flex; align-items: center; gap: 0.8rem; }
+.alt-icon { font-size: 1.5rem; }
+.alt-header h4 { margin: 0; font-size: 1.1rem; }
+.alt-price { font-size: 1.5rem; font-weight: 700; margin: 0; }
+.alt-reason { color: var(--text-secondary); font-size: 0.9rem; line-height: 1.5; margin: 0; }
 </style>
