@@ -317,6 +317,36 @@
           </div>
         </div>
       </div>
+    <!-- MODAL 3: AI ANALYSIS (Teleported) -->
+    <Teleport to="body">
+      <div v-if="showAnalysisModal" class="modal-overlay" @click.self="showAnalysisModal = false">
+        <div class="maximalist-modal glass-panel">
+          <div class="modal-header">
+            <h2 class="font-syne gradient-text-cyan">AI COMPATIBILITY ANALYSIS</h2>
+            <button class="btn-close" @click="showAnalysisModal = false">✕</button>
+          </div>
+          <div class="modal-body font-inter">
+            <div v-if="analysisResult.length === 0" class="flex flex-col items-center text-center">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#00e5ff" stroke-width="2" class="mb-4">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                <polyline points="22 4 12 14.01 9 11.01"></polyline>
+              </svg>
+              <h3 class="text-xl text-white mb-2">Build 100% Compatibil!</h3>
+              <p class="text-gray-400">Toate componentele selectate se potrivesc perfect. Nicio problemă detectată.</p>
+            </div>
+            
+            <div v-else>
+              <h3 class="text-xl text-red-400 mb-4 font-syne">⚠️ Probleme Detectate ({{ analysisResult.length }})</h3>
+              <ul class="space-y-3">
+                <li v-for="(prob, idx) in analysisResult" :key="idx" class="glass-panel-inner p-3 border border-red-500/30 text-gray-200 flex items-start gap-3">
+                  <span class="text-red-500">❌</span>
+                  {{ prob }}
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
     </Teleport>
 
     <!-- Modal imagine generată -->
@@ -360,6 +390,8 @@ const loadingFps = ref(false)
 // Modals State
 const showSaveModal = ref(false)
 const showAlternativesModal = ref(false)
+const showAnalysisModal = ref(false)
+const analysisResult = ref([])
 const newBuildName = ref('')
 const isPublic = ref(true)
 const modalTargetCategory = ref(null)
@@ -488,19 +520,78 @@ const confirmSave = () => {
   showSaveModal.value = false
 }
 
-const analizeazaBuild = () => {
+const analizeazaBuild = async () => {
+  const buildPayload = {}
+  categories.value.forEach(cat => {
+    if (cat.selectedPart) {
+      buildPayload[cat.id] = cat.selectedPart
+    }
+  })
+
+  if (Object.keys(buildPayload).length === 0) {
+    showToast('Nu ai selectat nicio componentă pentru analiză.', 'error')
+    return
+  }
+
   agentLoading.value = true
-  setTimeout(() => agentLoading.value = false, 2000)
+  
+  try {
+    const response = await api.post('/builder/compatibility/', {
+      build: buildPayload
+    })
+    
+    analysisResult.value = response.data.probleme || []
+    showAnalysisModal.value = true
+  } catch (err) {
+    showToast('Eroare la analiza build-ului', 'error')
+  } finally {
+    agentLoading.value = false
+  }
 }
 
-const openAlternativesModal = (cat) => {
+const openAlternativesModal = async (cat) => {
+  if (!cat.selectedPart) {
+    showToast('Te rog să selectezi o componentă mai întâi.', 'error')
+    return
+  }
+  
   modalTargetCategory.value = cat
   showAlternativesModal.value = true
+  alternatives.value = [] // clear loading state
+  
+  try {
+    const response = await api.post('/builder/alternatives/', {
+      component_type: cat.id,
+      component_id: cat.selectedPart.id,
+      limit: 3
+    })
+    
+    if (response.data.alternative) {
+      alternatives.value = response.data.alternative.map(alt => ({
+        id: alt.id,
+        name: alt.nume,
+        price: alt.pret,
+        reason: `Performanță: +${alt.diferenta_performanta_procent}% | Economie: ${alt.economie_ron} RON (${alt.magazin})`,
+        ...alt
+      }))
+    } else {
+      showToast(response.data.error || 'Nicio alternativă găsită.', 'error')
+    }
+  } catch (err) {
+    showToast('Eroare la obținerea alternativelor.', 'error')
+  }
 }
 
 const swapComponent = (alt) => {
   if(modalTargetCategory.value) {
-    modalTargetCategory.value.selectedPart = alt
+    modalTargetCategory.value.selectedPart = {
+      id: alt.id,
+      nume: alt.name || alt.nume,
+      pret: alt.price || alt.pret,
+      magazin: alt.magazin,
+      url_produs: alt.url_produs || alt.url,
+      // mapping extra
+    }
   }
   showAlternativesModal.value = false
 }
@@ -554,6 +645,12 @@ const triggerFps = async () => {
       ram: ram,
       rezolutie: '1080p'
     })
+    
+    if (response.data.error) {
+      showToast(response.data.error, 'error');
+      console.error(response.data.traceback);
+      return;
+    }
     
     if (response.data.jocuri) {
       fpsEstimates.value = response.data.jocuri.slice(0, 5).map(j => ({

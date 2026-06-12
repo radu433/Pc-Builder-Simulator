@@ -301,9 +301,25 @@ const checkFps = async () => {
   
   try {
     const response = await api.post('/builder/benchmark/', {
-      gpu_id: selectedBuild.value.gpu
+      cpu_id: selectedBuild.value.cpu,
+      gpu_id: selectedBuild.value.gpu,
+      ram_id: selectedBuild.value.ram
     })
-    fpsData.value = response.data.fps_estimari || response.data
+    
+    if (response.data.error) {
+      showToast(response.data.error, 'error')
+      fpsData.value = []
+      return
+    }
+
+    if (response.data.jocuri) {
+      fpsData.value = response.data.jocuri.map(j => ({
+        joc: j.nume,
+        fps: `${j.fps_1080p?.ultra || '-'} FPS`
+      }))
+    } else {
+      fpsData.value = response.data.fps_estimari || response.data
+    }
   } catch (err) {
     showToast('Eroare la calcularea FPS-ului', 'error')
   } finally {
