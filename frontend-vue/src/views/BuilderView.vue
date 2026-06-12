@@ -340,14 +340,14 @@ const modalTargetCategory = ref(null)
 
 // --- DATA STATE ---
 const categories = ref([
-  { id: 'cpu', endpoint: 'cpus', name: 'Procesor', icon: '🧠', selectedPart: null },
-  { id: 'gpu', endpoint: 'gpus', name: 'Placă Video', icon: '🎮', selectedPart: null },
-  { id: 'motherboard', endpoint: 'motherboards', name: 'Placă de Bază', icon: '🎛️', selectedPart: null },
-  { id: 'ram', endpoint: 'rams', name: 'Memorie RAM', icon: '⚡', selectedPart: null },
-  { id: 'storage', endpoint: 'storages', name: 'Stocare', icon: '💾', selectedPart: null },
-  { id: 'psu', endpoint: 'psus', name: 'Sursă', icon: '🔋', selectedPart: null },
-  { id: 'case', endpoint: 'cases', name: 'Carcasă', icon: '📦', selectedPart: null },
-  { id: 'cooler', endpoint: 'coolers', name: 'Cooler', icon: '❄️', selectedPart: null },
+  { id: 'cpu', endpoint: 'cpus', name: 'Procesor',selectedPart: null },
+  { id: 'gpu', endpoint: 'gpus', name: 'Placă Video',selectedPart: null },
+  { id: 'motherboard', endpoint: 'motherboards', name: 'Placă de Bază',selectedPart: null },
+  { id: 'ram', endpoint: 'rams', name: 'Memorie RAM',selectedPart: null },
+  { id: 'storage', endpoint: 'storages', name: 'Stocare',selectedPart: null },
+  { id: 'psu', endpoint: 'psus', name: 'Sursă',selectedPart: null },
+  { id: 'case', endpoint: 'cases', name: 'Carcasă',selectedPart: null },
+  { id: 'cooler', endpoint: 'coolers', name: 'Cooler', selectedPart: null },
 ])
 
 const activeCategoryParts = ref([])

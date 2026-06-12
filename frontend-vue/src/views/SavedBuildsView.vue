@@ -77,21 +77,19 @@
                 <div class="cyber-box bottleneck-box">
                    <h4 class="box-title">Bottleneck Analysis</h4>
                    <div v-if="loadingBottleneck" class="text-muted">⏳ Se calculează bottleneck-ul...</div>
-                   <div v-else>
-                     <div class="bn-status text-green">Overall Status: Excellent Balance</div>
+                   <div v-else-if="showBottleneck && bottleneckData">
+                     <div class="bn-status" :class="{'text-green': !bottleneckData.exista_bottleneck, 'text-warning': bottleneckData.exista_bottleneck}">
+                       Overall Status: {{ bottleneckData.mesaj || 'Analiză finalizată' }}
+                     </div>
                      
                      <div class="bn-bars mt-3">
                        <div class="bn-bar-row">
-                         <div class="bn-label-row"><span>CPU Load</span><span>{{ bottleneckData ? bottleneckData.procentaj_bottleneck : '85%' }}</span></div>
-                         <div class="progress-bar-container"><div class="progress-bar violet-bar" style="width: 85%"></div></div>
-                       </div>
-                       <div class="bn-bar-row mt-2">
-                         <div class="bn-label-row"><span>GPU Load</span><span>98%</span></div>
-                         <div class="progress-bar-container"><div class="progress-bar cyan-bar" style="width: 98%"></div></div>
+                         <div class="bn-label-row"><span>Bottleneck %</span><span>{{ bottleneckData.procentaj_bottleneck || '0%' }}</span></div>
+                         <div class="progress-bar-container"><div class="progress-bar violet-bar" :style="{width: bottleneckData.procentaj_bottleneck || '0%'}"></div></div>
                        </div>
                      </div>
                      <p class="bn-desc-italic mt-3 text-muted" style="font-style: italic; font-size: 0.85rem;">
-                       GPU is the primary performance driver here, ensuring maximum frame rates without CPU limits.
+                       Bazat pe analiza CPU-GPU pentru a oferi cea mai bună balanță de performanță.
                      </p>
                      <div class="bn-ref mt-2">Reference: 1440p High settings</div>
                    </div>
@@ -103,38 +101,33 @@
                    <div class="budget-dist">
                      <h4 class="box-title">Budget Distribution</h4>
                      <div class="donut-wrapper">
-                       <svg viewBox="0 0 32 32" class="donut-chart">
-                         <!-- Simplified static donut for design. In real app, calculate dasharrays. -->
-                         <!-- Circumference = 100 -->
-                         <circle r="16" cx="16" cy="16" class="donut-bg" />
-                         <!-- GPU: Blue, ~45% -->
-                         <circle r="16" cx="16" cy="16" class="donut-segment gpu" stroke-dasharray="45 55" stroke-dashoffset="25" />
-                         <!-- CPU: Purple, ~25% -->
-                         <circle r="16" cx="16" cy="16" class="donut-segment cpu" stroke-dasharray="25 75" stroke-dashoffset="-20" />
-                         <!-- Motherboard: Green, ~15% -->
-                         <circle r="16" cx="16" cy="16" class="donut-segment mobo" stroke-dasharray="15 85" stroke-dashoffset="-45" />
-                         <!-- Other: Orange, ~15% -->
-                         <circle r="16" cx="16" cy="16" class="donut-segment other" stroke-dasharray="15 85" stroke-dashoffset="-60" />
-                       </svg>
-                       <div class="donut-legend">
-                         <div class="legend-item"><span class="dot bg-blue"></span> GPU (45%)</div>
-                         <div class="legend-item"><span class="dot bg-purple"></span> CPU (25%)</div>
-                         <div class="legend-item"><span class="dot bg-green"></span> Mobo (15%)</div>
-                         <div class="legend-item"><span class="dot bg-orange"></span> Other (15%)</div>
-                       </div>
+                        <svg viewBox="0 0 32 32" class="donut-chart">
+                          <circle r="15.9155" cx="16" cy="16" class="donut-bg" />
+                          <circle r="15.9155" cx="16" cy="16" class="donut-segment gpu" :stroke-dasharray="donutStats.gpu.arr" :stroke-dashoffset="donutStats.gpu.off" />
+                          <circle r="15.9155" cx="16" cy="16" class="donut-segment cpu" :stroke-dasharray="donutStats.cpu.arr" :stroke-dashoffset="donutStats.cpu.off" />
+                          <circle r="15.9155" cx="16" cy="16" class="donut-segment mobo" :stroke-dasharray="donutStats.mobo.arr" :stroke-dashoffset="donutStats.mobo.off" />
+                          <circle r="15.9155" cx="16" cy="16" class="donut-segment other" :stroke-dasharray="donutStats.other.arr" :stroke-dashoffset="donutStats.other.off" />
+                        </svg>
+                        <div class="donut-legend">
+                          <div class="legend-item"><span class="dot bg-blue"></span> GPU ({{ donutStats.gpu.pct }}%)</div>
+                          <div class="legend-item"><span class="dot bg-purple"></span> CPU ({{ donutStats.cpu.pct }}%)</div>
+                          <div class="legend-item"><span class="dot bg-green"></span> Mobo ({{ donutStats.mobo.pct }}%)</div>
+                          <div class="legend-item"><span class="dot bg-orange"></span> Other ({{ donutStats.other.pct }}%)</div>
+                        </div>
                      </div>
                    </div>
 
-                   <div class="fps-section mt-4" v-if="fpsData || !loadingFps">
+                   <div v-if="loadingFps" class="text-muted mt-4">⏳ Se estimează FPS-ul...</div>
+                   <div class="fps-section mt-4" v-else-if="showFps && fpsData">
                       <table class="fps-small-table">
                         <thead>
                           <tr><th class="text-left">Game | 1440p, High Settings</th><th class="text-right">FPS</th></tr>
                         </thead>
                         <tbody>
-                          <tr><td class="text-left">Cyberpunk 2077</td><td class="text-right text-white font-mono">85</td></tr>
-                          <tr><td class="text-left">Call of Duty: Warzone</td><td class="text-right text-white font-mono">120</td></tr>
-                          <tr><td class="text-left">Valorant</td><td class="text-right text-white font-mono">300</td></tr>
-                          <tr><td class="text-left">Hogwarts Legacy</td><td class="text-right text-white font-mono">75</td></tr>
+                          <tr v-for="game in fpsData" :key="game.joc">
+                            <td class="text-left">{{ game.joc }}</td>
+                            <td class="text-right text-white font-mono">{{ game.fps }}</td>
+                          </tr>
                         </tbody>
                       </table>
                    </div>
@@ -167,6 +160,7 @@ import { ref, computed, onMounted } from 'vue'
 import axios from 'axios'
 import api from '../plugins/axios'
 import { useRouter } from 'vue-router'
+import { showToast } from '@/toast'
 
 const builds = ref([])
 const loading = ref(true)
@@ -178,20 +172,23 @@ const modalLoading = ref(false)
 const selectedBuild = ref(null)
 const modalParts = ref({})
 
+const showBottleneck = ref(false)
 const bottleneckData = ref(null)
 const loadingBottleneck = ref(false)
+
+const showFps = ref(false)
 const fpsData = ref(null)
 const loadingFps = ref(false)
 
 const partSlots = [
-  { key: 'cpu',         label: 'Procesor',      icon: '🧠', endpoint: 'cpus' },
-  { key: 'gpu',         label: 'Placă Video',   icon: '🎮', endpoint: 'gpus' },
-  { key: 'motherboard', label: 'Placă de Bază', icon: '🛹', endpoint: 'motherboards' },
-  { key: 'ram',         label: 'Memorie RAM',   icon: '⚡', endpoint: 'rams' },
-  { key: 'storage',     label: 'Stocare',       icon: '💾', endpoint: 'storages' },
-  { key: 'psu',         label: 'Sursă',         icon: '🔌', endpoint: 'psus' },
-  { key: 'case',        label: 'Carcasă',       icon: '📦', endpoint: 'cases' },
-  { key: 'cooler',      label: 'Cooler',        icon: '❄️', endpoint: 'coolers' },
+  { key: 'cpu',         label: 'Procesor', endpoint: 'cpus' },
+  { key: 'gpu',         label: 'Placă Video', endpoint: 'gpus' },
+  { key: 'motherboard', label: 'Placă de Bază', endpoint: 'motherboards' },
+  { key: 'ram',         label: 'Memorie RAM', endpoint: 'rams' },
+  { key: 'storage',     label: 'Stocare', endpoint: 'storages' },
+  { key: 'psu',         label: 'Sursă', endpoint: 'psus' },
+  { key: 'case',        label: 'Carcasă', endpoint: 'cases' },
+  { key: 'cooler',      label: 'Cooler',  endpoint: 'coolers' },
 ]
 
 // ── Fetch builds ──────────────────────────────────────────
@@ -249,18 +246,55 @@ const openModal = async (build) => {
 }
 
 const checkBottleneck = async () => {
-  alert('Bottleneck logic here');
+  if (!selectedBuild.value?.cpu || !selectedBuild.value?.gpu) {
+    showToast('Această configurație necesită un CPU și un GPU salvate pentru analiză.', 'error')
+    return
+  }
+  
+  showBottleneck.value = true
+  loadingBottleneck.value = true
+  
+  try {
+    const response = await api.post('/builder/bottleneck/', {
+      cpu_id: selectedBuild.value.cpu,
+      gpu_id: selectedBuild.value.gpu
+    })
+    bottleneckData.value = response.data
+  } catch (err) {
+    showToast('Eroare la calcularea bottleneck-ului', 'error')
+  } finally {
+    loadingBottleneck.value = false
+  }
 }
 
 const checkFps = async () => {
-  alert('FPS benchmark logic here');
+  if (!selectedBuild.value?.gpu) {
+    showToast('Această configurație necesită un GPU salvat pentru estimarea FPS.', 'error')
+    return
+  }
+  
+  showFps.value = true
+  loadingFps.value = true
+  
+  try {
+    const response = await api.post('/builder/benchmark/', {
+      gpu_id: selectedBuild.value.gpu
+    })
+    fpsData.value = response.data.fps_estimari || response.data
+  } catch (err) {
+    showToast('Eroare la calcularea FPS-ului', 'error')
+  } finally {
+    loadingFps.value = false
+  }
 }
 
 const closeModal = () => {
   modalOpen.value = false
   selectedBuild.value = null
   modalParts.value = {}
+  showBottleneck.value = false
   bottleneckData.value = null
+  showFps.value = false
   fpsData.value = null
 }
 
@@ -283,6 +317,25 @@ const estimatedWatts = computed(() => {
   const cpu = parseFloat(modalParts.value.cpu?.consum_tdp || 0)
   const gpu = parseFloat(modalParts.value.gpu?.consum_tdp || 0)
   return cpu + gpu + 50 || '450'
+})
+
+const donutStats = computed(() => {
+  const total = parseFloat(totalPrice.value) || 1
+  
+  const getPrice = (key) => parseFloat(modalParts.value[key]?.pret || 0)
+  
+  const gpuP = (getPrice('gpu') / total) * 100
+  const cpuP = (getPrice('cpu') / total) * 100
+  const moboP = (getPrice('motherboard') / total) * 100
+  let otherP = 100 - gpuP - cpuP - moboP
+  if (otherP < 0) otherP = 0
+  
+  return {
+    gpu: { pct: gpuP.toFixed(1), arr: `${gpuP} ${100 - gpuP}`, off: 0 },
+    cpu: { pct: cpuP.toFixed(1), arr: `${cpuP} ${100 - cpuP}`, off: -gpuP },
+    mobo: { pct: moboP.toFixed(1), arr: `${moboP} ${100 - moboP}`, off: -(gpuP + cpuP) },
+    other: { pct: otherP.toFixed(1), arr: `${otherP} ${100 - otherP}`, off: -(gpuP + cpuP + moboP) },
+  }
 })
 
 const formatDate = (dateStr) => {
@@ -348,14 +401,17 @@ onMounted(fetchSavedBuilds)
 }
 
 .cyber-modal {
-  width: 90%;
-  max-width: 760px;
+  width: 95%;
+  max-width: 900px;
   background: #111318;
   border-radius: 4px;
   position: relative;
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8);
   border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: all 0.3s ease;
 }
+
+.text-warning { color: #f59e0b; }
 
 .modal-header-cyber {
   padding: 30px 40px 20px;
@@ -452,7 +508,7 @@ onMounted(fetchSavedBuilds)
   transform: rotate(-90deg);
 }
 .donut-bg { fill: transparent; stroke: rgba(255,255,255,0.05); stroke-width: 6; }
-.donut-segment { fill: transparent; stroke-width: 6; stroke-dasharray: 0 100; transition: stroke-dasharray 1s ease; }
+.donut-segment { fill: transparent; stroke-width: 6; transition: stroke-dasharray 1s ease; }
 .gpu { stroke: #3b82f6; }
 .cpu { stroke: #a855f7; }
 .mobo { stroke: #10b981; }

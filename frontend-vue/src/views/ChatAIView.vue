@@ -26,11 +26,11 @@
       <div class="sidebar-capabilities">
         <h4 class="sidebar-heading">Ce poate face</h4>
         <ul class="cap-list">
-          <li><span class="cap-icon">⚡</span> Recomandă build-uri pe buget</li>
-          <li><span class="cap-icon">🔍</span> Analizează bottleneck-uri</li>
-          <li><span class="cap-icon">💰</span> Compară prețuri din eMag/Altex</li>
-          <li><span class="cap-icon">🎮</span> Estimează FPS per joc</li>
-          <li><span class="cap-icon">🔧</span> Verifică compatibilitatea</li>
+          <li><span class="cap-icon"></span> Recomandă build-uri pe buget</li>
+          <li><span class="cap-icon"></span> Analizează bottleneck-uri</li>
+          <li><span class="cap-icon"></span> Compară prețuri din eMag/Altex</li>
+          <li><span class="cap-icon"></span> Estimează FPS per joc</li>
+          <li><span class="cap-icon"></span> Verifică compatibilitatea</li>
         </ul>
       </div>
 

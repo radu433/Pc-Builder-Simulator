@@ -153,14 +153,14 @@ const loading = ref(true)
 const openCategoryId = ref('cpus') // Default la primul tab
 
 const categories = ref([
-  { id: 'cpus',         name: 'Procesor',      icon: '🧠', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false },
-  { id: 'motherboards', name: 'Placă de Bază', icon: '🛹', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false },
-  { id: 'gpus',         name: 'Placă Video',   icon: '🎮', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false },
-  { id: 'rams',         name: 'Memorie RAM',   icon: '⚡', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false },
-  { id: 'storages',     name: 'Stocare',       icon: '💾', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false },
-  { id: 'psus',         name: 'Sursă',         icon: '🔌', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false },
-  { id: 'cases',        name: 'Carcasă',       icon: '📦', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false },
-  { id: 'coolers',      name: 'Cooler CPU',    icon: '❄️', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false },
+  { id: 'cpus',         name: 'Procesor', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false },
+  { id: 'motherboards', name: 'Placă de Bază', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false },
+  { id: 'gpus',         name: 'Placă Video',   parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false },
+  { id: 'rams',         name: 'Memorie RAM',   parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false },
+  { id: 'storages',     name: 'Stocare',       parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false },
+  { id: 'psus',         name: 'Sursă',         parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false },
+  { id: 'cases',        name: 'Carcasă',       parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false },
+  { id: 'coolers',      name: 'Cooler CPU',    parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false },
 ])
 
 const catToKeyMap = {
