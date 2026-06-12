@@ -607,7 +607,7 @@ const triggerCasePreview = async () => {
 }
 
 /* Gradients Text */
-.gradient-text-brand { background: linear-gradient(90deg, #f0f4ff, #8b9db5); -webkit-background-clip: text; color: transparent; font-weight: 800; font-size: 1.5rem; letter-spacing: 2px;}
+.gradient-text-brand { background: linear-gradient(90deg, #f0f4ff, #8b9db5); -webkit-background-clip: text; color: transparent; font-weight: 800; font-size: 1.2rem; letter-spacing: 0.5px;}
 .gradient-text-cyan { background: linear-gradient(90deg, #00e5ff, #3b82f6); -webkit-background-clip: text; color: transparent; }
 .gradient-text-violet { background: linear-gradient(90deg, #ec4899, #7c3aed); -webkit-background-clip: text; color: transparent; }
 .gradient-text-green { background: linear-gradient(90deg, #00e5a0, #10b981); -webkit-background-clip: text; color: transparent; }
