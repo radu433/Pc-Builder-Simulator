@@ -34,19 +34,25 @@ BATCH_SIZE           = 20
 
 ALL_MODELS = [CPU, GPU, Motherboard, RAM, PSU, Case, Cooler, Storage]
 
+# ── Scoring ───────────────────────────────────────────────────────────────────────────────
+MIN_SCORE         = 70    # sub acest scor = balivearnă, ignorat
+SCORE_TOLERANCE   = 10    # diferență scor sub care prețul decide
+MAX_PRICE_PREMIUM = 0.15  # max 15% premium pentru un scor mai bun
+
 
 # ─────────────────────────── DATA CLASSES ────────────────────────────────────
 
 @dataclass
 class PriceResult:
-    site:           str
-    price:          Decimal
-    in_stoc:        bool
-    url:            str
-    title:          str           = field(default="")
-    viteza_citire:  Optional[int] = field(default=None)
-    viteza_scriere: Optional[int] = field(default=None)
-    poza_url:       Optional[str] = field(default=None)
+    site:                 str
+    price:                Decimal
+    in_stoc:              bool
+    url:                  str
+    title:                str           = field(default="")
+    viteza_citire:        Optional[int] = field(default=None)
+    viteza_scriere:       Optional[int] = field(default=None)
+    poza_url:             Optional[str] = field(default=None)
+    compatibility_score:  int           = field(default=0)    # 0–100
 
 
 # ─────────────────────────── HELPERS ─────────────────────────────────────────
@@ -101,6 +107,8 @@ def _normalize_text(text: str) -> str:
     text = re.sub(r"[-_/]", " ", text)
     # Normalizare variante WiFi: wifi6e, wifi6, wifi7, wi-fi 6e, wi fi 6e -> "wifi"
     text = re.sub(r"wi[- ]?fi[- ]?\d*[a-z]*", "wifi", text)
+    # Normalizare pentru memorii RAM: transformăm MT/s în mhz
+    text = re.sub(r'(?i)mt/s?', 'mhz', text)
     return text
 
 
@@ -142,12 +150,33 @@ def build_query(obj, site: str = None) -> str:
     prefix = _CATEGORY_PREFIX.get(type(obj), "")
 
     if isinstance(obj, RAM):
+        # 1. Prefix corect pe magazin
         ram_prefixes = {
-            "altex": "Memorie desktop",
+            "altex": "Memorie",
             "emag":  "Memorie",
             "cel":   "Kit RAM",
         }
-        prefix = ram_prefixes.get(site, "Kit RAM") if site else "Kit RAM"
+        prefix = ram_prefixes.get(site, "Memorie")
+
+        # 2. Curățare "gunoaie" din numele bazei de date
+        name_clean = obj.nume.lower()
+        fluff = ["series", "kit", "weiße led", "blaue led", "red", "black", "white", "grey", "blue"]
+        for f in fluff:
+            name_clean = name_clean.replace(f, " ")
+        
+        # 3. Păstrăm doar brandul și seria (ex: ADATA XPG Spectrix)
+        words = [w.upper() for w in name_clean.split() if len(w) > 1 and not '-' in w]
+        short_name = " ".join(words[:3])
+
+        # 4. Adăugăm datele tehnice esențiale pt căutare
+        cap_str = f"{obj.capacitate_totala_gb}GB" if getattr(obj, 'capacitate_totala_gb', None) else ""
+        
+        # Extragem generația (DDR4/DDR5) dacă există în numele original
+        ddr_match = re.search(r'(ddr\d)', obj.nume.lower())
+        ddr_str = ddr_match.group(1).upper() if ddr_match else ""
+
+        query = f"{prefix} {short_name} {ddr_str} {cap_str}"
+        return re.sub(r'\s+', ' ', query.strip())
 
     if isinstance(obj, GPU):
         brand = str(obj.brand).strip()
@@ -163,7 +192,8 @@ def build_query(obj, site: str = None) -> str:
         else:
             chipset_prefix = ""
 
-        match_model = re.search(r'(\d{3,4})\s*(ti|xtx|xt|super|gre)?', name_lower)
+        # Suportă chipset-uri care încep cu literă (B580, A770)
+        match_model = re.search(r'([a-z]?\d{3,4})\s*(ti|xtx|xt|super|gre)?', name_lower)
 
         if match_model:
             baza = match_model.group(1)
@@ -181,8 +211,8 @@ def build_query(obj, site: str = None) -> str:
         oc_str = "OC" if is_oc else ""
 
         variant_words = [
-            "dual", "strix", "tuf", "gaming", "ventus",
-            "eagle", "aorus", "taichi", "challenger",
+            "dual", "strix", "tuf", "gaming", "ventus", "eagle", "aorus", "taichi", "challenger",
+            "prime", "shadow", "proart", "ai", "windforce"
         ]
 
         variant = ""
@@ -205,87 +235,120 @@ def build_query(obj, site: str = None) -> str:
         return f"{prefix} {obj.nume}".strip()
 
     elif isinstance(obj, Motherboard):
-        socket_str = obj.socket if obj.socket else ""
-        wifi_str   = "WiFi" if obj.are_wifi else ""
-
-        # Folosim primele 5 cuvinte din nume (inainte erau 4, insuficient pt
-        # modele ca "ASRock B650 Steel Legend WiFi")
-        short_name = " ".join(obj.nume.split()[:5])
-
-        # Eliminam "WiFi" din short_name daca deja il adaugam separat
-        if wifi_str:
-            short_name = re.sub(r'(?i)\bwi[-\s]?fi\b', '', short_name).strip()
-
-        if site == "cel":
-            query = f"{prefix} {socket_str} {short_name} {wifi_str}"
-        else:
-            query = f"{prefix} {short_name} {socket_str} {wifi_str}"
-
+        short_name = " ".join(obj.nume.split()[:4]) 
+        short_name = re.sub(r'(?i)\bwi[-\s]?fi\b', '', short_name).strip()
+        
+        # Trimitem doar elementele de bază motorului de căutare al magazinului
+        query = f"{prefix} {short_name}"
         return re.sub(r'\s+', ' ', query.strip())
 
     elif isinstance(obj, Storage):
-        # Prefix in functie de site si tip pt a lovi categoriile exacte
-        if obj.tip == "HDD":
-            prefix = "Hard Disk" if site == "emag" else "HDD"
-        elif obj.tip == "NVME":
-            prefix = "Solid State Drive" if site == "emag" else "SSD NVMe"
-        else:
-            prefix = "Solid State Drive" if site == "emag" else "SSD"
-            
-        tb_val = obj.capacitate_gb / 1000
-        cap = f"{tb_val:g}TB" if obj.capacitate_gb >= 1000 else f"{obj.capacitate_gb}GB"
-        
-        brand = str(obj.brand)
-        # Curatam numele ca sa pastram doar identificatorii de serie (ex: "NV3", "980 PRO")
-        name_clean = obj.nume.replace(brand, "").replace(cap, "")
-        stop_w = {'ssd', 'hdd', 'nvme', 'm.2', 'pcie', 'sata', 'solid', 'state', 'drive', 'hard', 'disk'}
-        words = [w for w in name_clean.split() if w.lower() not in stop_w]
-        model_str = " ".join(words[:3])
+        # 1. Normalizare Brand (magazinele folosesc "WD")
+        brand = str(obj.brand).strip()
+        brand_search = "WD" if brand.lower() == "western digital" else brand
 
-        query = f"{prefix} {brand} {model_str} {cap}"
+        # 2. Setare Prefix
+        prefix = "HDD" if obj.tip == "HDD" else "SSD"
+            
+        # 3. Formatare curată a capacității pentru căutare (1000 / 1024 devin 1TB)
+        cap_val = obj.capacitate_gb
+        if cap_val >= 1000:
+            tb = cap_val // 1000 if cap_val % 1000 == 0 else cap_val // 1024
+            if tb == 0: tb = cap_val / 1000
+            cap_str = f"{tb:g}TB"
+        else:
+            cap_str = f"{cap_val}GB"
+        
+        # 4. Curățarea numelui de "gunoaie"
+        name_clean = obj.nume.lower().replace(str(obj.brand).lower(), "")
+        name_clean = re.sub(r'[-_/]', ' ', name_clean) # Spargem codurile lipite
+        
+        # Eliminăm capacitățile din string ca să nu avem dubluri (ex: MX500 1000GB 1TB)
+        name_clean = re.sub(r'\b\d+(\.\d+)?\s*(tb|gb)\b', ' ', name_clean)
+        
+        stop_w = {'ssd', 'hdd', 'nvme', 'm.2', 'pcie', 'sata', 'solid', 'state', 'drive', 'hard', 'disk', 'technology'}
+        
+        # Păstrăm doar cuvintele care nu sunt doar cifre și nu sunt în stop_words
+        words = [w for w in name_clean.split() if w not in stop_w and len(w) > 1 and not re.match(r'^\d+$', w)]
+        
+        # Luăm doar primele 2 identificatoare (ex: "MX500", "SN750", "RED PLUS")
+        model_str = " ".join(words[:2]).upper()
+
+        query = f"{prefix} {brand_search} {model_str} {cap_str}"
         return re.sub(r'\s+', ' ', query.strip())
 
     elif isinstance(obj, Case):
         nume_curat = obj.nume.lower()
 
+        # Adăugăm la fluff și cuvintele de marketing
         fluff = [
             "tempered glass", "window", "midi-tower", "mid-tower", "midi tower", "mid tower",
             "full-tower", "full tower", "mini-tower", "mini tower", "micro-atx", "e-atx", "atx",
-            "tg", "fara sursa", "cu sursa", "usb 3.0", "usb 3.1",
+            "tg", "fara sursa", "cu sursa", "usb 3.0", "usb 3.1", "rgb", "argb", "led", "airflow"
         ]
         for f in fluff:
             nume_curat = nume_curat.replace(f, " ")
 
+        # Ștergem culorile și tot ce e după cratimă
         nume_curat = re.sub(r'-\s*(white|black|blue|red|yellow|pink|alb|negru).*', '', nume_curat)
 
+        # Asigurăm prezența brandului
+        brand = str(obj.brand).lower()
+        if brand not in nume_curat:
+            nume_curat = f"{brand} {nume_curat}"
+
         cuvinte = [w for w in nume_curat.split() if len(w) > 1]
-        short_name = " ".join(cuvinte[:4])
+        
+        # Luăm doar primele 3 cuvinte relevante (ex: "Carcasa Corsair 4000D")
+        short_name = " ".join(cuvinte[:3]).title()
 
         query = f"Carcasa {short_name}"
         return re.sub(r'\s+', ' ', query).strip()
 
-    base = " ".join(obj.nume.split()[:4])
-    if isinstance(obj, RAM):
-        kit_name = obj.nume.strip()
-        cap_str = f"{obj.capacitate_totala_gb}GB" if hasattr(obj, 'capacitate_totala_gb') and obj.capacitate_totala_gb else ""
-        freq_str = f"{obj.frecventa_mhz}HZ" if hasattr(obj, 'frecventa_mhz') and obj.frecventa_mhz else ""
-        latency_str = f"CL{obj.latenta_cl}" if hasattr(obj, 'latenta_cl') and obj.latenta_cl else ""
-        query = f"Kit RAM {kit_name} {cap_str} {freq_str} {latency_str}"
-        return re.sub(r'\s+', ' ', query.strip())
-
     if isinstance(obj, PSU):
         brand = str(obj.brand).strip()
-        psu_name = obj.nume.strip()
+        
+        # Eliminăm brandul din nume pentru a nu-l dubla
+        nume_curat = obj.nume.lower().replace(brand.lower(), "")
+        
+        # Scoatem termenii descriptivi și semnele de punctuație
+        fluff = ["80 plus", "80+", "gold", "bronze", "platinum", "titanium", "silver", "semi-modular", "modular", "fully", "cybenetics", ","]
+        for f in fluff:
+            nume_curat = nume_curat.replace(f, " ")
+            
+        # Păstrăm doar seria exactă (primele 2 cuvinte valide)
+        cuvinte = [w.upper() for w in nume_curat.split() if len(w) > 1]
+        short_name = " ".join(cuvinte[:2])
+        
         power_str = f"{obj.putere_w}W" if getattr(obj, 'putere_w', None) else ""
-        cert_str = str(obj.certificare).strip() if getattr(obj, 'certificare', None) else ""
-        modular_str = "Modulara" if getattr(obj, 'este_modulara', None) and str(obj.este_modulara).strip().lower() != "non" else ""
-
-        if site == "cel":
-            query = f"{prefix} {brand} {power_str} {cert_str} {psu_name} {modular_str}".strip()
-        else:
-            query = f"{prefix} {brand} {psu_name} {cert_str} {power_str} {modular_str}".strip()
-
+        
+        query = f"Sursa {brand} {short_name} {power_str}".strip()
         return re.sub(r'\s+', ' ', query)
+
+    elif isinstance(obj, Cooler):
+        name_clean = obj.nume.lower()
+        
+        # Curățăm dimensiunile ventilatoarelor care încurcă căutarea (ex: "2x 120mm", "135mm")
+        # Dar lăsăm numerele de radiatoare AIO intacte
+        name_clean = re.sub(r'\b\d{1,2}x\s*\d{2,3}mm\b', '', name_clean) 
+        name_clean = re.sub(r'\b\d{2,3}mm\b', '', name_clean)
+        
+        # Scoatem cuvintele descriptive inutile pentru search
+        fluff = ["red", "white", "black", "alb", "negru", "rgb", "a-rgb", "argb", "esports", "duo", "-", ","]
+        for f in fluff:
+            name_clean = name_clean.replace(f, " ")
+            
+        brand = str(obj.brand).lower()
+        if brand not in name_clean:
+            name_clean = f"{brand} {name_clean}"
+            
+        cuvinte = [w for w in name_clean.split() if len(w) > 1]
+        
+        # Luăm primele 3-4 cuvinte esențiale (ex: "Arctic Liquid Freezer III")
+        short_name = " ".join(cuvinte[:4]).title()
+        
+        query = f"Cooler {short_name}"
+        return re.sub(r'\s+', ' ', query).strip()
 
     return re.sub(r'\s+', ' ', f"{prefix} {base}".strip())
 
@@ -361,14 +424,10 @@ def _is_valid_title_match(title: str, obj) -> Optional[bool]:
             return False
 
         gpu_variants = [
-            "strix", "tuf", "dual", "phoenix", "evo",
-            "gaming", "ventus", "suprim",
-            "aorus", "eagle", "windforce",
-            "taichi", "challenger", "phantom", "steel",
-            "pulse", "nitro",
-            "merc", "qick", "swift",
-            "trinity", "amp",
-            "founders",
+            "strix", "tuf", "dual", "phoenix", "evo", "gaming", "ventus", "suprim",
+            "aorus", "eagle", "windforce", "taichi", "challenger", "phantom", "steel",
+            "pulse", "nitro", "merc", "qick", "swift", "trinity", "amp", "founders",
+            "prime", "shadow", "proart", "ai"
         ]
 
         for variant in gpu_variants:
@@ -383,36 +442,76 @@ def _is_valid_title_match(title: str, obj) -> Optional[bool]:
                 return False
 
     elif isinstance(obj, RAM):
+        # 1. Verificare Generație (DDR3/DDR4/DDR5) - extrem de important!
+        ddr_db_match = re.search(r'(ddr\d)', obj.nume.lower())
+        if ddr_db_match:
+            ddr_gen = ddr_db_match.group(1) # ex: 'ddr4'
+            if ddr_gen not in title_lower:
+                return False
+
+        # 2. Verificare Capacitate
         if hasattr(obj, 'capacitate_totala_gb') and obj.capacitate_totala_gb:
             cap = str(obj.capacitate_totala_gb)
-            if not ((cap + "gb") in title_tokens or cap in title_tokens):
+            # Acoperim cazurile "32gb"
+            if not (f"{cap}gb" in title_lower or f"{cap} gb" in title_lower):
+                # Dacă nu e explicit (rar), calculăm din module ex: 2x16gb pt 32
+                modules_title, module_gb_title = _parse_ram_kit_info(title_lower)
+                if not (modules_title and module_gb_title and (modules_title * module_gb_title == obj.capacitate_totala_gb)):
+                    return False
+
+        # 3. Verificare Frecvență
+        if hasattr(obj, 'frecventa_mhz') and obj.frecventa_mhz:
+            freq = str(obj.frecventa_mhz)
+            # Funcționează și pt MT/s pt că am adăugat regula în _normalize_text
+            if not (f"{freq}mhz" in title_lower or f"{freq} mhz" in title_lower or freq in title_tokens):
                 return False
 
-        freq = str(obj.frecventa_mhz)
-        if not (freq in title_tokens or (freq + "mhz") in title_tokens):
-            return False
-
-        cl = str(obj.latenta_cl)
-        if not (("cl" + cl) in title_tokens or (cl in title_tokens and "cl" in title_tokens)):
-            return False
+        # 4. Verificare Latență (CL)
+        if hasattr(obj, 'latenta_cl') and obj.latenta_cl:
+            cl = str(obj.latenta_cl)
+            if not (f"cl{cl}" in title_lower or f"cl {cl}" in title_lower or f"c{cl}" in title_lower):
+                return False
+                
+        return True
 
     elif isinstance(obj, PSU):
+        title_lower = title.lower()
+
+        # 1. Verificare Putere (cu suport pentru "750 Watt" și "750 W")
         if getattr(obj, 'putere_w', None):
-            power_token = f"{obj.putere_w}w"
-            if power_token not in title_lower and str(obj.putere_w) not in title_tokens:
+            w_val = str(obj.putere_w)
+            valid_power_formats = [f"{w_val}w", f"{w_val} w", f"{w_val} watt"]
+            if not any(fmt in title_lower for fmt in valid_power_formats):
                 return False
 
+        # 2. Verificare Serie/Model (Cea mai importantă parte)
+        # Extragem ID-urile din nume (ex: "CX750", "RM850e", "A850GL", "P11")
+        nume_curat = obj.nume.lower()
+        model_ids = re.findall(r'\b[a-z]+\d+[a-z]*\b', nume_curat)
+        
+        # Cuvinte generice pe care nu vrem să le forțăm ca fiind "modele"
+        ignore_ids = {"plus", "gold", "bronze", "platinum", "core", "pure", "dark", "power"}
+        
+        for mid in model_ids:
+            if mid not in ignore_ids:
+                if mid not in title_lower:
+                    # Fallback: extragem doar cifrele (în caz că magazinul scrie RM 850e separat)
+                    digits = re.sub(r'\D', '', mid)
+                    if digits and digits not in title_lower:
+                        return False
+
+        # 3. Verificare Certificare (Atenție doar la calitatea metalului)
         if getattr(obj, 'certificare', None):
             cert_text = str(obj.certificare).lower()
-            cert_terms = re.findall(r"[a-z0-9]+", cert_text)
-            if cert_terms and not any(term in title_lower for term in cert_terms):
-                return False
+            cert_keywords = [w for w in re.findall(r"[a-z]+", cert_text) if w in ["gold", "bronze", "platinum", "titanium", "silver"]]
+            
+            for kw in cert_keywords:
+                if kw not in title_lower:
+                    return False
 
-        modular_value = str(getattr(obj, 'este_modulara', '')).strip().lower()
-        if modular_value and modular_value != "non":
-            if "modular" not in title_lower:
-                return False
-
+        # Eliminăm respingerea bazată pe cuvântul "modular". 
+        # Identificarea corectă a seriei (ex: RM850e) garantează automat modularitatea fără să depindem de SEO-ul magazinului.
+        
         return True
 
     elif isinstance(obj, Motherboard):
@@ -420,10 +519,19 @@ def _is_valid_title_match(title: str, obj) -> Optional[bool]:
         needs_page_check = False
 
         if obj.chipset:
-            chipset_num = re.sub(r'[^0-9]', '', obj.chipset)
+            chipset_lower = obj.chipset.lower()
+            chipset_num = re.sub(r'[^0-9]', '', chipset_lower)
             if chipset_num and chipset_num not in title_lower:
                 # Verificam daca macar numarul chipsetului e in titlu (ex 650 din B650)
                 return False
+                
+            # Verificare sufix E, M, etc. (ex: B650E)
+            chipset_suffix = re.sub(r'^[a-z]+|[0-9]+', '', chipset_lower).strip()
+            if chipset_suffix and chipset_num:
+                # Cautam numarul urmat de sufix, cu sau fara spatiu
+                has_suffix = re.search(rf'{chipset_num}\s*{chipset_suffix}\b', title_lower)
+                if not has_suffix and chipset_lower not in title_lower:
+                    return False
 
         # Socket check: daca nu e in titlu, marcam pt verificare pe pagina
         # Multi retaileri (eMag) nu pun socketul in titlu
@@ -447,59 +555,76 @@ def _is_valid_title_match(title: str, obj) -> Optional[bool]:
         if obj.are_wifi and not has_wifi_in_title:
             needs_page_check = True
 
-        if obj.format:
-            format_lower = obj.format.lower()
-            format_clean = format_lower.replace("-", "").replace(" ", "")
-            title_clean = title_lower.replace("-", "").replace(" ", "")
-            
-            if format_clean not in title_clean and format_lower not in title_lower:
-                needs_page_check = True
+
 
         # Daca avem info lipsa din titlu, returnam None => se verifica pe pagina
         return None if needs_page_check else True
 
     elif isinstance(obj, Storage):
-        gb_str = str(obj.capacitate_gb)
-        tb_val = obj.capacitate_gb / 1000
-        tb_str = f"{tb_val:g}"
+        title_lower = title.lower()
+        cap_gb = obj.capacitate_gb
+
+        # 1. Verificare Flexibilă a Capacității
+        valid_caps = [f"{cap_gb}gb", f"{cap_gb} gb"]
         
-        found_capacity = False
-        if f"{gb_str}gb" in title_lower or f"{gb_str} gb" in title_lower:
-            found_capacity = True
-        if obj.capacitate_gb >= 1000 and (f"{tb_str}tb" in title_lower or f"{tb_str} tb" in title_lower or f"{tb_str}t" in title_lower):
-            found_capacity = True
+        # Tratăm manual confuziile clasice din SEO-ul magazinelor
+        if cap_gb in (1000, 1024):
+            valid_caps.extend(["1tb", "1 tb", "1 t"])
+        elif cap_gb in (2000, 2048):
+            valid_caps.extend(["2tb", "2 tb", "2 t"])
+        elif cap_gb >= 1000:
+            tb_1000 = cap_gb / 1000
+            tb_1024 = cap_gb / 1024
+            valid_caps.extend([f"{tb_1000:g}tb", f"{tb_1000:g} tb", f"{tb_1024:g}tb", f"{tb_1024:g} tb"])
             
-        if not found_capacity and gb_str not in title_tokens and tb_str not in title_tokens:
+        found_cap = any(cap in title_lower for cap in valid_caps)
+        if not found_cap:
             return False
 
-        # Verificare serii modele (ex: daca caut A400, nu vreau NV2)
-        name_lower = obj.nume.lower()
-        model_ids = re.findall(r'\b[a-z]+\d+[a-z]*\b', name_lower) # ex: a400, nv3, sn850x, kc3000
-        model_ids.extend(re.findall(r'\b\d{3,4}\b', name_lower)) # ex: 980, 870, 860
+        # 2. Validare Western Digital vs WD
+        brand = str(obj.brand).lower()
+        if brand == "western digital" and "wd" not in title_lower and "western" not in title_lower:
+            return False
+
+        # 3. Verificare Serii Modele (ex: SN750, A400, BarraCuda)
+        name_clean = obj.nume.lower()
         
-        # Ignoram capacitati, versiuni gen, si rpm ca sa nu dea false negatives
-        skip_ids = {str(obj.capacitate_gb), "m2", "gen3", "gen4", "gen5", "sata3", "2280", "2230", "2242", "7200", "5400", "256", "512", "1024", "2048"}
+        # Extragem ID-uri de model (litere+cifre sau doar cifre din 3-4 caractere)
+        model_ids = re.findall(r'\b[a-z]+\d+[a-z]*\b', name_clean) 
+        model_ids.extend(re.findall(r'\b\d{3,4}\b', name_clean))
+        
+        # Ignorăm specificații tehnice comune ca să nu dea fals-negative
+        skip_ids = {str(cap_gb), "m2", "gen3", "gen4", "gen5", "sata3", "sata2", "2280", "2230", "2242", "7200", "5400", "5900", "rpm", "128", "256", "512"}
         
         for mid in set(model_ids):
             if mid in skip_ids:
                 continue
+            
             if mid not in title_lower:
+                # Dacă nu găsim "sn750", căutăm măcar "750" ca failsafe
                 digits = re.sub(r'\D', '', mid)
                 if digits and digits not in title_lower:
                     return False
+                    
+        return True
 
     elif isinstance(obj, Case):
         name_lower = obj.nume.lower()
+        title_lower = title.lower()
 
+        # 1. Extragere și verificare identificatori de model (litere+cifre)
+        # Ex: "4000D", "500DX", "M100A", "CC560"
         model_identifiers = re.findall(r'\b[a-z]*\d+[a-z]*\b', name_lower)
         for identifier in model_identifiers:
             if identifier in ["v1", "v2", "30", "31", "120mm", "140mm"]:
                 continue
             if identifier not in title_lower:
+                # Fallback: căutăm doar cifrele dacă literele au fost separate (ex: 4000 D)
                 digits = re.sub(r'\D', '', identifier)
                 if digits and digits not in title_lower:
                     return False
 
+        # 2. Verificare culori (Alb vs Negru)
         db_is_white = "white" in name_lower or "alb" in name_lower
         db_is_black = "black" in name_lower or "negru" in name_lower
 
@@ -511,24 +636,504 @@ def _is_valid_title_match(title: str, obj) -> Optional[bool]:
         if db_is_black and title_is_white and not title_is_black:
             return False
 
-        if "airflow" in name_lower and "airflow" not in title_lower:
-            return False
-        if "airflow" not in name_lower and "airflow" in title_lower:
-            return False
+        # Nu verifica RGB, Airflow sau V2 bidirecțional. 
+        # Lăsăm scorul de similaritate (_similarity) să decidă dacă e produsul corect.
+        
+        return True
 
-        db_has_rgb = "rgb" in name_lower
-        title_has_rgb = "rgb" in title_lower
-        if not db_has_rgb and title_has_rgb:
-            return False
+    elif isinstance(obj, Cooler):
+        name_lower = obj.nume.lower()
+        title_lower = title.lower()
+        
+        # 1. Validare strictă a radiatoarelor AIO (240, 280, 360, 420)
+        aio_sizes = ["240", "280", "360", "420"]
+        for size in aio_sizes:
+            if size in name_lower and size not in title_lower:
+                return False
+            # Prevenim potrivirea unui cooler pe aer cu un AIO din greșeală
+            if size not in name_lower and size in title_lower:
+                if "liquid" in name_lower or "aio" in name_lower or "aqua" in name_lower:
+                    return False
 
-        if "v2" in name_lower and "v2" not in title_lower:
-            return False
-        if "v2" not in name_lower and "v2" in title_lower:
-            return False
+        # 2. Validare strictă a versiunii (ex: Freezer 34 vs 36, Liquid Freezer II vs III)
+        versions = re.findall(r'\b(?:ii|iii|iv|v|\d{1,2})\b', name_lower)
+        for v in versions:
+            # Ne interesează doar numerele/cifrele romane folosite de obicei în modele
+            if v not in ["2", "3", "4", "5", "ii", "iii", "iv", "34", "35", "36", "620", "500", "400"]:
+                continue
+            if re.search(rf'\b{v}\b', name_lower) and not re.search(rf'\b{v}\b', title_lower):
+                return False
 
+        # 3. Validare Culori
+        db_is_white = "white" in name_lower or "alb" in name_lower
+        db_is_black = "black" in name_lower or "negru" in name_lower
+        
+        title_is_white = "white" in title_lower or "alb" in title_lower
+        title_is_black = "black" in title_lower or "negru" in title_lower
+        
+        if db_is_white and title_is_black and not title_is_white:
+            return False
+        if db_is_black and title_is_white and not title_is_black:
+            return False
+            
         return True
 
     return True
+
+
+# ─────────────────────── COMPATIBILITY SCORING ───────────────────────────────────────
+
+BRAND_ALIASES = {
+    "western digital": ["wd", "western"],
+    "be quiet!":       ["be quiet", "bequiet"],
+    "gigabyte":        ["aorus"],
+    "asus":            ["rog", "tuf", "proart"],
+}
+
+
+def _brand_in_title(brand: str, title: str) -> bool:
+    if brand in title:
+        return True
+    for canonical, aliases in BRAND_ALIASES.items():
+        if brand == canonical:
+            return any(a in title for a in aliases)
+    return False
+
+
+def _compute_compatibility_score(result: "PriceResult", obj) -> int:
+    """
+    Calculează un scor de compatibilitate 0–100 între un PriceResult
+    și obiectul din DB.
+
+    Structură:
+      +25  Brand corect (dacă lipsește → return 0 imediat)
+      +25  Chipset / Serie / Model principal corect
+      +30  Cod model specific (tie-breaker)
+      +10  Atribut bonus #1 (specific per categorie)
+      +10  Atribut bonus #2 (specific per categorie)
+      −50  Penalizare fatală (variație incompatibilă detectată)
+
+    Scor maxim: 100. Prag minim acceptat: MIN_SCORE (70).
+    """
+    title_lower  = _normalize_text(result.title)
+    title_tokens = _tokenize(result.title)
+    name_lower   = _normalize_text(obj.nume)
+    brand_lower  = str(obj.brand).lower().strip() if hasattr(obj, "brand") and obj.brand else ""
+    score        = 0
+
+    # ═════════════════════════════════════════════════════════════════════════════════
+    if isinstance(obj, GPU):
+    # ═════════════════════════════════════════════════════════════════════════════════
+        if not _brand_in_title(brand_lower, title_lower):
+            return 0
+        score += 25
+
+        db_numbers = re.findall(r"\d{3,4}", name_lower)
+        title_nums = re.findall(r"\d{3,4}", title_lower)
+        family_ok  = any(f in title_lower for f in ["rtx", "rx", "arc"] if f in name_lower)
+        nums_ok    = all(n in title_nums for n in db_numbers)
+        if family_ok and nums_ok:
+            score += 25
+
+        GPU_MODEL_CODES = [
+            "strix", "tuf", "dual", "phoenix", "evo", "ventus", "suprim",
+            "aorus", "eagle", "windforce", "taichi", "challenger", "phantom",
+            "pulse", "nitro", "merc", "qick", "swift", "trinity", "amp",
+            "prime", "shadow", "proart", "gaming"
+        ]
+        for code in GPU_MODEL_CODES:
+            if code in name_lower and code in title_lower:
+                score += 30
+                break
+
+        if obj.vram_gb:
+            vram = str(obj.vram_gb)
+            if f"{vram}gb" in title_tokens or f"{vram}g" in title_tokens:
+                score += 10
+
+        db_oc    = "oc" in _tokenize(obj.nume) or bool(re.search(r"(?:-|_|\b)o\d+g\b", obj.nume.lower()))
+        title_oc = "oc" in title_tokens or bool(re.search(r"(?:-|_|\b)o\d+g\b", result.title.lower()))
+        if db_oc == title_oc:
+            score += 10
+
+        gpu_suffixes = ["xtx", "xt", "ti", "super", "gre"]
+        for suf in gpu_suffixes:
+            db_has    = bool(re.search(rf"(?:\b|\d){suf}\b", name_lower))
+            title_has = bool(re.search(rf"(?:\b|\d){suf}\b", title_lower))
+            if db_has != title_has:
+                score -= 50
+                break
+
+        if obj.vram_gb:
+            vram = str(obj.vram_gb)
+            if f"{vram}gb" not in title_tokens and f"{vram}g" not in title_tokens:
+                other_vrams = [str(v) for v in [4, 6, 8, 10, 12, 16, 20, 24] if str(v) != vram]
+                if any(f"{v}gb" in title_tokens for v in other_vrams):
+                    score -= 50
+
+        if "white" in title_lower and "white" not in name_lower:
+            score -= 50
+
+    # ═════════════════════════════════════════════════════════════════════════════════
+    elif isinstance(obj, CPU):
+    # ═════════════════════════════════════════════════════════════════════════════════
+        if not _brand_in_title(brand_lower, title_lower):
+            return 0
+        score += 25
+
+        db_numbers = re.findall(r"\d{3,5}", name_lower)
+        title_nums = re.findall(r"\d{3,5}", title_lower)
+        if all(n in title_nums for n in db_numbers):
+            score += 25
+
+        CPU_SERIES = ["ryzen 5", "ryzen 7", "ryzen 9", "core i3", "core i5",
+                      "core i7", "core i9", "core ultra 5", "core ultra 7", "core ultra 9"]
+        for series in CPU_SERIES:
+            if series in name_lower and series in title_lower:
+                score += 30
+                break
+
+        if hasattr(obj, "socket") and obj.socket:
+            if obj.socket.lower() in title_lower:
+                score += 10
+
+        if brand_lower in title_lower:
+            score += 10
+
+        cpu_suffixes = ["kf", "k", "f", "xt", "x", "g", "ge", "x3d"]
+        for suf in sorted(cpu_suffixes, key=len, reverse=True):
+            db_has    = bool(re.search(rf"\b{re.escape(suf)}\b", name_lower))
+            title_has = bool(re.search(rf"\b{re.escape(suf)}\b", title_lower))
+            if db_has != title_has:
+                score -= 50
+                break
+
+    # ═════════════════════════════════════════════════════════════════════════════════
+    elif isinstance(obj, Motherboard):
+    # ═════════════════════════════════════════════════════════════════════════════════
+        if not _brand_in_title(brand_lower, title_lower):
+            return 0
+        score += 25
+
+        if obj.chipset:
+            chipset_num = re.sub(r"[^0-9]", "", obj.chipset.lower())
+            if chipset_num and chipset_num in title_lower:
+                score += 25
+
+        MB_MODEL_CODES = [
+            "tomahawk", "pro rs", "gaming x", "aorus elite", "aorus pro",
+            "aorus master", "aorus ultra", "prime", "rog strix", "rog maximus",
+            "tuf gaming", "proart", "rog crosshair", "formula", "unify",
+            "mag mortar", "mag tomahawk", "msi pro", "carbon", "steel legend",
+            "phantom gaming", "taichi", "creator", "xtreme"
+        ]
+        matched_code = False
+        for code in MB_MODEL_CODES:
+            if code in name_lower and code in title_lower:
+                score += 30
+                matched_code = True
+                break
+        if not matched_code:
+            name_words = [w for w in name_lower.split() if len(w) > 2]
+            chipset_words = {re.sub(r"[^a-z]", "", obj.chipset.lower())} if obj.chipset else set()
+            brand_words   = set(brand_lower.split())
+            meaningful    = [w for w in name_words if w not in chipset_words and w not in brand_words]
+            matches = sum(1 for w in meaningful if w in title_lower)
+            if matches >= 2:
+                score += 20
+
+        mb_formats = {"matx": ["matx", "micro-atx", "m-atx"], "eatx": ["eatx", "e-atx"]}
+        db_format  = "matx" if any(x in name_lower for x in ["matx", "micro", " m ", "m-atx"]) else \
+                     "eatx" if any(x in name_lower for x in ["eatx", "e-atx"]) else "atx"
+        if any(f in title_lower for f in mb_formats.get(db_format, ["atx"])):
+            score += 10
+
+        has_wifi_title = "wifi" in title_tokens or "wifi" in title_lower
+        if hasattr(obj, "are_wifi") and obj.are_wifi == has_wifi_title:
+            score += 10
+
+        title_is_matx = any(x in title_lower for x in ["matx", "micro-atx", "m-atx"]) or \
+                        bool(re.search(r"\b[a-z]\d{3,4}m\b", title_lower))
+        if db_format == "atx" and title_is_matx:
+            score -= 50
+        if db_format == "matx" and not title_is_matx and "atx" in title_lower:
+            score -= 50
+
+        if obj.chipset:
+            chipset_suffix = re.sub(r"[^a-z]", "", obj.chipset.lower())
+            chipset_num    = re.sub(r"[^0-9]", "", obj.chipset.lower())
+            if chipset_suffix and chipset_num and chipset_suffix in ["e", "x", "xi", "f"]:
+                has_suffix = bool(re.search(rf"{chipset_num}\s*{chipset_suffix}\b", title_lower))
+                if not has_suffix:
+                    score -= 50
+
+    # ═════════════════════════════════════════════════════════════════════════════════
+    elif isinstance(obj, RAM):
+    # ═════════════════════════════════════════════════════════════════════════════════
+        if not _brand_in_title(brand_lower, title_lower):
+            return 0
+        score += 25
+
+        ddr_match = re.search(r"(ddr\d)", obj.nume.lower())
+        ddr_gen   = ddr_match.group(1) if ddr_match else ""
+        freq      = str(obj.frecventa_mhz) if hasattr(obj, "frecventa_mhz") and obj.frecventa_mhz else ""
+        if ddr_gen and ddr_gen in title_lower:
+            score += 15
+        if freq and (f"{freq}mhz" in title_lower or freq in title_tokens):
+            score += 10
+
+        RAM_SERIES = [
+            "vengeance", "trident z", "fury beast", "fury renegade",
+            "dominator", "ripjaws", "spectrix", "lancer", "ares",
+            "rgb pro", "value ram", "sodimm"
+        ]
+        for series in RAM_SERIES:
+            if series in name_lower and series in title_lower:
+                score += 30
+                break
+
+        if hasattr(obj, "capacitate_totala_gb") and obj.capacitate_totala_gb:
+            cap = str(obj.capacitate_totala_gb)
+            if f"{cap}gb" in title_lower or f"{cap} gb" in title_lower:
+                score += 10
+
+        if hasattr(obj, "latenta_cl") and obj.latenta_cl:
+            cl = str(obj.latenta_cl)
+            if f"cl{cl}" in title_lower or f"c{cl}" in title_lower:
+                score += 10
+
+        if ddr_gen:
+            wrong_ddr = [d for d in ["ddr3", "ddr4", "ddr5"] if d != ddr_gen and d in title_lower]
+            if wrong_ddr:
+                score -= 50
+
+        if freq and hasattr(obj, "frecventa_mhz") and obj.frecventa_mhz:
+            title_freqs = re.findall(r"\d{3,5}", title_lower)
+            for tf in title_freqs:
+                tf_int = int(tf)
+                if 2000 < tf_int < 10000:
+                    diff_pct = abs(tf_int - obj.frecventa_mhz) / obj.frecventa_mhz
+                    if diff_pct > 0.05 and tf_int != obj.frecventa_mhz:
+                        score -= 50
+                        break
+
+    # ═════════════════════════════════════════════════════════════════════════════════
+    elif isinstance(obj, Storage):
+    # ═════════════════════════════════════════════════════════════════════════════════
+        if not _brand_in_title(brand_lower, title_lower):
+            return 0
+        score += 25
+
+        name_clean = obj.nume.lower()
+        cap_gb     = obj.capacitate_gb
+        model_ids  = re.findall(r"\b[a-z]+\d+[a-z]*\b", name_clean)
+        skip_ids   = {str(cap_gb), "m2", "gen3", "gen4", "gen5", "sata3", "sata2"}
+        if any(mid not in skip_ids and mid in title_lower for mid in model_ids):
+            score += 25
+
+        valid_caps = [f"{cap_gb}gb", f"{cap_gb} gb"]
+        if cap_gb in (1000, 1024): valid_caps.extend(["1tb", "1 tb"])
+        elif cap_gb in (2000, 2048): valid_caps.extend(["2tb", "2 tb"])
+        elif cap_gb >= 1000:
+            tb = cap_gb / 1000
+            valid_caps.extend([f"{tb:g}tb", f"{tb:g} tb"])
+        if any(c in title_lower for c in valid_caps):
+            score += 30
+
+        tip_lower = obj.tip.lower() if hasattr(obj, "tip") and obj.tip else ""
+        if tip_lower and tip_lower in title_lower:
+            score += 10
+
+        INTERFACES = {"nvme": ["nvme", "m.2", "pcie"], "sata": ["sata"], "hdd": ["hdd"]}
+        for iface, keywords in INTERFACES.items():
+            if iface in tip_lower and any(k in title_lower for k in keywords):
+                score += 10
+                break
+
+        if not any(c in title_lower for c in valid_caps):
+            if re.findall(r"\d+\s*(?:tb|gb)", title_lower):
+                score -= 50
+
+        if "hdd" in tip_lower and ("ssd" in title_lower or "nvme" in title_lower):
+            score -= 50
+        if "ssd" in tip_lower and "hdd" in title_lower and "ssd" not in title_lower:
+            score -= 50
+
+    # ═════════════════════════════════════════════════════════════════════════════════
+    elif isinstance(obj, PSU):
+    # ═════════════════════════════════════════════════════════════════════════════════
+        if not _brand_in_title(brand_lower, title_lower):
+            return 0
+        score += 25
+
+        nu_curat   = obj.nume.lower()
+        model_ids  = re.findall(r"\b[a-z]+\d+[a-z]*\b", nu_curat)
+        ignore_ids = {"plus", "gold", "bronze", "platinum", "core", "pure", "dark", "power"}
+        if any(mid not in ignore_ids and mid in title_lower for mid in model_ids):
+            score += 25
+
+        if getattr(obj, "putere_w", None):
+            w_val = str(obj.putere_w)
+            if any(fmt in title_lower for fmt in [f"{w_val}w", f"{w_val} w", f"{w_val} watt"]):
+                score += 30
+
+        if getattr(obj, "certificare", None):
+            cert_text = str(obj.certificare).lower()
+            cert_kw   = [w for w in re.findall(r"[a-z]+", cert_text)
+                         if w in ["gold", "bronze", "platinum", "titanium", "silver"]]
+            if all(kw in title_lower for kw in cert_kw):
+                score += 10
+
+        PSU_MOD_KW = ["full modular", "fully modular", "modular", "semi-modular", "semi modular"]
+        db_mod    = any(k in name_lower for k in PSU_MOD_KW)
+        title_mod = any(k in title_lower for k in PSU_MOD_KW)
+        if db_mod == title_mod:
+            score += 10
+
+        if getattr(obj, "putere_w", None):
+            w_val = str(obj.putere_w)
+            has_power = any(fmt in title_lower for fmt in [f"{w_val}w", f"{w_val} w", f"{w_val} watt"])
+            if not has_power and re.findall(r"(\d{3,4})\s*(?:w|watt)", title_lower):
+                score -= 50
+
+        CERT_RANK = {"titanium": 5, "platinum": 4, "gold": 3, "silver": 2, "bronze": 1}
+        if getattr(obj, "certificare", None):
+            cert_text  = str(obj.certificare).lower()
+            db_cert_kw = [w for w in re.findall(r"[a-z]+", cert_text) if w in CERT_RANK]
+            if db_cert_kw:
+                db_rank = CERT_RANK[db_cert_kw[0]]
+                title_certs = [w for w in title_lower.split() if w in CERT_RANK]
+                if title_certs and CERT_RANK[title_certs[0]] < db_rank:
+                    score -= 50
+
+    # ═════════════════════════════════════════════════════════════════════════════════
+    elif isinstance(obj, Case):
+    # ═════════════════════════════════════════════════════════════════════════════════
+        if not _brand_in_title(brand_lower, title_lower):
+            return 0
+        score += 25
+
+        name_lower_c = obj.nume.lower()
+        model_ids    = re.findall(r"\b[a-z]*\d+[a-z]*\b", name_lower_c)
+        skip_v       = ["v1", "v2", "30", "31"]
+        found_id     = any(mid not in skip_v and mid in title_lower for mid in model_ids)
+        if found_id:
+            score += 25
+
+        CASE_SUBCODES = [
+            "airflow", "tempered", "tg", "elite", "mesh", "rgb", "pro",
+            "compact", "nano", "shift", "define", "pop", "torrent"
+        ]
+        for code in CASE_SUBCODES:
+            if code in name_lower_c and code in title_lower:
+                score += 30
+                break
+
+        db_is_white = "white" in name_lower_c or "alb" in name_lower_c
+        db_is_black = "black" in name_lower_c or "negru" in name_lower_c
+        title_white = "white" in title_lower or "alb" in title_lower
+        title_black = "black" in title_lower or "negru" in title_lower
+        color_match = ((db_is_white and title_white) or (db_is_black and title_black)
+                       or (not db_is_white and not db_is_black))
+        if color_match:
+            score += 10
+
+        FORMATS = {"full": ["full tower", "full-tower"], "mini": ["mini", "itx"]}
+        db_fmt = "mini" if any(x in name_lower_c for x in ["mini", "itx"]) else \
+                 "full" if "full" in name_lower_c else "midi"
+        if any(f in title_lower for f in FORMATS.get(db_fmt, ["midi", "mid tower", "atx"])):
+            score += 10
+
+        if db_is_white and title_black and not title_white:
+            score -= 50
+        if db_is_black and title_white and not title_black:
+            score -= 50
+        if not found_id and model_ids:
+            score -= 50
+
+    # ═════════════════════════════════════════════════════════════════════════════════
+    elif isinstance(obj, Cooler):
+    # ═════════════════════════════════════════════════════════════════════════════════
+        if not _brand_in_title(brand_lower, title_lower):
+            return 0
+        score += 25
+
+        name_lower_c = obj.nume.lower()
+        model_ids    = re.findall(r"\b[a-z]+\d+[a-z]*\b", name_lower_c)
+        COOLER_MODEL_WORDS = [
+            "liquid freezer", "dark rock", "shadow rock", "pure rock",
+            "peerless", "assassin", "phantom spirit", "neptwin", "master air", "hyper"
+        ]
+        found_model = any(mid in title_lower for mid in model_ids) or \
+                      any(code in name_lower_c and code in title_lower for code in COOLER_MODEL_WORDS)
+        if found_model:
+            score += 25
+
+        IMPORTANT_VERSIONS = ["ii", "iii", "iv", "34", "35", "36", "360", "240", "280", "420"]
+        version_match = all(
+            not (re.search(rf"\b{v}\b", name_lower_c) and not re.search(rf"\b{v}\b", title_lower))
+            for v in IMPORTANT_VERSIONS
+        )
+        if version_match:
+            score += 30
+
+        aio_sizes = ["240", "280", "360", "420"]
+        db_aio    = next((s for s in aio_sizes if s in name_lower_c), None)
+        if db_aio and db_aio in title_lower:
+            score += 10
+        elif not db_aio and not any(s in title_lower for s in aio_sizes):
+            score += 10
+
+        db_is_white = "white" in name_lower_c or "alb" in name_lower_c
+        if (db_is_white and ("white" in title_lower or "alb" in title_lower)) or \
+           (not db_is_white and "white" not in title_lower):
+            score += 10
+
+        if db_aio:
+            other_aio = [s for s in aio_sizes if s != db_aio and s in title_lower]
+            if other_aio:
+                score -= 50
+
+        for v in ["ii", "iii"]:
+            db_has    = bool(re.search(rf"\b{v}\b", name_lower_c))
+            title_has = bool(re.search(rf"\b{v}\b", title_lower))
+            if db_has != title_has:
+                score -= 50
+                break
+
+    return max(0, score)
+
+
+def _select_best_result(results: list["PriceResult"]) -> "PriceResult | None":
+    """
+    Selectează cel mai bun PriceResult dintr-o listă de candidați valizi
+    (toți cu compatibility_score ≥ MIN_SCORE).
+
+    Reguli (in ordine):
+    1. Dacă există un singur candidat → el câștigă.
+    2. Dacă diferența de scor e ≤ SCORE_TOLERANCE → câștigă cel mai ieftin.
+    3. Dacă cel cu scor mai mare e cu > MAX_PRICE_PREMIUM mai scump → câștigă prețul.
+    4. Altfel → câștigă scorul mai mare.
+    """
+    if not results:
+        return None
+    if len(results) == 1:
+        return results[0]
+
+    best_score = max(results, key=lambda r: r.compatibility_score)
+    cheapest   = min(results, key=lambda r: r.price)
+
+    if best_score is cheapest:
+        return best_score
+
+    score_diff     = best_score.compatibility_score - cheapest.compatibility_score
+    price_diff_pct = float(best_score.price - cheapest.price) / float(cheapest.price)
+
+    if score_diff <= SCORE_TOLERANCE:
+        return cheapest
+    if price_diff_pct > MAX_PRICE_PREMIUM:
+        return cheapest
+    return best_score
 
 
 # ─────────────────────────── RAM HELPERS ─────────────────────────────────────
@@ -611,9 +1216,7 @@ def _verify_motherboard_details(session, result: PriceResult, obj: Motherboard) 
             if obj.chipset.lower() not in page_text:
                 return False
 
-        if obj.format:
-            if obj.format.lower() not in page_text:
-                return False
+
 
         # Verificam WiFi doar cand DB zice ca placa ARE WiFi —
         # confirmam ca specificatiile paginii mentioneaza WiFi.
@@ -878,8 +1481,15 @@ def _evaluate_site_results(
             if verbose:
                 print(f"    [eMag] Citire: {vc} MB/s | Scriere: {vs} MB/s")
 
+        # Calculează scorul de compatibilitate și filtrează sub prag
+        r.compatibility_score = _compute_compatibility_score(r, obj)
+        if r.compatibility_score < MIN_SCORE:
+            if verbose:
+                print(f"    [{site_name}] RESPINS scor={r.compatibility_score}/100 (sub {MIN_SCORE}): {r.title[:60]}")
+            continue
+
         if verbose:
-            print(f"    [{site_name}] OK {r.price:.2f} Lei | {r.title[:60]}")
+            print(f"    [{site_name}] OK scor={r.compatibility_score}/100 {r.price:.2f} Lei | {r.title[:60]}")
         valid.append(r)
 
     return valid
@@ -1049,8 +1659,12 @@ class Command(BaseCommand):
 
                         stats["sterse"] += 1
                     else:
-                        best = valid_results[0]
-                        self.stdout.write(f"-> {best.price:.2f} Lei ({best.site})")
+                        best = _select_best_result(valid_results)
+                        if best is None:
+                            self.stdout.write("-> NU GASIT (toate sub scor)")
+                            stats["sterse"] += 1
+                        else:
+                            self.stdout.write(f"-> {best.price:.2f} Lei ({best.site}) [scor: {best.compatibility_score}/100]")
 
                         if isinstance(obj, Storage):
                             citire_str  = f"{best.viteza_citire} MB/s"  if best.viteza_citire  is not None else "N/A"

@@ -971,7 +971,7 @@ def get_component_alternatives(component_type: str, component_id: int, limit: in
 
     scor_orig = calc_scor(orig, component_type.lower())
     brand_orig = get_brand(orig.nume)
-    alts = list(qs)
+    alts = [a for a in qs if a.pret is not None]
     
     buget_alt = None
     echivalent_alt = None
