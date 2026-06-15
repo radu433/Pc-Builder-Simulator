@@ -1,4 +1,3 @@
-
 import re
 import time
 import random
@@ -247,8 +246,16 @@ def build_query(obj, site: str = None) -> str:
         brand = str(obj.brand).strip()
         brand_search = "WD" if brand.lower() == "western digital" else brand
 
-        # 2. Setare Prefix
-        prefix = "HDD" if obj.tip == "HDD" else "SSD"
+        # 2. Setare Prefix + hint interfata (ajuta motorul de cautare)
+        if obj.tip == "HDD":
+            prefix = "HDD"
+            iface_hint = ""
+        elif obj.tip in ("NVME", "NVMe"):
+            prefix = "SSD"
+            iface_hint = "NVMe"
+        else:
+            prefix = "SSD"
+            iface_hint = ""
             
         # 3. Formatare curată a capacității pentru căutare (1000 / 1024 devin 1TB)
         cap_val = obj.capacitate_gb
@@ -266,15 +273,24 @@ def build_query(obj, site: str = None) -> str:
         # Eliminăm capacitățile din string ca să nu avem dubluri (ex: MX500 1000GB 1TB)
         name_clean = re.sub(r'\b\d+(\.\d+)?\s*(tb|gb)\b', ' ', name_clean)
         
-        stop_w = {'ssd', 'hdd', 'nvme', 'm.2', 'pcie', 'sata', 'solid', 'state', 'drive', 'hard', 'disk', 'technology'}
+        stop_w = {'ssd', 'hdd', 'nvme', 'm.2', 'pcie', 'sata', 'solid', 'state', 'drive', 'hard',
+                  'disk', 'technology', 'gen', 'plus', 'internal', 'intern', 'series', '2280', '2230'}
         
-        # Păstrăm doar cuvintele care nu sunt doar cifre și nu sunt în stop_words
-        words = [w for w in name_clean.split() if w not in stop_w and len(w) > 1 and not re.match(r'^\d+$', w)]
+        # Păstrăm cuvintele relevante — inclusiv combinații litere+cifre (MX500, SN750, A400)
+        # și cuvinte pur alfabetice scurte care fac parte din model (Pro, EVO, Blue, Red, Black)
+        words = []
+        for w in name_clean.split():
+            w = w.strip('.,')
+            if w in stop_w or len(w) <= 1:
+                continue
+            if re.match(r'^\d+$', w):  # cifre pure (rpm, latenta) — skip
+                continue
+            words.append(w)
         
-        # Luăm doar primele 2 identificatoare (ex: "MX500", "SN750", "RED PLUS")
-        model_str = " ".join(words[:2]).upper()
+        # Luăm primele 3 identificatoare pentru a acoperi modele ca "990 PRO", "SN750 SE", "FURY Renegade"
+        model_str = " ".join(words[:3]).upper()
 
-        query = f"{prefix} {brand_search} {model_str} {cap_str}"
+        query = f"{prefix} {brand_search} {model_str} {cap_str} {iface_hint}"
         return re.sub(r'\s+', ' ', query.strip())
 
     elif isinstance(obj, Case):
@@ -586,15 +602,25 @@ def _is_valid_title_match(title: str, obj) -> Optional[bool]:
         if brand == "western digital" and "wd" not in title_lower and "western" not in title_lower:
             return False
 
-        # 3. Verificare Serii Modele (ex: SN750, A400, BarraCuda)
+        # 3. Verificare interfata (SATA vs NVMe — confuzie frecventa)
+        tip_lower = obj.tip.lower() if hasattr(obj, "tip") and obj.tip else ""
+        if "nvme" in tip_lower:
+            if "sata" in title_lower and "nvme" not in title_lower and "m.2" not in title_lower and "pcie" not in title_lower:
+                return False  # SATA când noi vrem NVMe
+        elif "sata" in tip_lower:
+            if "nvme" in title_lower and "sata" not in title_lower:
+                return False  # NVMe când noi vrem SATA
+
+        # 4. Verificare Serii Modele (ex: SN750, A400, 990 Pro, BarraCuda)
         name_clean = obj.nume.lower()
         
-        # Extragem ID-uri de model (litere+cifre sau doar cifre din 3-4 caractere)
-        model_ids = re.findall(r'\b[a-z]+\d+[a-z]*\b', name_clean) 
+        # Extragem ID-uri de model: litere+cifre, cifre pure 3-4 chars, si cuvinte model fara cifre
+        model_ids = re.findall(r'\b[a-z]+\d+[a-z]*\b', name_clean)
         model_ids.extend(re.findall(r'\b\d{3,4}\b', name_clean))
         
         # Ignorăm specificații tehnice comune ca să nu dea fals-negative
-        skip_ids = {str(cap_gb), "m2", "gen3", "gen4", "gen5", "sata3", "sata2", "2280", "2230", "2242", "7200", "5400", "5900", "rpm", "128", "256", "512"}
+        skip_ids = {str(cap_gb), "m2", "gen3", "gen4", "gen5", "sata3", "sata2",
+                    "2280", "2230", "2242", "7200", "5400", "5900", "128", "256", "512"}
         
         for mid in set(model_ids):
             if mid in skip_ids:
@@ -926,9 +952,23 @@ def _compute_compatibility_score(result: "PriceResult", obj) -> int:
 
         name_clean = obj.nume.lower()
         cap_gb     = obj.capacitate_gb
-        model_ids  = re.findall(r"\b[a-z]+\d+[a-z]*\b", name_clean)
-        skip_ids   = {str(cap_gb), "m2", "gen3", "gen4", "gen5", "sata3", "sata2"}
-        if any(mid not in skip_ids and mid in title_lower for mid in model_ids):
+
+        # Extragem ID-uri de model: litere+cifre (mx500, sn750), cifre>=3 (990, 870),
+        # sau cuvinte alfa scurte ce apar în modele (pro, evo, blue, red, black, plus, se, ultra)
+        model_alpha_num = re.findall(r"\b[a-z]+\d+[a-z]*\b", name_clean)
+        model_numeric   = re.findall(r"\b\d{3,4}\b", name_clean)
+        # Cuvinte de model "pure" fără cifre care apar în titluri (Pro, EVO, Blue, etc.)
+        MODEL_WORDS = {"pro", "evo", "blue", "red", "black", "plus", "ultra", "se",
+                       "fury", "renegade", "barracuda", "firecuda", "ironwolf", "red",
+                       "gold", "purple", "a400", "870", "860", "850", "990", "980", "970"}
+        model_name_words = [w for w in name_clean.split() if w in MODEL_WORDS]
+
+        skip_ids = {str(cap_gb), "m2", "gen3", "gen4", "gen5", "sata3", "sata2",
+                    "128", "256", "512", "2280", "2230"}
+
+        all_model_ids = set(model_alpha_num + model_numeric + model_name_words) - skip_ids
+
+        if any(mid in title_lower for mid in all_model_ids):
             score += 25
 
         valid_caps = [f"{cap_gb}gb", f"{cap_gb} gb"]
@@ -941,15 +981,21 @@ def _compute_compatibility_score(result: "PriceResult", obj) -> int:
             score += 30
 
         tip_lower = obj.tip.lower() if hasattr(obj, "tip") and obj.tip else ""
-        if tip_lower and tip_lower in title_lower:
-            score += 10
 
-        INTERFACES = {"nvme": ["nvme", "m.2", "pcie"], "sata": ["sata"], "hdd": ["hdd"]}
+        # Bonus interfata (+10): SSD NVMe trebuie sa aiba nvme/m.2/pcie in titlu
+        INTERFACES = {"nvme": ["nvme", "m.2", "pcie"], "sata": ["sata", "2.5"], "hdd": ["hdd"]}
         for iface, keywords in INTERFACES.items():
             if iface in tip_lower and any(k in title_lower for k in keywords):
                 score += 10
                 break
 
+        # Bonus tip explicit (+5) — "SSD" in titlu pt SSD, "HDD" pt HDD
+        if "hdd" in tip_lower and "hdd" in title_lower:
+            score += 5
+        elif "ssd" in tip_lower and "ssd" in title_lower:
+            score += 5
+
+        # ── Penalizări fatale ──────────────────────────────────────────────────────
         if not any(c in title_lower for c in valid_caps):
             if re.findall(r"\d+\s*(?:tb|gb)", title_lower):
                 score -= 50
@@ -958,6 +1004,12 @@ def _compute_compatibility_score(result: "PriceResult", obj) -> int:
             score -= 50
         if "ssd" in tip_lower and "hdd" in title_lower and "ssd" not in title_lower:
             score -= 50
+
+        # Penalizare: interfata gresita (NVMe in DB dar SATA in titlu si invers)
+        if "nvme" in tip_lower and "sata" in title_lower and "nvme" not in title_lower and "m.2" not in title_lower:
+            score -= 50
+        if "sata" in tip_lower and ("nvme" in title_lower or "pcie" in title_lower) and "sata" not in title_lower:
+            score -= 30  # Nu fatal — unele magazine scriu ambele
 
     # ═════════════════════════════════════════════════════════════════════════════════
     elif isinstance(obj, PSU):
@@ -1539,6 +1591,31 @@ def find_all_valid_prices(
                         retry_valid = _evaluate_site_results(
                             retry_results, obj, session, site_name,
                             max(0.40, min_similarity - 0.10), verbose
+                        )
+                        all_valid.extend(retry_valid)
+
+            # Retry simplificat si pentru Storage — daca nu am gasit nimic
+            if not site_valid and isinstance(obj, Storage):
+                brand = str(obj.brand).strip()
+                brand_search = "WD" if brand.lower() == "western digital" else brand
+                cap_val = obj.capacitate_gb
+                if cap_val >= 1000:
+                    tb = cap_val // 1000 if cap_val % 1000 == 0 else cap_val // 1024
+                    cap_str = f"{tb:g}TB"
+                else:
+                    cap_str = f"{cap_val}GB"
+                prefix_fb = "HDD" if obj.tip == "HDD" else "SSD"
+                # Query ultra-simplu: doar tip + brand + capacitate
+                fallback_q = f"{prefix_fb} {brand_search} {cap_str}"
+                if fallback_q.strip() != query.strip():
+                    if verbose:
+                        print(f"  [{site_name}] RETRY storage simplificat: '{fallback_q}'")
+                    _rand_delay(1.0, 2.5)
+                    retry_results = scrape_fn(session, fallback_q)
+                    if retry_results:
+                        retry_valid = _evaluate_site_results(
+                            retry_results, obj, session, site_name,
+                            max(0.30, min_similarity - 0.10), verbose
                         )
                         all_valid.extend(retry_valid)
 
