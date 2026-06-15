@@ -580,7 +580,7 @@ def generate_build_image(case_name: str, gpu_name: str, cpu_name: str) -> dict:
         client = genai.Client(api_key=settings.GEMINI_IMAGE_API_KEY)
 
         response = client.models.generate_content(
-            model=" gemini-2.0-flash-exp-image-generation",
+            model="gemini-2.0-flash-exp-image-generation",
             contents=prompt,
             config=types.GenerateContentConfig(
                 response_modalities=["IMAGE", "TEXT"],
