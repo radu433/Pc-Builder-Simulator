@@ -171,3 +171,4 @@ SIMPLE_JWT = {
     'AUTH_HEADER_TYPES': ('Bearer',),               # Standardul folosit in industrie
 }
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_IMAGE_API_KEY = os.getenv("GEMINI_IMAGE_API_KEY", "") or GEMINI_API_KEY

@@ -577,26 +577,29 @@ def generate_build_image(case_name: str, gpu_name: str, cpu_name: str) -> dict:
     )
 
     try:
-        client = genai.Client(api_key=settings.GEMINI_API_KEY)
-        response = client.models.generate_images(
-            model="imagen-4.0-generate-001",
-            prompt=prompt,
-            config=types.GenerateImagesConfig(
-                number_of_images=1,
-                aspect_ratio="16:9",
-                safety_filter_level="block_low_and_above",
+        client = genai.Client(api_key=settings.GEMINI_IMAGE_API_KEY)
+
+        response = client.models.generate_content(
+            model="gemini-2.5-flash-preview-image-generation",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_modalities=["IMAGE", "TEXT"],
             )
         )
 
-        image_data = response.generated_images[0].image.image_bytes
-        with open(cache_path, "wb") as f:
-            f.write(image_data)
+        # Extrage imaginea din response
+        for part in response.candidates[0].content.parts:
+            if part.inline_data is not None:
+                image_data = part.inline_data.data
+                with open(cache_path, "wb") as f:
+                    f.write(image_data)
+                return {
+                    "image_path": cache_path,
+                    "cached": False,
+                    "prompt": prompt,
+                }
 
-        return {
-            "image_path": cache_path,
-            "cached": False,
-            "prompt": prompt,
-        }
+        return {"error": "Nicio imagine găsită în response"}
 
     except Exception as e:
         return {"error": str(e)}
