@@ -217,8 +217,25 @@ def check_compatibility(build: dict) -> dict:
 @mcp.tool()
 def benchmark_build(cpu: dict, gpu: dict, ram: dict, rezolutie: str = "1080p", jocuri_preferate: list[str] = None, user_id: int = None) -> dict:
     """Rulează benchmark complet pentru un build și returnează FPS-uri estimate via Gemini. Poți specifica 'jocuri_preferate'."""
-    
+    from components.models import BuildAnalysisCache
+
     try:
+        # --- CACHE CHECK ---
+        cpu_id = cpu.get("id")
+        gpu_id = gpu.get("id")
+        if cpu_id and gpu_id:
+            cache_key = hashlib.md5(f"{cpu_id}_{gpu_id}".encode()).hexdigest()
+            try:
+                cached = BuildAnalysisCache.objects.get(cache_key=cache_key)
+                result = cached.fps_data
+                result["_cached"] = True
+                return result
+            except BuildAnalysisCache.DoesNotExist:
+                pass
+        else:
+            cache_key = None
+        # --- END CACHE CHECK ---
+
         if not jocuri_preferate and user_id:
             try:
                 from accounts.models import UserPreferences
@@ -227,10 +244,10 @@ def benchmark_build(cpu: dict, gpu: dict, ram: dict, rezolutie: str = "1080p", j
                     jocuri_preferate = prefs.jocuri
             except:
                 pass
-                
+
         if not jocuri_preferate:
             jocuri_preferate = ["CS2", "Cyberpunk 2077", "Minecraft", "Valorant"]
-            
+
         scor_cpu = 0.0
         if cpu:
             nuclee    = int(cpu.get("nuclee", 4) or 4)
@@ -294,7 +311,18 @@ Reguli:
         text = response.text.strip()
         text = re.sub(r"^```(?:json)?\s*", "", text)
         text = re.sub(r"\s*```$", "", text)
-        return json.loads(text)
+        result = json.loads(text)
+
+        # --- SALVEAZĂ ÎN CACHE ---
+        if cache_key:
+            BuildAnalysisCache.objects.update_or_create(
+                cache_key=cache_key,
+                defaults={"fps_data": result}
+            )
+        # --- END CACHE ---
+
+        return result
+
     except json.JSONDecodeError as e:
         return {"error": f"Gemini nu a returnat JSON valid: {e}"}
     except Exception as e:
