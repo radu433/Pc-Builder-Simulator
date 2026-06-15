@@ -676,10 +676,6 @@ const triggerCasePreview = async () => {
     showToast('Trebuie să fii conectat pentru a genera imagini!', 'error')
     return
   }
-  if (imageGenerationsCount.value >= 2) {
-    showToast('Ai atins limita de 2 generări de imagini!', 'error')
-    return
-  }
   
   const casePart = categories.value.find(c => c.id === 'case')?.selectedPart
   const gpu = categories.value.find(c => c.id === 'gpu')?.selectedPart
