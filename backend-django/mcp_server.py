@@ -314,11 +314,23 @@ Reguli:
         result = json.loads(text)
 
         # --- SALVEAZĂ ÎN CACHE ---
-        if cache_key:
-            BuildAnalysisCache.objects.update_or_create(
-                cache_key=cache_key,
-                defaults={"fps_data": result}
-            )
+        if cache_key and cpu_id and gpu_id:
+            try:
+                cpu_obj = CPU.objects.get(id=cpu_id)
+                gpu_obj = GPU.objects.get(id=gpu_id)
+                ram_id = ram.get("id") if ram else None
+                ram_obj = RAM.objects.get(id=ram_id) if ram_id else None
+                BuildAnalysisCache.objects.update_or_create(
+                    cache_key=cache_key,
+                    defaults={
+                        "cpu": cpu_obj,
+                        "gpu": gpu_obj,
+                        "ram": ram_obj,
+                        "fps_data": result,
+                    }
+                )
+            except Exception as cache_err:
+                print(f"[Cache] Eroare la salvare: {cache_err}")
         # --- END CACHE ---
 
         return result
