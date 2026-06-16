@@ -307,7 +307,7 @@ class ChatView(APIView):
         ))
 
         try:
-            client = genai.Client(api_key=settings.GEMINI_API_KEY)
+            client = genai.Client(api_key=settings.GEMINI_CHAT_API_KEY)
 
             # Configurăm tool-urile pentru Gemini
             tools = types.Tool(function_declarations=[
@@ -327,7 +327,7 @@ class ChatView(APIView):
 
             for iteration in range(self.MAX_TOOL_ITERATIONS):
                 response = client.models.generate_content(
-                    model="gemini-2.0-flash",
+                    model="gemini-3.1-flash-lite",
                     contents=contents,
                     config=config,
                 )

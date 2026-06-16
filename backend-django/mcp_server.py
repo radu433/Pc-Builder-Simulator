@@ -303,9 +303,9 @@ Reguli:
 3. FPS: 1080p > 1440p > 4K pentru fiecare preset
 4. Rating: S=144+fps, A=90-143fps, B=60-89fps, C=30-59fps, D=sub 30fps (High preset, rezoluția țintă)"""
 
-        client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        client = genai.Client(api_key=settings.GEMINI_BOTTLENECK_FPS_API_KEY)
         response = client.models.generate_content(
-            model="gemini-2.5-flash-lite",
+            model="gemini-3.1-flash-lite",
             contents=prompt
         )
         text = response.text.strip()
