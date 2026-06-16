@@ -580,7 +580,7 @@ def generate_build_image(case_name: str, gpu_name: str, cpu_name: str) -> dict:
     try:
         client = genai.Client(api_key=settings.GEMINI_IMAGE_API_KEY)
         response = client.models.generate_images(
-            model="imagen-4.0-fast-generate-001",
+            model="gemini-2.5-flash-lite",
             prompt=prompt,
             config=types.GenerateImagesConfig(
                 number_of_images=1,

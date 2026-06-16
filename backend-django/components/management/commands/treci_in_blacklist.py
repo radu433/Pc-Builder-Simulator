@@ -21,7 +21,7 @@ class Command(BaseCommand):
             Storage, Monitor, Fan, NetworkAdapter
         ]
         
-        delete_after = options['delete']
+        delete_after = True # setat mereu pe True
         total_added = 0
         total_deleted = 0
 
@@ -54,6 +54,5 @@ class Command(BaseCommand):
 
         self.stdout.write("\n" + "="*50)
         self.stdout.write(self.style.SUCCESS(f"Finalizat! Au fost adăugate {total_added} componente noi în Blacklist."))
-        if delete_after:
-            self.stdout.write(self.style.WARNING(f"Au fost șterse {total_deleted} componente (fără preț) din tabelele principale."))
+        self.stdout.write(self.style.WARNING(f"Au fost șterse {total_deleted} componente (fără preț) din tabelele principale."))
         self.stdout.write("="*50 + "\n")

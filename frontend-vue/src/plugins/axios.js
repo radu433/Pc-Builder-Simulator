@@ -3,7 +3,7 @@ import axios from 'axios';
 const api = axios.create({
   // Aici punem adresa de baza a backend-ului tau Django
   baseURL: '/api',
-  timeout: 5000, // daca nu rasp dupa 5 sec inchidem
+  timeout: 60000, // 60 sec — AI chat-ul poate dura mai mult
   headers: {
     'Content-Type': 'application/json',
   }
