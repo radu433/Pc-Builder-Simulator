@@ -97,6 +97,49 @@ def _clean_price(text: str) -> Optional[Decimal]:
         return None
 
 
+def _build_valid_caps(cap_gb: int) -> list[str]:
+    """Generează toate variantele acceptabile de capacitate pentru un Storage.
+    Acoperă: echivalențe TB exacte, scrieri cu/fără spațiu, toleranță ±10%
+    pentru capacități non-standard (ex: 960GB ~ 1TB, 480GB ~ 500GB)."""
+    caps = [f"{cap_gb}gb", f"{cap_gb} gb"]
+
+    # Echivalențe TB exacte
+    if cap_gb in (1000, 1024):
+        caps.extend(["1tb", "1 tb", "1 t"])
+    elif cap_gb in (2000, 2048):
+        caps.extend(["2tb", "2 tb", "2 t"])
+    elif cap_gb in (4000, 4096):
+        caps.extend(["4tb", "4 tb"])
+    elif cap_gb >= 1000:
+        tb_1000 = cap_gb / 1000
+        tb_1024 = cap_gb / 1024
+        caps.extend([f"{tb_1000:g}tb", f"{tb_1000:g} tb",
+                     f"{tb_1024:g}tb", f"{tb_1024:g} tb"])
+
+    # Toleranță pentru capacități non-standard (ex: 960GB comercial = 1TB)
+    TOLERANCE_MAP = {
+        120: [128], 240: [256], 480: [500, 512], 960: [1000, 1024],
+        1920: [2000, 2048], 3840: [4000, 4096],
+    }
+    if cap_gb in TOLERANCE_MAP:
+        for alt in TOLERANCE_MAP[cap_gb]:
+            caps.extend([f"{alt}gb", f"{alt} gb"])
+            if alt >= 1000:
+                tb = alt // 1000
+                caps.extend([f"{tb}tb", f"{tb} tb"])
+
+    # Invers: dacă DB are valoarea „rotundă", acceptăm și echivalentul binar
+    REVERSE_MAP = {
+        128: [120], 256: [240], 500: [480, 512], 512: [480, 500],
+        1000: [960], 2000: [1920],
+    }
+    if cap_gb in REVERSE_MAP:
+        for alt in REVERSE_MAP[cap_gb]:
+            caps.extend([f"{alt}gb", f"{alt} gb"])
+
+    return caps
+
+
 def _normalize_text(text: str) -> str:
     text = text.lower()
     text = re.sub(r"(rtx|rx)(\d{3,4})", r"\1 \2", text)
@@ -343,10 +386,13 @@ def build_query(obj, site: str = None) -> str:
 
     elif isinstance(obj, Cooler):
         name_clean = obj.nume.lower()
-        
+
+        # Extragem dimensiunea AIO (240/280/360/420) ÎNAINTE să ștergem mm-urile
+        aio_match = re.search(r'\b(240|280|360|420)\b', name_clean)
+        aio_size = aio_match.group(1) if aio_match else ""
+
         # Curățăm dimensiunile ventilatoarelor care încurcă căutarea (ex: "2x 120mm", "135mm")
-        # Dar lăsăm numerele de radiatoare AIO intacte
-        name_clean = re.sub(r'\b\d{1,2}x\s*\d{2,3}mm\b', '', name_clean) 
+        name_clean = re.sub(r'\b\d{1,2}x\s*\d{2,3}mm\b', '', name_clean)
         name_clean = re.sub(r'\b\d{2,3}mm\b', '', name_clean)
         
         # Scoatem cuvintele descriptive inutile pentru search
@@ -360,10 +406,11 @@ def build_query(obj, site: str = None) -> str:
             
         cuvinte = [w for w in name_clean.split() if len(w) > 1]
         
-        # Luăm primele 3-4 cuvinte esențiale (ex: "Arctic Liquid Freezer III")
+        # Luăm primele 4 cuvinte esențiale (ex: "Be Quiet Silent Loop 3")
         short_name = " ".join(cuvinte[:4]).title()
-        
-        query = f"Cooler {short_name}"
+
+        # Adăugăm dimensiunea AIO explicit → "Cooler Be Quiet Silent Loop 3 240"
+        query = f"Cooler {short_name} {aio_size}".strip()
         return re.sub(r'\s+', ' ', query).strip()
 
     return re.sub(r'\s+', ' ', f"{prefix} {base}".strip())
@@ -581,18 +628,7 @@ def _is_valid_title_match(title: str, obj) -> Optional[bool]:
         cap_gb = obj.capacitate_gb
 
         # 1. Verificare Flexibilă a Capacității
-        valid_caps = [f"{cap_gb}gb", f"{cap_gb} gb"]
-        
-        # Tratăm manual confuziile clasice din SEO-ul magazinelor
-        if cap_gb in (1000, 1024):
-            valid_caps.extend(["1tb", "1 tb", "1 t"])
-        elif cap_gb in (2000, 2048):
-            valid_caps.extend(["2tb", "2 tb", "2 t"])
-        elif cap_gb >= 1000:
-            tb_1000 = cap_gb / 1000
-            tb_1024 = cap_gb / 1024
-            valid_caps.extend([f"{tb_1000:g}tb", f"{tb_1000:g} tb", f"{tb_1024:g}tb", f"{tb_1024:g} tb"])
-            
+        valid_caps = _build_valid_caps(cap_gb)
         found_cap = any(cap in title_lower for cap in valid_caps)
         if not found_cap:
             return False
@@ -851,7 +887,8 @@ def _compute_compatibility_score(result: "PriceResult", obj) -> int:
             "aorus master", "aorus ultra", "prime", "rog strix", "rog maximus",
             "tuf gaming", "proart", "rog crosshair", "formula", "unify",
             "mag mortar", "mag tomahawk", "msi pro", "carbon", "steel legend",
-            "phantom gaming", "taichi", "creator", "xtreme"
+            "phantom gaming", "taichi", "creator", "xtreme",
+            "edge", "apex", "hero", "extreme", "impact", "gene",
         ]
         matched_code = False
         for code in MB_MODEL_CODES:
@@ -971,12 +1008,7 @@ def _compute_compatibility_score(result: "PriceResult", obj) -> int:
         if any(mid in title_lower for mid in all_model_ids):
             score += 25
 
-        valid_caps = [f"{cap_gb}gb", f"{cap_gb} gb"]
-        if cap_gb in (1000, 1024): valid_caps.extend(["1tb", "1 tb"])
-        elif cap_gb in (2000, 2048): valid_caps.extend(["2tb", "2 tb"])
-        elif cap_gb >= 1000:
-            tb = cap_gb / 1000
-            valid_caps.extend([f"{tb:g}tb", f"{tb:g} tb"])
+        valid_caps = _build_valid_caps(cap_gb)
         if any(c in title_lower for c in valid_caps):
             score += 30
 
@@ -1265,10 +1297,23 @@ def _verify_motherboard_details(session, result: PriceResult, obj: Motherboard) 
                 return False
 
         if obj.chipset:
-            if obj.chipset.lower() not in page_text:
+            chipset_lower = obj.chipset.lower()
+            chipset_num = re.sub(r'[^0-9]', '', chipset_lower)
+            chipset_suffix = re.sub(r'[^a-z]', '', chipset_lower)  # ex: 'b' din 'b650', 'b' + 'e' din 'b650e'
+            # Sufixul real e doar litera/literele după cifre
+            chipset_letter_suffix = re.sub(r'^[a-z]+\d+', '', chipset_lower)  # ex: 'e' din 'b650e'
+
+            chipset_on_page = chipset_lower in page_text
+            if not chipset_on_page and chipset_num:
+                # fallback: numărul + sufixul cu spațiu opțional (ex: '650e' sau '650 e')
+                if chipset_letter_suffix:
+                    chipset_on_page = bool(
+                        re.search(rf'\b{chipset_num}\s*{chipset_letter_suffix}\b', page_text)
+                    )
+                else:
+                    chipset_on_page = chipset_num in page_text
+            if not chipset_on_page:
                 return False
-
-
 
         # Verificam WiFi doar cand DB zice ca placa ARE WiFi —
         # confirmam ca specificatiile paginii mentioneaza WiFi.
@@ -1280,14 +1325,11 @@ def _verify_motherboard_details(session, result: PriceResult, obj: Motherboard) 
             if not has_wifi:
                 return False
 
-        # Nu mai verificam Bluetooth pe pagina intreaga —
-        # apare prea des in texte irelevante (related products, footer).
-        # Bluetooth coreleaza aproape intotdeauna cu WiFi pe placi de baza.
-
         return True
     except Exception as e:
         logger.debug("Eroare verificare detalii MB (%s): %s", result.url, e)
-        return False
+        # La erori de rețea/timeout nu blocăm — titlul a trecut deja validarea
+        return True
 
 
 def _verify_ram_module_count(session, result: PriceResult, obj: RAM) -> bool:
@@ -1469,13 +1511,20 @@ def _build_motherboard_fallback_query(obj, site: str) -> Optional[str]:
     chipset = str(obj.chipset).strip() if obj.chipset else ""
     wifi_str = "WiFi" if obj.are_wifi else ""
 
-    # Extragem cuvinte-cheie de model din nume (fara brand si chipset)
+    # Extragem cuvinte-cheie de model din nume (fara brand, chipset si variante cu sufix)
     name_words = obj.nume.split()
     model_keywords = []
+    chipset_num = re.sub(r'[^0-9]', '', chipset.lower()) if chipset else ""
     skip_words = {brand.lower(), chipset.lower(), "wifi", "wi-fi"}
+    if chipset_num:
+        skip_words.add(chipset_num)  # ex: "650" — acoperă și B650M, B650E
     for w in name_words:
-        if w.lower() not in skip_words and not re.match(r'^[A-Z]{1,3}\d{3,4}$', w):
-            model_keywords.append(w)
+        # Sărim cuvintele din skip_words SAU formele "B650M", "B650E" (chipset + sufix literă)
+        if w.lower() in skip_words:
+            continue
+        if re.match(r'^[A-Z]{1,3}\d{3,4}[A-Z]?$', w):
+            continue
+        model_keywords.append(w)
 
     model_str = " ".join(model_keywords[:3])
 
@@ -1659,6 +1708,12 @@ class Command(BaseCommand):
             default=False,
             help="Afiseaza detalii despre fiecare rezultat (respins/acceptat + motiv)",
         )
+        parser.add_argument(
+            "--start-id",
+            type=int,
+            default=None,
+            help="Porneste procesarea de la ID-ul specificat (inclusiv), ex: --start-id 579",
+        )
 
     def handle(self, *args, **options):
         import os
@@ -1668,6 +1723,7 @@ class Command(BaseCommand):
         headless   = options["headless"]
         only_model = options.get("model")
         verbose    = options["verbose"]
+        start_id   = options.get("start_id")
 
         stats = {
             "procesate":   0,
@@ -1701,7 +1757,11 @@ class Command(BaseCommand):
                 self.stdout.write(f"Model: {model_class.__name__} ({count} produse)")
                 self.stdout.write("─" * 65)
 
-                for obj in model_class.objects.all().iterator(chunk_size=50):
+                queryset = model_class.objects.all()
+                if start_id and model_class == Storage:
+                    queryset = queryset.filter(id__gte=start_id)
+                    self.stdout.write(f"  (pornind de la ID >= {start_id})")
+                for obj in queryset.iterator(chunk_size=50):
                     stats["procesate"] += 1
                     batch_counter += 1
 
@@ -1718,21 +1778,7 @@ class Command(BaseCommand):
                         continue
 
                     if not valid_results:
-                        self.stdout.write("-> NU GASIT - mutat in Blacklist si sters")
-
-                        if not dry_run:
-                            # if obj.part_number:
-                            #     Blacklist.objects.get_or_create(
-                            #         part_number=obj.part_number,
-                            #         defaults={'nume': obj.nume},
-                            #     )
-                            # else:
-                            #     Blacklist.objects.get_or_create(
-                            #         nume=obj.nume,
-                            #         defaults={'part_number': None},
-                            #     )
-                            # obj.delete()
-                            pass
+                        self.stdout.write("-> NU GASIT pe magazine")
 
                         stats["sterse"] += 1
                     else:
@@ -1794,6 +1840,6 @@ class Command(BaseCommand):
         self.stdout.write("=" * 65)
         self.stdout.write(f"  Procesate:   {stats['procesate']}")
         self.stdout.write(f"  Actualizate: {stats['actualizate']}")
-        self.stdout.write(f"  Sterse (-> Blacklist): {stats['sterse']}")
+        self.stdout.write(f"  Ne-gasite (ignorate): {stats['sterse']}")
         self.stdout.write(f"  Erori:       {stats['eroare']}")
         self.stdout.write("=" * 65)
