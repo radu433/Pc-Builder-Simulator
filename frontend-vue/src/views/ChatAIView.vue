@@ -258,7 +258,7 @@ const sendMessage = async () => {
   scrollToBottom()
 
   try {
-    const response = await api.post('/chat-architect/', {
+    const response = await api.post('/builder/chat/', {
       mesaj_nou: userText,
       istoric: messages.value.map(m => ({ role: m.role, text: m.text }))
     })

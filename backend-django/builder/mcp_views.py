@@ -626,7 +626,7 @@ class GenerateImageView(APIView):
             gpu_name=str(gpu_name),
             cpu_name=str(cpu_name),
         )
-        if "image_path" in result:
+        if result.get("image_path"):
             import os
             from django.conf import settings
             filename = os.path.basename(result["image_path"])
