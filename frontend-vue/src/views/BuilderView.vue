@@ -130,15 +130,19 @@
              
              <!-- PC Visual Preview -->
              <div class="pc-preview-card glass-panel interactive-card">
-               <div class="pc-hologram" v-if="!generatedImageUrl">
+               <div class="pc-hologram" v-if="!generatedImageUrl && !imageGenerationErrorText">
                   <div class="holo-core"></div>
                   <div class="holo-rings"></div>
+               </div>
+               <div class="pc-preview-error font-inter text-center" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: #8b9db5; padding: 20px;" v-else-if="imageGenerationErrorText">
+                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="mb-4 text-red-500" style="opacity: 0.8"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                  <p>{{ imageGenerationErrorText }}</p>
                </div>
                <div v-else class="generated-image-container">
                   <img :src="generatedImageUrl" class="generated-preview-img" alt="PC Build" />
                   <button class="btn-enlarge font-mono" @click="showImageModal = true">ENLARGE</button>
                </div>
-               <div class="pc-preview-label font-mono">CASE PREVIEW {{ generatedImageUrl ? '[GENERATED]' : '[SIMULATED]' }}</div>
+               <div class="pc-preview-label font-mono">CASE PREVIEW {{ generatedImageUrl ? '[GENERATED]' : (imageGenerationErrorText ? '[UNAVAILABLE]' : '[SIMULATED]') }}</div>
              </div>
 
              <!-- Bottleneck Analysis -->
@@ -418,6 +422,7 @@ const fpsEstimates = ref([])
 const alternatives = ref([])
 
 const generatedImageUrl = ref(null)
+const imageGenerationErrorText = ref(null)
 const showImageModal = ref(false)
 
 const isLoggedIn = ref(false)
@@ -687,6 +692,7 @@ const triggerCasePreview = async () => {
   }
   
   try {
+    imageGenerationErrorText.value = null; // Reset error before fetching
     showToast('Se generează imaginea... Așteaptă câteva secunde.', 'success')
     const response = await api.post('/builder/generate-image/', {
       case_name: casePart.nume || casePart.name,
@@ -700,9 +706,15 @@ const triggerCasePreview = async () => {
       localStorage.setItem('image_generations_count', imageGenerationsCount.value)
     } else {
       showToast(response.data.error || 'Eroare la generare', 'error')
+      if (response.data.error) {
+        imageGenerationErrorText.value = response.data.error
+      } else {
+        imageGenerationErrorText.value = "Preview indisponibil momentan."
+      }
     }
   } catch (err) {
     showToast('Eroare la generarea imaginii', 'error')
+    imageGenerationErrorText.value = "Preview indisponibil momentan (Eroare server)."
   }
 }
 </script>

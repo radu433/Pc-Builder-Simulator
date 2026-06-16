@@ -173,7 +173,7 @@
 <script setup>
 import { ref, onMounted, nextTick, watch, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import axios from 'axios'
+import api from '@/plugins/axios'
 
 const router = useRouter()
 const userInput = ref('')
@@ -258,21 +258,10 @@ const sendMessage = async () => {
   scrollToBottom()
 
   try {
-    const token = localStorage.getItem('access_token')
-    
-    const response = await axios.post(
-      import.meta.env.VITE_AI_AGENT_URL + '/chat/',
-      {
-        mesaj_nou: userText,
-        istoric: messages.value.map(m => ({ role: m.role, text: m.text }))
-      },
-      {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      }
-    )
+    const response = await api.post('/chat-architect/', {
+      mesaj_nou: userText,
+      istoric: messages.value.map(m => ({ role: m.role, text: m.text }))
+    })
 
     const raspunsAI = response.data
 
