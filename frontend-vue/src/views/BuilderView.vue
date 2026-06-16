@@ -211,8 +211,14 @@
            <div class="col-right">
              
              <!-- Build List -->
-             <div class="build-list-panel glass-panel">
-               <h3 class="panel-title font-syne">SELECTED COMPONENTS</h3>
+              <div class="build-list-panel glass-panel">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; border-bottom: 1px solid rgba(255, 255, 255, 0.05); padding-bottom: 0.8rem;">
+                  <h3 class="panel-title font-syne" style="margin-bottom: 0; padding-bottom: 0; border: none;">SELECTED COMPONENTS</h3>
+                  <button v-if="selectedPartsCount > 0" class="btn-clear-all font-mono" @click="clearAllParts" title="Clear All Components">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                    CLEAR
+                  </button>
+                </div>
                <div class="build-items-container">
                  
                  <!-- Empty state -->
@@ -285,7 +291,7 @@
 
           <div class="modal-footer">
             <button class="btn-ghost font-mono" @click="showSaveModal = false">ABORT</button>
-            <button class="btn-primary-green font-mono" @click="confirmSave">COMMIT TO DB</button>
+            <button class="btn-primary-cyan font-mono" @click="confirmSave">SAVE</button>
           </div>
         </div>
       </div>
@@ -523,10 +529,38 @@ const removePart = (id) => {
   }
 }
 
+const clearAllParts = () => {
+  categories.value.forEach(cat => {
+    cat.selectedPart = null
+  })
+  saveCurrentBuildToStorage()
+}
+
 const openSaveModal = () => showSaveModal.value = true
-const confirmSave = () => {
-  console.log("Saving...", newBuildName.value, isPublic.value)
-  showSaveModal.value = false
+const confirmSave = async () => {
+  if (!isLoggedIn.value) {
+    showToast('Trebuie să fii conectat pentru a salva!', 'error')
+    return
+  }
+
+  const payload = {
+    nume: newBuildName.value || undefined,
+  }
+
+  categories.value.forEach(cat => {
+    if (cat.selectedPart) {
+      payload[cat.id] = cat.selectedPart.id
+    }
+  })
+
+  try {
+    const response = await api.post('/saved-builds/', payload)
+    showToast('Build salvat cu succes!', 'success')
+    showSaveModal.value = false
+  } catch (error) {
+    showToast('Eroare la salvarea build-ului', 'error')
+    console.error(error)
+  }
 }
 
 const analizeazaBuild = async () => {
@@ -1160,6 +1194,13 @@ const triggerCasePreview = async () => {
 .btn-swap { background: rgba(0, 229, 255, 0.1); border: 1px solid rgba(0, 229, 255, 0.3); color: var(--neon-cyan); width: 32px; height: 32px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s;}
 .btn-swap svg { width: 16px; height: 16px; }
 .btn-swap:hover { background: var(--neon-cyan); color: #000; box-shadow: 0 0 10px rgba(0,229,255,0.4);}
+
+.btn-clear-all {
+  background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: #ef4444;
+  padding: 0.3rem 0.6rem; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 4px;
+  font-size: 0.8rem; font-weight: bold; transition: 0.2s;
+}
+.btn-clear-all:hover { background: #ef4444; color: #fff; box-shadow: 0 0 10px rgba(239, 68, 68, 0.4);}
 .btn-remove { background: transparent; border: none; color: var(--text-secondary); cursor: pointer; font-size: 1.2rem; transition: 0.2s;}
 .btn-remove:hover { color: var(--neon-pink); }
 
