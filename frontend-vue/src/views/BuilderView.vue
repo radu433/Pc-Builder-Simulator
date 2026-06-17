@@ -85,7 +85,8 @@
        </div>
 
        <!-- BROWSING GRID (Când o categorie este selectată) -->
-       <div v-else-if="activeCategoryId" class="components-grid">
+       <div v-else-if="activeCategoryId" class="components-grid-container" style="display: flex; flex-direction: column; height: 100%;">
+         <div class="components-grid" style="flex: 1; overflow-y: auto;">
           <div 
             v-for="part in activeCategoryParts" 
             :key="part.id"
@@ -121,6 +122,15 @@
               </button>
             </div>
           </div>
+         </div>
+         <div v-if="totalPages > 1" class="pagination">
+           <button class="page-btn" :disabled="currentPage === 1" @click="goToPage(currentPage - 1)">← Prev</button>
+           <template v-for="page in visiblePages" :key="page">
+             <span v-if="page === '...'" class="page-dots">...</span>
+             <button v-else class="page-btn" :class="{ active: page === currentPage }" @click="goToPage(page)">{{ page }}</button>
+           </template>
+           <button class="page-btn" :disabled="currentPage === totalPages" @click="goToPage(currentPage + 1)">Next →</button>
+         </div>
        </div>
 
        <!-- SUMMARY VIEW -->
@@ -423,6 +433,27 @@ const categories = ref([
 ])
 
 const activeCategoryParts = ref([])
+const totalProducts = ref(0)
+const currentPage = ref(1)
+const PAGE_SIZE = 24
+
+const totalPages = computed(() => Math.ceil(totalProducts.value / PAGE_SIZE))
+
+const visiblePages = computed(() => {
+  const pages = []
+  const total = totalPages.value
+  const current = currentPage.value
+  if (total <= 7) { for (let i = 1; i <= total; i++) pages.push(i) } 
+  else {
+    pages.push(1)
+    if (current > 3) pages.push('...')
+    for (let i = Math.max(2, current - 1); i <= Math.min(total - 1, current + 1); i++) pages.push(i)
+    if (current < total - 2) pages.push('...')
+    pages.push(total)
+  }
+  return pages
+})
+
 const bottleneckStats = ref([])
 const fpsEstimates = ref([])
 const alternatives = ref([])
@@ -493,22 +524,42 @@ const totalTdp = computed(() => selectedPartsCount.value * 75) // Mock calcul
 const hasIncompatibilities = computed(() => false) // Mock state
 
 // --- METHODS ---
+const fetchCategoryParts = async () => {
+  if (!activeCategoryId.value) return
+  loading.value = true
+  try {
+    const cat = categories.value.find(c => c.id === activeCategoryId.value)
+    if (cat && cat.endpoint) {
+      const params = { page: currentPage.value, page_size: PAGE_SIZE }
+      const response = await api.get(`/${cat.endpoint}/`, { params })
+      if (response.data.results !== undefined) {
+        activeCategoryParts.value = response.data.results
+        totalProducts.value = response.data.count
+      } else {
+        activeCategoryParts.value = response.data
+        totalProducts.value = response.data.length
+      }
+    }
+  } catch (err) {
+    showToast('Eroare la încărcarea componentelor', 'error')
+    activeCategoryParts.value = []
+    totalProducts.value = 0
+  } finally {
+    loading.value = false
+  }
+}
+
+const goToPage = (page) => { 
+  if (page < 1 || page > totalPages.value) return; 
+  currentPage.value = page; 
+  fetchCategoryParts(); 
+}
+
 const openCategory = async (id) => {
   activeCategoryId.value = id
   if (id) {
-    loading.value = true
-    try {
-      const cat = categories.value.find(c => c.id === id)
-      if (cat && cat.endpoint) {
-        const response = await api.get(`/${cat.endpoint}/`)
-        activeCategoryParts.value = response.data.results !== undefined ? response.data.results : response.data
-      }
-    } catch (err) {
-      showToast('Eroare la încărcarea componentelor', 'error')
-      activeCategoryParts.value = []
-    } finally {
-      loading.value = false
-    }
+    currentPage.value = 1
+    await fetchCategoryParts()
   }
 }
 
@@ -986,6 +1037,18 @@ const triggerCasePreview = async () => {
   background-size: 200% 200%;
   animation: gradientMove 10s ease infinite;
 }
+@keyframes floatingBg {
+  0% { background-position: 0% 0%; }
+  100% { background-position: 100% 100%; }
+}
+
+.pagination { display: flex; justify-content: center; align-items: center; gap: 8px; padding: 20px 0; flex-wrap: wrap; }
+.page-btn { background: #1a1b26; border: 1px solid #2a2d3e; color: #a9b1d6; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-size: 0.9rem; font-weight: 600; transition: all 0.15s; min-width: 40px; }
+.page-btn:hover:not(:disabled) { background: #232533; color: white; border-color: #3b82f6; }
+.page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.page-btn.active { background: #3b82f6; border-color: #3b82f6; color: white; }
+.page-dots { color: #64748b; padding: 0 4px; }
+
 @keyframes gradientMove { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
 
 .hero-content {
