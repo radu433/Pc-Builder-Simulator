@@ -6,7 +6,15 @@ import BuilderView from '../BuilderView.vue'
 vi.mock('axios', () => {
   return {
     default: {
-      get: vi.fn(() => Promise.resolve({ data: [] })),
+      create: vi.fn(() => ({
+        get: vi.fn(() => Promise.resolve({ data: { results: [] } })),
+        post: vi.fn(() => Promise.resolve({ data: {} })),
+        interceptors: {
+          request: { use: vi.fn(), eject: vi.fn() },
+          response: { use: vi.fn(), eject: vi.fn() }
+        }
+      })),
+      get: vi.fn(() => Promise.resolve({ data: { results: [] } })),
       post: vi.fn(() => Promise.resolve({ data: {} }))
     }
   }

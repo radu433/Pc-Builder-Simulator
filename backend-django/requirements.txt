@@ -9,3 +9,4 @@ mcp>=1.2.0
 requests>=2.31.0
 scrapling[fetchers]>=0.4.8
 beautifulsoup4>=4.12.3
+django-filter>=24.2
