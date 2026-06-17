@@ -330,21 +330,37 @@ def scrape_gpu(session, url):
     length   = extract_spec(soup, "Length", "Card Length")
     width    = extract_spec(soup, "Width", "Card Width")
     height   = extract_spec(soup, "Height", "Slot Width", "Thickness")
-    chipset  = extract_spec(soup, "GPU Chip", "Chipset", "Graphics Processor", "GPU")
 
-    brand = producer or (
-        "NVIDIA" if any(x in name.upper() for x in ["RTX", "GTX", "QUADRO", "TITAN"]) else
-        "AMD"    if any(x in name.upper() for x in ["RX ", "RADEON"]) else
-        "Intel"  if "ARC" in name.upper() else
+    # Detectează producătorul chipset-ului (NVIDIA, AMD, Intel) din nume
+    name_upper = name.upper()
+    if any(x in name_upper for x in ["RTX", "GTX", "GEFORCE", "NVIDIA", "TITAN", "QUADRO"]):
+        chipset_brand = "NVIDIA"
+    elif any(x in name_upper for x in ["RX ", "RADEON", "AMD"]):
+        chipset_brand = "AMD"
+    elif any(x in name_upper for x in ["ARC", "INTEL"]):
+        chipset_brand = "Intel"
+    else:
+        chipset_brand = "Unknown"
+
+    # Detectează producătorul plăcii (ASUS, MSI, Gigabyte, etc.)
+    card_brand = producer or (
+        "ASUS"     if "asus" in name.lower() else
+        "MSI"      if "msi" in name.lower() else
+        "Gigabyte" if "gigabyte" in name.lower() or "aorus" in name.lower() else
+        "ASRock"   if "asrock" in name.lower() else
+        "EVGA"     if "evga" in name.lower() else
         "Unknown"
     )
+
+    gpu_serie = detect_gpu_serie(name)
 
     return {
         "part_number":   mpn or ean,
         "nume":          name,
-        "brand":         brand,
-        "serie":         detect_gpu_serie(name),
-        "model_chipset": chipset or detect_gpu_serie(name),
+        "brand":         card_brand,      # Producătorul plăcii
+        "serie":         gpu_serie,       # Seria plăcii
+        "model_chipset": gpu_serie,       # Chipset-ul corect
+        "chipset_brand": chipset_brand,  # Producătorul chipset-ului
         "vram_gb":       parse_int(vram) or 0,
         "consum_tdp":    parse_int(tdp) or 0,
         "lungime_mm":    parse_int(length) or 0,
@@ -1115,7 +1131,13 @@ def run_import(stdout, session, model_class, list_path, product_keyword, scrape_
                 continue
 
             # ──────── LOGICA NOUA: VERIFICARE BLACKLIST ────────
-            if Blacklist.objects.filter(part_number=part_number).exists():
+            in_blacklist = False
+            if part_number and Blacklist.objects.filter(part_number=part_number).exists():
+                in_blacklist = True
+            elif Blacklist.objects.filter(nume=data["nume"]).exists():
+                in_blacklist = True
+
+            if in_blacklist:
                 stdout.write("         -> SARIT (Aflat in Blacklist)")
                 stats["sarit"] += 1
                 continue
@@ -1154,15 +1176,37 @@ class Command(BaseCommand):
         (Storage,     "/us/components/ssds",          "/us/product/ssd/",          scrape_storage),
     ]
 
+    def add_arguments(self, parser):
+        parser.add_argument(
+            '--model',
+            type=str,
+            default=None,
+            help="Proceseaza doar modele specifice separate prin virgula (ex: RAM,PSU)"
+        )
+
     def handle(self, *args, **options):
         session = get_session()
         all_stats = {}
+
+        modele_dorite = options.get("model")
+        componente_de_rulat = self.COMPONENTS
+
+        if modele_dorite:
+            # Separam dupa virgula si facem totul uppercase (ex: "ram,psu" -> ["RAM", "PSU"])
+            lista_dorite = [m.strip().upper() for m in modele_dorite.split(',')]
+            componente_de_rulat = [
+                comp for comp in self.COMPONENTS
+                if comp[0].__name__.upper() in lista_dorite
+            ]
+            if not componente_de_rulat:
+                self.stderr.write(f"Eroare: Niciun model gasit pentru '{modele_dorite}'")
+                return
 
         self.stdout.write("=" * 60)
         self.stdout.write("Scraper ALL - pc-kombo.com")
         self.stdout.write("=" * 60)
 
-        for idx, (model_class, list_path, keyword, scrape_fn) in enumerate(self.COMPONENTS):
+        for idx, (model_class, list_path, keyword, scrape_fn) in enumerate(componente_de_rulat):
             if idx > 0:
                 wait = random.randint(10, 18)
                 self.stdout.write(f"\nPauza {wait}s intre componente...")

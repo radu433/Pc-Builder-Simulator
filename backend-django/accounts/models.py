@@ -53,3 +53,35 @@ class UserProfile(models.Model):
             return cuvinte_cheie_gpu[self.gpu_preferat]
         
         return []
+
+
+class UserPreferences(models.Model):
+    """
+    Preferințele utilizatorului pentru build-uri AI.
+    Agentul verifică la autentificare dacă userul are preferințe salvate.
+    Dacă da, îl întreabă 'vrei să folosim aceste preferințe?'.
+    Dacă nu, îl întreabă care sunt preferințele lui.
+    """
+    REZOLUTIE_CHOICES = [
+        ('1080p', 'Full HD (1080p)'),
+        ('1440p', 'Quad HD (1440p)'),
+        ('4K', 'Ultra HD (4K)'),
+    ]
+    TIP_UTILIZARE_CHOICES = [
+        ('gaming', 'Gaming'),
+        ('productivitate', 'Productivitate'),
+        ('mixt', 'Mixt'),
+    ]
+
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='preferences')
+    buget = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    jocuri = models.JSONField(default=list, blank=True)
+    rezolutie = models.CharField(max_length=10, choices=REZOLUTIE_CHOICES, default='1080p')
+    tip_utilizare = models.CharField(max_length=50, choices=TIP_UTILIZARE_CHOICES, default='gaming')
+
+    class Meta:
+        verbose_name = "Preferință Utilizator"
+        verbose_name_plural = "Preferințe Utilizatori"
+
+    def __str__(self):
+        return f"Preferințe: {self.user.username} | {self.buget} RON | {self.rezolutie}"

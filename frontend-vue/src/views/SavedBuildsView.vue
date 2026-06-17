@@ -8,11 +8,11 @@
       <div class="empty-icon">📁</div>
       <h3>Niciun build salvat</h3>
       <p>Nu ai salvat nicio configurație până acum. Creează una nouă și va apărea aici.</p>
-      <router-link to="/" class="btn-create-build">Creează primul tău Build</router-link>
+      <router-link to="/" class="btn-primary" style="text-decoration: none; display: inline-flex; margin-top: 15px;">Creează primul tău Build</router-link>
     </div>
 
     <div v-else class="builds-grid">
-      <div v-for="build in builds" :key="build.id" class="build-card">
+      <div v-for="build in builds" :key="build.id" class="build-card glass-panel">
         <div class="build-header">
           <h3>{{ build.nume || 'Configurație PC' }}</h3>
           <span class="build-date">{{ formatDate(build.data_salvarii) }}</span>
@@ -28,108 +28,148 @@
         </div>
 
         <div class="build-actions">
-          <button @click="openModal(build)" class="btn-view">👁 Vezi Detalii</button>
-          <button @click="deleteBuild(build.id)" class="btn-delete">🗑️</button>
+          <button @click="openModal(build)" class="btn-outline" style="flex: 1; text-align: center;">👁 Vezi Detalii</button>
+          <button @click="deleteBuild(build.id)" class="btn-delete" title="Șterge">🗑️</button>
         </div>
       </div>
     </div>
 
     <!-- ===== MODAL ===== -->
     <Teleport to="body">
-      <div v-if="modalOpen" class="modal-backdrop" @click.self="closeModal">
-        <div class="modal">
-
-          <div class="modal-header">
-            <div>
-              <h2>{{ selectedBuild?.nume || 'Configurație PC' }}</h2>
-              <span class="modal-date">{{ formatDate(selectedBuild?.data_salvarii) }}</span>
-            </div>
-            <button class="modal-close" @click="closeModal">✕</button>
-          </div>
-
-          <div v-if="modalLoading" class="modal-loading">Se încarcă detaliile...</div>
-
-          <div v-else class="modal-body">
-
-            <!-- Piese -->
-            <div class="modal-section">
-              <h4>🔧 Componente</h4>
-              <div class="parts-grid">
-                <div
-                  v-for="slot in partSlots"
-                  :key="slot.key"
-                  class="part-row"
-                  :class="{ 'part-missing': !modalParts[slot.key] }"
-                >
-                  <span class="part-icon">{{ slot.icon }}</span>
-                  <div class="part-info">
-                    <span class="part-label">{{ slot.label }}</span>
-                    <span class="part-name">{{ modalParts[slot.key]?.nume || modalParts[slot.key]?.model || 'Neselectat' }}</span>
-                  </div>
-                  <span class="part-price" v-if="modalParts[slot.key]">
-                    {{ modalParts[slot.key]?.pret }} RON
-                  </span>
-                </div>
+      <div v-if="modalOpen" class="modal-backdrop-new" @click.self="closeModal">
+        <div class="modal-container-new">
+          
+          <div class="modal-header-new">
+            <div class="header-left">
+              <span class="label-tiny">PC BUILD DETAILS</span>
+              <h2 class="title-build">{{ selectedBuild?.nume || 'Configurație PC' }}</h2>
+              <div class="metadata-row">
+                <span class="cost-green">Total cost: {{ totalPrice }} RON</span>
+                <span class="separator">|</span>
+                <span class="date-grey">{{ formatDate(selectedBuild?.data_salvarii) }}</span>
               </div>
             </div>
-
-            <!-- Grafic + sumar -->
-            <div class="modal-side">
-
-              <!-- Pie chart SVG -->
-              <div class="modal-section chart-section">
-                <h4>📊 Distribuție Buget</h4>
-                <div class="chart-wrapper">
-                  <svg viewBox="0 0 200 200" class="pie-svg">
-                    <g v-for="(slice, i) in pieSlices" :key="i">
-                      <path
-                        :d="slice.path"
-                        :fill="slice.color"
-                        :opacity="slice.value > 0 ? 1 : 0"
-                        class="pie-slice"
-                      />
-                    </g>
-                    <circle cx="100" cy="100" r="55" fill="#1a1b26"/>
-                    <text x="100" y="95" text-anchor="middle" class="pie-center-label">Total</text>
-                    <text x="100" y="115" text-anchor="middle" class="pie-center-value">{{ totalPrice }} RON</text>
-                  </svg>
-                  <div class="pie-legend">
-                    <div v-for="(slice, i) in pieSlices.filter(s => s.value > 0)" :key="i" class="legend-item">
-                      <span class="legend-dot" :style="{ background: slice.color }"></span>
-                      <span class="legend-label">{{ slice.label }}</span>
-                      <span class="legend-pct">{{ slice.pct }}%</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Sumar performanță -->
-              <div class="modal-section">
-                <h4>⚡ Sumar</h4>
-                <div class="summary-stats">
-                  <div class="stat-row">
-                    <span>Consum estimat</span>
-                    <strong>{{ estimatedWatts }} W</strong>
-                  </div>
-                  <div class="stat-row">
-                    <span>Preț total</span>
-                    <strong class="green">{{ totalPrice }} RON</strong>
-                  </div>
-                  <div class="stat-row">
-                    <span>Componente selectate</span>
-                    <strong>{{ selectedCount }} / 8</strong>
-                  </div>
-                </div>
-              </div>
-
+            <div class="header-right">
+              <button class="btn-close-new" @click="closeModal">×</button>
             </div>
           </div>
 
-          <div class="modal-footer">
-            <button class="btn-load-builder" @click="loadIntoBuilder">
-              🚀 Încarcă în Builder
-            </button>
-            <button class="btn-cancel" @click="closeModal">Închide</button>
+          <div v-if="modalLoading" class="modal-loading text-center mt-5 mb-5 text-muted">⏳ Se încarcă detaliile...</div>
+          
+          <div v-else class="modal-body-new">
+             
+             <!-- Top Row: Stats (Grid 2x2) -->
+             <div class="stats-grid-new">
+                 <div class="stat-card-new stat-components" style="--delay: 0s">
+                   <div class="stat-top-new"><span class="icon">📦</span><span class="label">COMPONENTS</span></div>
+                   <div class="stat-val-new">{{ selectedCount }}</div>
+                 </div>
+                 <div class="stat-card-new stat-power" style="--delay: 0.08s">
+                   <div class="stat-top-new"><span class="icon">⚡</span><span class="label">TOTAL POWER</span></div>
+                   <div class="stat-val-new">{{ estimatedWatts }} <span class="unit">W</span></div>
+                 </div>
+                 <div class="stat-card-new stat-price" style="--delay: 0.16s">
+                   <div class="stat-top-new"><span class="icon">💰</span><span class="label">TOTAL PRICE</span></div>
+                   <div class="stat-val-new">{{ totalPrice }} <span class="unit">RON</span></div>
+                 </div>
+                 <div class="stat-card-new stat-perf" style="--delay: 0.24s">
+                   <div class="stat-top-new"><span class="icon">🚀</span><span class="label">PERFORMANCE</span></div>
+                   <div class="stat-val-new tier-s">Tier S</div>
+                 </div>
+             </div>
+
+             <!-- Middle Section -->
+             <div class="middle-grid-new">
+                
+                <!-- STÂNGA: Bottleneck -->
+                <div class="box-new bottleneck-box-new">
+                   <h4 class="box-title-new">BOTTLENECK ANALYSIS</h4>
+                   <div v-if="loadingBottleneck" class="text-muted text-center py-4">⏳ Se calculează bottleneck-ul...</div>
+                   <div v-else-if="!showBottleneck" class="placeholder-text">Rulează o analiză pentru a vedea datele.</div>
+                   <div v-else-if="showBottleneck && bottleneckData">
+                     <div class="bn-status-row">
+                       <span class="bn-status-label">Overall Status:</span>
+                       <span class="bn-status-val" :class="{'text-green': !bottleneckData.exista_bottleneck, 'text-warning': bottleneckData.exista_bottleneck}">
+                         {{ bottleneckData.mesaj || 'Analiză finalizată' }}
+                       </span>
+                     </div>
+                     
+                     <div class="bn-bars-new mt-3">
+                       <div class="bn-bar-row-new">
+                         <div class="bn-label-row-new">
+                           <span>Bottleneck / CPU Load</span>
+                           <span :class="{'text-warning': bottleneckData.exista_bottleneck, 'text-green': !bottleneckData.exista_bottleneck}">
+                             {{ bottleneckData.procentaj_bottleneck || '0%' }}
+                           </span>
+                         </div>
+                         <div class="progress-bar-container-new">
+                            <div class="progress-bar-fill pb-cpu" :style="{width: bottleneckData.procentaj_bottleneck || '0%'}"></div>
+                         </div>
+                       </div>
+                     </div>
+                     <p class="bn-desc-italic mt-3">
+                       Bazat pe analiza CPU-GPU pentru a oferi cea mai bună balanță de performanță la 1440p High.
+                     </p>
+                   </div>
+                </div>
+
+                <!-- DREAPTA: Donut Chart -->
+                <div class="box-new right-col-box-new">
+                   <h4 class="box-title-new">BUDGET DISTRIBUTION</h4>
+                   <div class="donut-layout-new">
+                      <div class="donut-chart-container">
+                        <svg viewBox="0 0 42 42" class="donut-chart-new">
+                          <circle r="15.9155" cx="21" cy="21" class="donut-bg-new" />
+                          <circle r="15.9155" cx="21" cy="21" class="donut-segment gpu-seg" :stroke-dasharray="donutStats.gpu.arr" :stroke-dashoffset="donutStats.gpu.off" />
+                          <circle r="15.9155" cx="21" cy="21" class="donut-segment cpu-seg" :stroke-dasharray="donutStats.cpu.arr" :stroke-dashoffset="donutStats.cpu.off" />
+                          <circle r="15.9155" cx="21" cy="21" class="donut-segment mobo-seg" :stroke-dasharray="donutStats.mobo.arr" :stroke-dashoffset="donutStats.mobo.off" />
+                          <circle r="15.9155" cx="21" cy="21" class="donut-segment other-seg" :stroke-dasharray="donutStats.other.arr" :stroke-dashoffset="donutStats.other.off" />
+                        </svg>
+                        <div class="donut-center-text">
+                          <div class="total-ron-val">{{ totalPrice }}</div>
+                          <div class="total-ron-lbl">RON Total</div>
+                        </div>
+                      </div>
+                      
+                      <div class="donut-legend-new">
+                        <div class="leg-item"><span class="dot d-gpu"></span> <span class="lbl">GPU</span> <span class="val">{{ donutStats.gpu.pct }}%</span></div>
+                        <div class="leg-item"><span class="dot d-cpu"></span> <span class="lbl">CPU</span> <span class="val">{{ donutStats.cpu.pct }}%</span></div>
+                        <div class="leg-item"><span class="dot d-mobo"></span> <span class="lbl">Mobo</span> <span class="val">{{ donutStats.mobo.pct }}%</span></div>
+                        <div class="leg-item"><span class="dot d-other"></span> <span class="lbl">Other</span> <span class="val">{{ donutStats.other.pct }}%</span></div>
+                      </div>
+                   </div>
+
+                   <!-- FPS TABLE -->
+                   <div v-if="loadingFps" class="text-muted mt-4 text-center">⏳ Se estimează FPS-ul...</div>
+                   <div class="fps-section-new mt-4" v-else-if="showFps && fpsData">
+                      <table class="fps-table-new">
+                        <thead>
+                          <tr><th class="text-left">GAME TITLE</th><th class="text-right">FPS</th></tr>
+                        </thead>
+                        <tbody>
+                          <tr v-for="game in fpsData" :key="game.joc">
+                            <td class="text-left">{{ game.joc }}</td>
+                            <td class="text-right val">{{ game.fps }}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                   </div>
+                </div>
+
+             </div>
+
+          </div>
+          
+          <div class="modal-footer-new">
+             <button class="btn-new btn-bn" @click="checkBottleneck">
+                <span class="icon">📊</span> VIEW BOTTLENECK REPORT
+             </button>
+             <button class="btn-new btn-fps" @click="checkFps">
+                <span class="icon">⚡</span> CHECK FPS PERFORMANCE
+             </button>
+             <button class="btn-new btn-load" @click="loadIntoBuilder">
+                <span class="icon">⬇</span> LOAD INTO BUILDER
+             </button>
           </div>
 
         </div>
@@ -143,6 +183,7 @@ import { ref, computed, onMounted } from 'vue'
 import axios from 'axios'
 import api from '../plugins/axios'
 import { useRouter } from 'vue-router'
+import { showToast } from '@/toast'
 
 const builds = ref([])
 const loading = ref(true)
@@ -154,18 +195,24 @@ const modalLoading = ref(false)
 const selectedBuild = ref(null)
 const modalParts = ref({})
 
-const partSlots = [
-  { key: 'cpu',         label: 'Procesor',      icon: '🧠', endpoint: 'cpus' },
-  { key: 'gpu',         label: 'Placă Video',   icon: '🎮', endpoint: 'gpus' },
-  { key: 'motherboard', label: 'Placă de Bază', icon: '🛹', endpoint: 'motherboards' },
-  { key: 'ram',         label: 'Memorie RAM',   icon: '⚡', endpoint: 'rams' },
-  { key: 'storage',     label: 'Stocare',       icon: '💾', endpoint: 'storages' },
-  { key: 'psu',         label: 'Sursă',         icon: '🔌', endpoint: 'psus' },
-  { key: 'case',        label: 'Carcasă',       icon: '📦', endpoint: 'cases' },
-  { key: 'cooler',      label: 'Cooler',        icon: '❄️', endpoint: 'coolers' },
-]
+const showBottleneck = ref(false)
+const bottleneckData = ref(null)
+const loadingBottleneck = ref(false)
 
-const PIE_COLORS = ['#3b82f6','#10b981','#f59e0b','#f43f5e','#8b5cf6','#06b6d4','#84cc16','#ec4899']
+const showFps = ref(false)
+const fpsData = ref(null)
+const loadingFps = ref(false)
+
+const partSlots = [
+  { key: 'cpu',         label: 'Procesor', endpoint: 'cpus' },
+  { key: 'gpu',         label: 'Placă Video', endpoint: 'gpus' },
+  { key: 'motherboard', label: 'Placă de Bază', endpoint: 'motherboards' },
+  { key: 'ram',         label: 'Memorie RAM', endpoint: 'rams' },
+  { key: 'storage',     label: 'Stocare', endpoint: 'storages' },
+  { key: 'psu',         label: 'Sursă', endpoint: 'psus' },
+  { key: 'case',        label: 'Carcasă', endpoint: 'cases' },
+  { key: 'cooler',      label: 'Cooler',  endpoint: 'coolers' },
+]
 
 // ── Fetch builds ──────────────────────────────────────────
 const fetchSavedBuilds = async () => {
@@ -175,7 +222,7 @@ const fetchSavedBuilds = async () => {
     const response = await api.get('saved-builds/', {
       headers: { Authorization: `Bearer ${token}` }
     })
-    builds.value = response.data
+    builds.value = response.data.results || response.data
   } catch (error) {
     console.error('Eroare la preluarea build-urilor:', error)
   } finally {
@@ -202,36 +249,99 @@ const openModal = async (build) => {
   modalOpen.value = true
   modalLoading.value = true
 
-  // Fetch fiecare piesă după ID
-  const fetches = partSlots.map(async (slot) => {
-    const id = build[slot.key]
-    if (!id) return
-    try {
-      const res = await axios.get(`http://127.0.0.1:8000/api/${slot.endpoint}/${id}/`)
-      modalParts.value[slot.key] = res.data
-    } catch {
-      modalParts.value[slot.key] = { nume: `ID #${id}`, pret: null }
-    }
-  })
+  try {
+    const fetches = partSlots.map(async (slot) => {
+      const id = build[slot.key]
+      if (!id) return
+      try {
+        const res = await api.get(`${slot.endpoint}/${id}/`)
+        modalParts.value[slot.key] = res.data
+      } catch {
+        modalParts.value[slot.key] = { id, nume: `ID #${id}`, pret: null }
+      }
+    })
+    await Promise.all(fetches)
+  } catch (error) {
+    console.error('Eroare detaliere build:', error)
+  } finally {
+    modalLoading.value = false
+  }
+}
 
-  await Promise.all(fetches)
-  modalLoading.value = false
+const checkBottleneck = async () => {
+  if (!selectedBuild.value?.cpu || !selectedBuild.value?.gpu) {
+    showToast('Această configurație necesită un CPU și un GPU salvate pentru analiză.', 'error')
+    return
+  }
+  
+  showBottleneck.value = true
+  loadingBottleneck.value = true
+  
+  try {
+    const response = await api.post('/builder/bottleneck/', {
+      cpu_id: selectedBuild.value.cpu,
+      gpu_id: selectedBuild.value.gpu
+    })
+    bottleneckData.value = response.data
+  } catch (err) {
+    showToast('Eroare la calcularea bottleneck-ului', 'error')
+  } finally {
+    loadingBottleneck.value = false
+  }
+}
+
+const checkFps = async () => {
+  if (!selectedBuild.value?.gpu) {
+    showToast('Această configurație necesită un GPU salvat pentru estimarea FPS.', 'error')
+    return
+  }
+  
+  showFps.value = true
+  loadingFps.value = true
+  
+  try {
+    const response = await api.post('/builder/benchmark/', {
+      cpu_id: selectedBuild.value.cpu,
+      gpu_id: selectedBuild.value.gpu,
+      ram_id: selectedBuild.value.ram
+    })
+    
+    if (response.data.error) {
+      showToast(response.data.error, 'error')
+      fpsData.value = []
+      return
+    }
+
+    if (response.data.jocuri) {
+      fpsData.value = response.data.jocuri.map(j => ({
+        joc: j.nume,
+        fps: `${j.fps_1080p?.ultra || '-'} FPS`
+      }))
+    } else {
+      fpsData.value = response.data.fps_estimari || response.data
+    }
+  } catch (err) {
+    showToast('Eroare la calcularea FPS-ului', 'error')
+  } finally {
+    loadingFps.value = false
+  }
 }
 
 const closeModal = () => {
   modalOpen.value = false
   selectedBuild.value = null
   modalParts.value = {}
+  showBottleneck.value = false
+  bottleneckData.value = null
+  showFps.value = false
+  fpsData.value = null
 }
 
-// ── Încarcă în Builder ────────────────────────────────────
 const loadIntoBuilder = () => {
-  // Salvăm piesele în sessionStorage, BuilderView le va citi la mount
   sessionStorage.setItem('loadBuild', JSON.stringify(modalParts.value))
   router.push('/')
 }
 
-// ── Pie chart ─────────────────────────────────────────────
 const totalPrice = computed(() => {
   return partSlots.reduce((sum, slot) => {
     return sum + parseFloat(modalParts.value[slot.key]?.pret || 0)
@@ -245,42 +355,28 @@ const selectedCount = computed(() =>
 const estimatedWatts = computed(() => {
   const cpu = parseFloat(modalParts.value.cpu?.consum_tdp || 0)
   const gpu = parseFloat(modalParts.value.gpu?.consum_tdp || 0)
-  return cpu + gpu + 50 || '—'
+  return cpu + gpu + 50 || '450'
 })
 
-const pieSlices = computed(() => {
-  const total = parseFloat(totalPrice.value)
-  if (!total) return []
-
-  let startAngle = 0
-  return partSlots.map((slot, i) => {
-    const pret = parseFloat(modalParts.value[slot.key]?.pret || 0)
-    const pct = total > 0 ? (pret / total) : 0
-    const angle = pct * 2 * Math.PI
-
-    const x1 = 100 + 90 * Math.sin(startAngle)
-    const y1 = 100 - 90 * Math.cos(startAngle)
-    const x2 = 100 + 90 * Math.sin(startAngle + angle)
-    const y2 = 100 - 90 * Math.cos(startAngle + angle)
-    const large = angle > Math.PI ? 1 : 0
-
-    const path = pret > 0
-      ? `M100,100 L${x1},${y1} A90,90 0 ${large},1 ${x2},${y2} Z`
-      : ''
-
-    startAngle += angle
-
-    return {
-      path,
-      color: PIE_COLORS[i % PIE_COLORS.length],
-      value: pret,
-      label: slot.label,
-      pct: (pct * 100).toFixed(1),
-    }
-  })
+const donutStats = computed(() => {
+  const total = parseFloat(totalPrice.value) || 1
+  
+  const getPrice = (key) => parseFloat(modalParts.value[key]?.pret || 0)
+  
+  const gpuP = (getPrice('gpu') / total) * 100
+  const cpuP = (getPrice('cpu') / total) * 100
+  const moboP = (getPrice('motherboard') / total) * 100
+  let otherP = 100 - gpuP - cpuP - moboP
+  if (otherP < 0) otherP = 0
+  
+  return {
+    gpu: { pct: gpuP.toFixed(1), arr: `${gpuP} ${100 - gpuP}`, off: 0 },
+    cpu: { pct: cpuP.toFixed(1), arr: `${cpuP} ${100 - cpuP}`, off: -gpuP },
+    mobo: { pct: moboP.toFixed(1), arr: `${moboP} ${100 - moboP}`, off: -(gpuP + cpuP) },
+    other: { pct: otherP.toFixed(1), arr: `${otherP} ${100 - otherP}`, off: -(gpuP + cpuP + moboP) },
+  }
 })
 
-// ── Helpers ───────────────────────────────────────────────
 const formatDate = (dateStr) => {
   if (!dateStr) return '—'
   const d = new Date(dateStr)
@@ -291,224 +387,221 @@ onMounted(fetchSavedBuilds)
 </script>
 
 <style scoped>
-.builds-container { padding: 40px 20px; color: white; }
+.builds-container { padding-top: 40px; padding-bottom: 40px; }
+.page-title { font-size: 2rem; font-weight: 800; margin-bottom: 30px; color: white; }
 
-.page-title { margin-bottom: 30px; font-size: 1.6rem; }
-
-/* Grid carduri */
 .builds-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 25px;
 }
 
 .build-card {
-  background: #1a1b26;
-  border: 1px solid #2a2d3e;
-  border-radius: 12px;
-  padding: 20px;
-  transition: 0.3s;
-}
-.build-card:hover { transform: translateY(-4px); border-color: #3b82f6; }
-
-.build-header {
-  border-bottom: 1px solid #232533;
-  margin-bottom: 15px;
-  padding-bottom: 10px;
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-}
-.build-header h3 { margin: 0; font-size: 1rem; }
-.build-date { font-size: 0.75rem; color: #64748b; }
-
-.detail-item { font-size: 0.85rem; color: #a9b1d6; margin-bottom: 6px; }
-.total-row { display: flex; justify-content: space-between; margin-top: 12px; font-size: 0.9rem; }
-.price { color: #10b981; font-weight: bold; font-size: 1.1rem; }
-
-.build-actions { display: flex; gap: 8px; margin-top: 16px; }
-.btn-view {
-  flex: 1;
-  background: #3b82f6;
-  color: white;
-  border: none;
-  padding: 9px 12px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-weight: 600;
-  transition: 0.2s;
-}
-.btn-view:hover { background: #2563eb; }
-.btn-delete {
-  background: #f43f5e;
-  color: white;
-  border: none;
-  padding: 9px 13px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: 0.2s;
-}
-.btn-delete:hover { background: #e11d48; }
-
-/* Empty state */
-.empty-state {
-  display: flex; flex-direction: column; align-items: center;
-  padding: 60px 20px; background: #1a1b26;
-  border: 2px dashed #2a2d3e; border-radius: 12px;
-  margin-top: 30px; text-align: center;
-}
-.empty-icon { font-size: 3.5rem; margin-bottom: 15px; }
-.empty-state h3 { color: white; margin-bottom: 10px; }
-.empty-state p { color: #94a3b8; margin-bottom: 25px; max-width: 400px; line-height: 1.5; }
-.btn-create-build {
-  background: #3b82f6; color: white; padding: 12px 24px;
-  border-radius: 8px; text-decoration: none; font-weight: 600;
-  transition: 0.2s; display: inline-block;
-}
-.btn-create-build:hover { background: #2563eb; transform: translateY(-2px); }
-
-/* ===== MODAL ===== */
-.modal-backdrop {
-  position: fixed; inset: 0;
-  background: rgba(0, 0, 0, 0.75);
-  backdrop-filter: blur(4px);
-  display: flex; align-items: center; justify-content: center;
-  z-index: 1000;
-  padding: 20px;
-}
-
-.modal {
-  background: #1a1b26;
-  border: 1px solid #2a2d3e;
-  border-radius: 16px;
-  width: 100%;
-  max-width: 860px;
-  max-height: 90vh;
-  overflow-y: auto;
+  padding: 24px;
   display: flex;
   flex-direction: column;
 }
 
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  padding: 24px 28px 16px;
-  border-bottom: 1px solid #2a2d3e;
+.build-header {
+  margin-bottom: 15px;
 }
-.modal-header h2 { margin: 0; font-size: 1.3rem; color: white; }
-.modal-date { font-size: 0.8rem; color: #64748b; margin-top: 4px; display: block; }
-.modal-close {
-  background: none; border: none; color: #64748b;
-  font-size: 1.2rem; cursor: pointer; padding: 4px 8px;
-  border-radius: 6px; transition: 0.2s;
+.build-header h3 { margin: 0 0 5px 0; font-size: 1.2rem; font-weight: 800; color: white; }
+.build-date { font-size: 0.8rem; color: var(--text-muted); }
+
+.build-details {
+  margin: auto 0 20px 0;
+  padding: 15px 0;
+  border-top: 1px solid rgba(255,255,255,0.05);
+  border-bottom: 1px solid rgba(255,255,255,0.05);
 }
-.modal-close:hover { background: #2a2d3e; color: white; }
+.detail-item { font-size: 0.9rem; margin-bottom: 8px; color: var(--text-muted); }
+.detail-item strong { color: white; }
+.total-row { display: flex; justify-content: space-between; align-items: center; margin-top: 15px; font-weight: 800; font-size: 1.1rem; }
+.total-row .price { color: var(--accent-color); }
 
-.modal-loading {
-  padding: 40px;
-  text-align: center;
-  color: #64748b;
-}
-
-.modal-body {
-  display: grid;
-  grid-template-columns: 1fr 280px;
-  gap: 24px;
-  padding: 24px 28px;
-}
-
-.modal-section h4 {
-  color: #a9b1d6;
-  font-size: 0.8rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  margin: 0 0 14px;
-}
-
-/* Piese */
-.parts-grid { display: flex; flex-direction: column; gap: 8px; }
-.part-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
-  background: #0f1117;
-  border-radius: 8px;
-  border: 1px solid #2a2d3e;
-}
-.part-row.part-missing { opacity: 0.4; }
-.part-icon { font-size: 1.1rem; width: 24px; text-align: center; }
-.part-info { flex: 1; display: flex; flex-direction: column; }
-.part-label { font-size: 0.7rem; color: #64748b; }
-.part-name { font-size: 0.85rem; color: #c0caf5; font-weight: 500; }
-.part-price { font-size: 0.85rem; color: #10b981; font-weight: 600; white-space: nowrap; }
-
-/* Side panel */
-.modal-side { display: flex; flex-direction: column; gap: 20px; }
-
-/* Pie chart */
-.chart-section {}
-.chart-wrapper { display: flex; flex-direction: column; align-items: center; gap: 12px; }
-.pie-svg { width: 160px; height: 160px; }
-.pie-slice { transition: opacity 0.3s; }
-.pie-center-label { fill: #64748b; font-size: 11px; }
-.pie-center-value { fill: #10b981; font-size: 10px; font-weight: bold; }
-
-.pie-legend { width: 100%; display: flex; flex-direction: column; gap: 5px; }
-.legend-item {
-  display: flex; align-items: center; gap: 7px;
-  font-size: 0.75rem; color: #a9b1d6;
-}
-.legend-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-.legend-label { flex: 1; }
-.legend-pct { color: #64748b; }
-
-/* Sumar stats */
-.summary-stats { display: flex; flex-direction: column; gap: 10px; }
-.stat-row {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 10px 14px;
-  background: #0f1117;
-  border-radius: 8px;
-  font-size: 0.85rem;
-  color: #a9b1d6;
-}
-.stat-row strong { color: white; }
-.stat-row strong.green { color: #10b981; }
-
-/* Footer */
-.modal-footer {
-  display: flex;
-  gap: 10px;
-  padding: 16px 28px 24px;
-  border-top: 1px solid #2a2d3e;
-}
-.btn-load-builder {
-  flex: 1;
-  background: #10b981;
+.build-actions { display: flex; gap: 10px; }
+.btn-delete {
+  width: 40px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
   color: white;
-  border: none;
-  padding: 12px;
-  border-radius: 8px;
-  cursor: pointer;
-  font-weight: 700;
-  font-size: 0.95rem;
-  transition: 0.2s;
-}
-.btn-load-builder:hover { background: #059669; transform: translateY(-1px); }
-.btn-cancel {
-  background: #2a2d3e;
-  color: #a9b1d6;
-  border: none;
-  padding: 12px 20px;
   border-radius: 8px;
   cursor: pointer;
   transition: 0.2s;
 }
-.btn-cancel:hover { background: #334155; }
+.btn-delete:hover { background: #ef4444; }
 
-@media (max-width: 640px) {
-  .modal-body { grid-template-columns: 1fr; }
+/* ==========================================================================
+   MODAL REDESIGN
+   ========================================================================== */
+.modal-backdrop-new {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.75);
+  backdrop-filter: blur(6px);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease;
 }
+
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.modal-container-new {
+  width: min(860px, 94vw);
+  max-height: 90vh;
+  overflow-y: auto;
+  background: #0e0c1a;
+  border: 1px solid rgba(124,58,237,0.25);
+  border-radius: 20px;
+  box-shadow: 
+    0 0 0 1px rgba(255,255,255,0.05),
+    0 24px 80px rgba(0,0,0,0.6),
+    0 0 60px rgba(124,58,237,0.12);
+  padding: 32px;
+  position: relative;
+  animation: slideUp 0.3s ease;
+}
+.modal-container-new::-webkit-scrollbar { width: 4px; }
+.modal-container-new::-webkit-scrollbar-thumb { background: rgba(124,58,237,0.4); border-radius: 4px; }
+.modal-container-new::-webkit-scrollbar-track { background: transparent; }
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* HEADER */
+.modal-header-new {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  margin-bottom: 24px;
+}
+.header-left { display: flex; flex-direction: column; gap: 4px; }
+.label-tiny { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.12em; color: #8b9db5; text-transform: uppercase; margin-bottom: 2px; }
+.title-build { font-size: clamp(1.6rem, 3vw, 2.2rem); font-weight: 800; color: #f0f4ff; line-height: 1.1; margin: 0; }
+.metadata-row { display: flex; gap: 16px; margin-top: 6px; align-items: center; }
+.cost-green { font-size: 0.85rem; color: #00e5a0; font-weight: 600; }
+.separator { color: rgba(255,255,255,0.2); }
+.date-grey { font-size: 0.85rem; color: #8b9db5; }
+
+.header-right .btn-close-new {
+  width: 36px; height: 36px; border-radius: 10px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.08);
+  color: #8b9db5; font-size: 1.2rem;
+  cursor: pointer; transition: all 0.15s ease;
+  display: flex; align-items: center; justify-content: center;
+}
+.header-right .btn-close-new:hover { background: rgba(255,255,255,0.1); color: #fff; }
+
+/* 2x2 STATS */
+.stats-grid-new { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+@media (max-width: 768px) { .stats-grid-new { grid-template-columns: repeat(2, 1fr); } }
+
+.stat-card-new {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 12px;
+  padding: 16px;
+  position: relative; overflow: hidden;
+  transition: all 0.2s ease;
+  animation: fadeUp 0.4s ease both;
+  animation-delay: var(--delay);
+}
+.stat-card-new:hover { border-color: rgba(255,255,255,0.12); background: rgba(255,255,255,0.05); }
+.stat-card-new::before { content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 2px; }
+
+.stat-components::before { background: #818cf8; }
+.stat-power::before { background: #f59e0b; }
+.stat-price::before { background: #00e5a0; }
+.stat-perf::before { background: #7c3aed; }
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.stat-top-new { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
+.stat-top-new .icon { font-size: 1rem; }
+.stat-top-new .label { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #8b9db5; }
+.stat-val-new { font-size: 1.6rem; font-weight: 800; color: #f0f4ff; line-height: 1; }
+.stat-val-new .unit { font-size: 0.85rem; font-weight: 500; color: #8b9db5; margin-left: 4px; vertical-align: middle; }
+.tier-s { color: #00e5a0; }
+
+/* MIDDLE GRID */
+.middle-grid-new { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px; }
+@media (max-width: 768px) { .middle-grid-new { grid-template-columns: 1fr; } }
+
+.box-new {
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 14px;
+  padding: 20px;
+}
+.box-title-new { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #8b9db5; margin: 0 0 16px 0; }
+.placeholder-text { text-align: center; color: #8b9db5; font-size: 0.85rem; padding: 20px 0; }
+
+/* BOTTLENECK */
+.bn-status-row { display: flex; gap: 8px; margin-bottom: 16px; align-items: center;}
+.bn-status-label { font-size: 0.82rem; color: #8b9db5; }
+.bn-status-val { font-weight: 700; font-size: 0.85rem; }
+.text-green { color: #00e5a0; }
+.text-warning { color: #f59e0b; }
+
+.bn-bars-new { display: flex; flex-direction: column; gap: 14px; }
+.bn-label-row-new { display: flex; justify-content: space-between; font-size: 0.8rem; font-weight: 600; color: #e2e8f0; margin-bottom: 6px; }
+.progress-bar-container-new { height: 6px; border-radius: 3px; background: rgba(255,255,255,0.06); overflow: hidden; position: relative;}
+.progress-bar-fill { height: 100%; width: 0; border-radius: 3px; transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1); animation: fillAnim 0.8s forwards;}
+.pb-cpu { background: linear-gradient(90deg, #818cf8, #6366f1); }
+@keyframes fillAnim { from { width: 0; } }
+
+.bn-desc-italic { margin-top: 12px; font-size: 0.78rem; color: #8b9db5; line-height: 1.5; font-style: italic; background: rgba(255,255,255,0.02); border-radius: 8px; padding: 10px; }
+
+/* DONUT */
+.donut-layout-new { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+.donut-chart-container { position: relative; width: 180px; height: 180px; }
+.donut-chart-new { width: 100%; height: 100%; transform: rotate(-90deg); }
+.donut-bg-new { fill: transparent; stroke: rgba(255,255,255,0.03); stroke-width: 6; }
+.donut-segment { fill: transparent; stroke-width: 6; transition: stroke-dasharray 1s ease; animation: rotateAnim 0.8s ease-out; transform-origin: center;}
+@keyframes rotateAnim { from { stroke-dasharray: 0 100; } }
+.gpu-seg { stroke: #3b82f6; }
+.cpu-seg { stroke: #7c3aed; }
+.mobo-seg { stroke: #00e5a0; }
+.other-seg { stroke: #f59e0b; }
+
+.donut-center-text { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.total-ron-val { font-size: 1.1rem; font-weight: 800; color: #fff; }
+.total-ron-lbl { font-size: 0.65rem; color: #8b9db5; text-transform: uppercase; letter-spacing: 0.05em; }
+
+.donut-legend-new { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 20px; width: 100%; max-width: 300px; }
+.leg-item { display: flex; align-items: center; gap: 8px; }
+.leg-item .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.d-gpu { background: #3b82f6; }
+.d-cpu { background: #7c3aed; }
+.d-mobo { background: #00e5a0; }
+.d-other { background: #f59e0b; }
+.leg-item .lbl { font-size: 0.78rem; color: #8b9db5; }
+.leg-item .val { font-size: 0.78rem; font-weight: 700; color: #f0f4ff; margin-left: auto; }
+
+/* FPS TABLE */
+.fps-table-new { width: 100%; border-collapse: collapse; }
+.fps-table-new th { font-size: 0.72rem; color: #8b9db5; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 8px; }
+.fps-table-new td { padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.02); font-size: 0.8rem; }
+.fps-table-new .text-left { text-align: left; color: #e2e8f0; }
+.fps-table-new .text-right { text-align: right; }
+.fps-table-new .val { font-family: monospace; font-size: 0.95rem; font-weight: 700; color: #fff; }
+
+/* FOOTER BUTTONS */
+.modal-footer-new { display: flex; gap: 12px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.06); }
+@media (max-width: 640px) { .modal-footer-new { flex-direction: column; } }
+.btn-new {
+  flex: 1; height: 44px; border-radius: 10px; border: none; cursor: pointer;
+  font-size: 0.82rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  transition: all 0.2s ease;
+}
+.btn-bn { background: linear-gradient(135deg, #ea580c, #f97316); color: #fff; }
+.btn-bn:hover { filter: brightness(1.1); box-shadow: 0 0 20px rgba(249,115,22,0.4); }
+.btn-fps { background: linear-gradient(135deg, #6d28d9, #7c3aed); color: #fff; }
+.btn-fps:hover { filter: brightness(1.1); box-shadow: 0 0 20px rgba(124,58,237,0.4); }
+.btn-load { background: linear-gradient(135deg, #059669, #00e5a0); color: #000; font-weight: 800; }
+.btn-load:hover { filter: brightness(1.08); box-shadow: 0 0 20px rgba(0,229,160,0.35); }
 </style>

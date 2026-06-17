@@ -13,10 +13,10 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 from pathlib import Path
 from dotenv import load_dotenv
 import os
-load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(os.path.join(BASE_DIR, '.env'))
 
 
 # Quick-start development settings - unsuitable for production
@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django_filters',
     'rest_framework',
     'rest_framework_simplejwt',
     'corsheaders',
@@ -85,11 +86,11 @@ WSGI_APPLICATION = 'core.wsgi.application'
 DATABASES = {
    'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'pc_builder_db',
-        'USER': 'pcbuilder',
-        'PASSWORD': 'pcbuilder123',
-        'HOST': '127.0.0.1',
-        'PORT': '3306',
+        'NAME': os.getenv('DB_NAME', 'pc_builder_sim'),
+        'USER': os.getenv('DB_USER', 'radupcb'),
+        'PASSWORD': os.getenv('DB_PASSWORD', 'rm123456'),
+        'HOST': os.getenv('DB_HOST', '192.168.0.15'),
+        'PORT': os.getenv('DB_PORT', '3306'),
     }
 }
 
@@ -128,6 +129,8 @@ REST_FRAMEWORK = {
         'anon': '1000/minute', # 10 cerere/minut non autentificat
         'user': '10000/minute',# 100 cerere/minut autentificat
     },
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 50,
 
 }
 
@@ -156,6 +159,10 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
 from datetime import timedelta
 
 SIMPLE_JWT = {
@@ -163,3 +170,7 @@ SIMPLE_JWT = {
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),    # Token-ul de refresh e valabil 7 zile
     'AUTH_HEADER_TYPES': ('Bearer',),               # Standardul folosit in industrie
 }
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_IMAGE_API_KEY = os.getenv("GEMINI_IMAGE_API_KEY", "") or GEMINI_API_KEY
+GEMINI_CHAT_API_KEY = os.getenv("GEMINI_CHAT_API_KEY", "") or GEMINI_API_KEY
+GEMINI_BOTTLENECK_FPS_API_KEY = os.getenv("GEMINI_Botleneck+fps_API_KEY", "") or GEMINI_API_KEY

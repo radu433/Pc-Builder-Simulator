@@ -1,94 +1,70 @@
 <template>
   <div class="app-wrapper">
-    <header class="pcpp-header">
-      
-      <div class="top-tier">
-        <div class="container top-tier-content">
-          <router-link to="/" class="logo" style="text-decoration: none; cursor: pointer;">
-            <span class="logo-box">📦</span>
-            <span class="logo-text">PC BUILDER <span class="text-light">SIMULATOR</span></span>
-          </router-link>
-          
-          <div class="user-actions">
+    <header class="customrig-navbar">
+      <div class="container navbar-content">
+        <!-- Left: Logo -->
+        <router-link to="/" class="brand-logo" @click="handleLogoClick">
+          <div class="logo-circle">C</div>
+          <div class="brand-text">
+            <span class="logo-title">CUSTOMRIG</span>
+            <span class="tagline">Build Your Custom PC</span>
+          </div>
+        </router-link>
 
-            <template v-if="!isLoggedIn">
-              <router-link to="/login" class="text-link">Log In</router-link>
-              <span class="divider"></span>
-              <router-link to="/register" class="text-link">Register</router-link>
-              <span class="divider"></span>
-              <button class="lang-select">🇷🇴 Romania <span class="arrow">▼</span></button>
-            </template>
-
-            <template v-else>
-              <div class="account-menu" @click="toggleDropdown" ref="accountMenuRef">
-                <div class="account-btn">
-                  <div class="account-avatar">{{ userInitial }}</div>
-                  <span class="account-name">{{ username }}</span>
-                  <span class="arrow">▼</span>
-                </div>
-
-                <div v-if="dropdownOpen" class="account-dropdown">
-                  <div class="dropdown-header">
-                    <div class="dropdown-avatar">{{ userInitial }}</div>
-                    <div>
-                      <div class="dropdown-name">{{ username }}</div>
-                      <div class="dropdown-role">Utilizator</div>
-                    </div>
-                  </div>
-                  <div class="dropdown-divider"></div>
-                  <router-link to="/completed-builds" class="dropdown-item" @click="dropdownOpen = false">
-                    📂 Build-urile mele
-                  </router-link>
-                  <router-link to="/profile" class="dropdown-item" @click="dropdownOpen = false">
-                    ⚙️ Preferințele mele
-                  </router-link>
-                  <div class="dropdown-divider"></div>
-                  <button class="dropdown-item dropdown-logout" @click="logout">
-                    🚪 Deconectare
-                  </button>
-                </div>
+        <!-- Center: Nav Links -->
+        <nav class="main-nav">
+          <div class="nav-item-dropdown">
+            <button class="nav-link">PC Parts <span class="arrow">▼</span></button>
+            <div class="nav-submenu products-mega-menu glass-panel">
+              <div class="mega-menu-grid">
+                <router-link to="/products/cpus" class="submenu-item">Procesoare</router-link>
+                <router-link to="/products/gpus" class="submenu-item">Plăci Video</router-link>
+                <router-link to="/products/motherboards" class="submenu-item">Plăci de bază</router-link>
+                <router-link to="/products/rams" class="submenu-item">Memorie RAM</router-link>
+                <router-link to="/products/storages" class="submenu-item">Stocare</router-link>
+                <router-link to="/products/psus" class="submenu-item">Surse</router-link>
+                <router-link to="/products/cases" class="submenu-item">Carcase</router-link>
+                <router-link to="/products/coolers" class="submenu-item">Coolere</router-link>
               </div>
-            </template>
-
-            <button class="theme-toggle">🌙</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="bottom-tier">
-        <div class="container bottom-tier-content">
-          <nav class="main-nav">
-            <router-link to="/" class="nav-button" active-class="active-nav">
-              <span class="icon">🔧</span> Builder
-            </router-link>
-            
-            <router-link to="/chat-ai" class="nav-button ai-nav-button" active-class="active-nav-ai">
-              <span class="icon spark-icon">✨</span> Build AI
-            </router-link>
-
-            <button class="nav-button">
-              <span class="icon">🪪</span> Products <span class="arrow">▼</span>
-            </button>
-            <div class="nav-item-dropdown">
-              <button class="nav-button">
-                <span class="icon">📝</span> Guides <span class="arrow">▼</span>
-              </button>
-              
-              <div class="nav-submenu">
-                <router-link to="/documentatii" class="submenu-item">
-                  📄 Documentații
-                </router-link>
-                </div>
             </div>
-            <router-link to="/completed-builds" class="nav-button" active-class="active-nav">
-              <span class="icon">✅</span> Completed Builds
-            </router-link>
-          </nav>
-
-          <div class="search-bar">
-            <input type="text" placeholder="Search components..." />
-            <span class="search-icon">🔍</span>
           </div>
+          
+          <router-link to="/" class="nav-link" active-class="active-nav">Builds</router-link>
+          <router-link to="/completed-builds" class="nav-link" active-class="active-nav">Your Builds</router-link>
+          
+          <router-link to="/chat-ai" class="nav-link" active-class="active-nav">✨ Build AI</router-link>
+          <router-link to="/documentatii" class="nav-link" active-class="active-nav">📄 Documentații</router-link>
+        </nav>
+
+        <!-- Right: User Actions -->
+        <div class="user-actions">
+          <template v-if="!isLoggedIn">
+            <router-link to="/login" class="nav-link">Log In</router-link>
+            <router-link to="/register" class="btn-primary" style="padding: 6px 12px; font-size: 0.85rem;">Register</router-link>
+          </template>
+
+          <template v-else>
+            <div class="account-menu" @click="toggleDropdown" ref="accountMenuRef">
+              <div class="account-btn">
+                <span class="account-name">Account</span>
+                <span class="arrow">▼</span>
+              </div>
+
+              <div v-if="dropdownOpen" class="account-dropdown glass-panel">
+                <div class="dropdown-header">
+                  <div class="dropdown-avatar">{{ userInitial }}</div>
+                  <div>
+                    <div class="dropdown-name">{{ username }}</div>
+                    <div class="dropdown-role">Utilizator</div>
+                  </div>
+                </div>
+                <div class="dropdown-divider"></div>
+                <router-link to="/profile" class="dropdown-item" @click="dropdownOpen = false">⚙️ Profile</router-link>
+                <div class="dropdown-divider"></div>
+                <button class="dropdown-item dropdown-logout" @click="logout">🚪 Logout</button>
+              </div>
+            </div>
+          </template>
         </div>
       </div>
     </header>
@@ -112,16 +88,33 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { toastMessage, toastType } from './toast'
 
 const router = useRouter()
+const route = useRoute()
 const dropdownOpen = ref(false)
 const accountMenuRef = ref(null)
 
-const isLoggedIn = computed(() => !!localStorage.getItem('access_token'))
-const username = computed(() => localStorage.getItem('username') || 'Cont')
+const handleLogoClick = () => {
+  if (route.path === '/') {
+    window.location.reload()
+  }
+}
+
+// ✅ ref reactiv în loc de computed direct pe localStorage
+const accessToken = ref(localStorage.getItem('access_token'))
+const usernameStored = ref(localStorage.getItem('username'))
+
+// ✅ Se actualizează la fiecare schimbare de rută
+watch(route, () => {
+  accessToken.value = localStorage.getItem('access_token')
+  usernameStored.value = localStorage.getItem('username')
+})
+
+const isLoggedIn = computed(() => !!accessToken.value)
+const username = computed(() => usernameStored.value || 'Cont')
 const userInitial = computed(() => username.value.charAt(0).toUpperCase())
 
 const toggleDropdown = () => {
@@ -131,18 +124,40 @@ const toggleDropdown = () => {
 const logout = () => {
   localStorage.removeItem('access_token')
   localStorage.removeItem('username')
+  accessToken.value = null
+  usernameStored.value = null
   dropdownOpen.value = false
   router.push('/login')
 }
 
-// Închide dropdown la click în afară
 const handleClickOutside = (e) => {
   if (accountMenuRef.value && !accountMenuRef.value.contains(e.target)) {
     dropdownOpen.value = false
   }
 }
 
-onMounted(() => document.addEventListener('click', handleClickOutside))
+// ── Dark/Light Mode Logic ──
+const isLight = ref(false)
+
+const toggleTheme = () => {
+  isLight.value = !isLight.value
+  if (isLight.value) {
+    document.body.classList.add('light-theme')
+    localStorage.setItem('theme', 'light')
+  } else {
+    document.body.classList.remove('light-theme')
+    localStorage.setItem('theme', 'dark')
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('click', handleClickOutside)
+  
+  if (localStorage.getItem('theme') === 'light') {
+    isLight.value = true
+    document.body.classList.add('light-theme')
+  }
+})
 onUnmounted(() => document.removeEventListener('click', handleClickOutside))
 </script>
 
@@ -156,6 +171,7 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
 
 body {
   background-color: #0f111a;
+  background-image: none;
   color: #e2e8f0;
 }
 
@@ -165,89 +181,161 @@ body {
   padding: 0 15px;
 }
 
-.pcpp-header { width: 100%; }
-
-.top-tier {
-  background-color: #0f111a;
-  border-bottom: 1px solid #2a2d3e;
-  padding: 12px 0;
+.customrig-navbar {
+  background-color: rgba(13, 15, 20, 0.95);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(10px);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  padding: 0 20px;
 }
 
-.top-tier-content {
+.navbar-content {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  height: 70px;
 }
 
-.logo {
+.brand-logo {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+  text-decoration: none;
 }
 
-.logo-box {
-  background-color: #3b82f6;
+.logo-circle {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #00e5a0, #7c3aed);
   color: white;
-  padding: 5px;
-  border-radius: 4px;
-  font-size: 1.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  font-weight: 800;
+  box-shadow: 0 0 15px rgba(0, 229, 160, 0.4);
 }
 
-.logo-text {
+.brand-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.logo-title {
   color: white;
   font-weight: 800;
   font-size: 1.2rem;
   letter-spacing: 1px;
 }
 
-.text-light {
-  font-weight: 300;
-  color: #94a3b8;
-}
-
-.user-actions {
-  display: flex;
-  align-items: center;
-  gap: 15px;
-}
-
-.text-link {
-  background: none;
-  border: none;
-  color: #94a3b8;
-  font-size: 0.85rem;
-  cursor: pointer;
+.tagline {
+  color: var(--text-muted);
+  font-size: 0.75rem;
   font-weight: 500;
-  text-decoration: none;
-  transition: color 0.2s;
-}
-.text-link:hover { color: white; }
-
-.divider {
-  width: 1px;
-  height: 14px;
-  background-color: #3f4455;
 }
 
-.lang-select {
-  background: none;
-  border: none;
-  color: white;
-  font-size: 0.85rem;
+.main-nav {
   display: flex;
   align-items: center;
-  cursor: pointer;
+  gap: 30px;
 }
 
-.theme-toggle {
-  background-color: #232533;
+.nav-link {
+  color: var(--text-muted);
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 0.95rem;
+  padding: 10px 0;
+  position: relative;
+  transition: color 0.2s;
+  background: none;
   border: none;
-  border-radius: 4px;
-  padding: 4px 8px;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
 }
 
-/* ── Account menu ── */
+.nav-link:hover, .nav-item-dropdown:hover .nav-link {
+  color: white;
+}
+
+.active-nav {
+  color: var(--accent-color);
+  font-weight: 600;
+}
+
+.active-nav::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background-color: var(--accent-color);
+  border-radius: 2px;
+}
+
+/* Dropdown */
+.nav-item-dropdown {
+  position: relative;
+}
+
+.nav-submenu {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 200px;
+  border-radius: var(--card-radius);
+  overflow: hidden;
+  margin-top: 10px;
+}
+
+.nav-item-dropdown:hover .nav-submenu {
+  display: block;
+  animation: fadeDown 0.2s ease-out;
+}
+
+.submenu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 20px;
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 0.9rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  transition: all 0.2s;
+}
+
+.submenu-item:last-child {
+  border-bottom: none;
+}
+
+.submenu-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: white;
+}
+
+.products-mega-menu {
+  min-width: 400px;
+}
+
+.mega-menu-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.mega-menu-grid .submenu-item {
+  border: none;
+}
+
+/* Account Menu */
 .account-menu {
   position: relative;
 }
@@ -257,70 +345,45 @@ body {
   align-items: center;
   gap: 8px;
   cursor: pointer;
-  padding: 5px 10px;
-  border-radius: 8px;
+  padding: 8px 12px;
+  border-radius: var(--btn-radius);
   transition: background 0.2s;
-  user-select: none;
-}
-.account-btn:hover { background: #232533; }
-
-.account-avatar {
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  background: #3b82f6;
-  color: white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: 0.85rem;
+  color: var(--text-muted);
 }
 
-.account-name {
+.account-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
   color: white;
-  font-size: 0.85rem;
-  font-weight: 500;
 }
 
 .account-dropdown {
   position: absolute;
-  top: calc(100% + 10px);
+  top: 100%;
   right: 0;
-  background: #1a1b26;
-  border: 1px solid #2a2d3e;
-  border-radius: 10px;
-  min-width: 200px;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-  z-index: 1000;
+  min-width: 220px;
+  margin-top: 10px;
+  border-radius: var(--card-radius);
   overflow: hidden;
-  animation: fadeDown 0.15s ease-out;
-}
-
-@keyframes fadeDown {
-  from { opacity: 0; transform: translateY(-6px); }
-  to   { opacity: 1; transform: translateY(0); }
+  animation: fadeDown 0.2s ease-out;
 }
 
 .dropdown-header {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 14px 16px;
+  padding: 16px;
 }
 
 .dropdown-avatar {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: #3b82f6;
+  background: var(--accent-secondary);
   color: white;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 700;
-  font-size: 1rem;
-  flex-shrink: 0;
 }
 
 .dropdown-name {
@@ -330,214 +393,88 @@ body {
 }
 
 .dropdown-role {
-  color: #64748b;
+  color: var(--text-muted);
   font-size: 0.75rem;
-  margin-top: 2px;
 }
 
 .dropdown-divider {
   height: 1px;
-  background: #2a2d3e;
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .dropdown-item {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 11px 16px;
-  color: #a9b1d6;
-  font-size: 0.85rem;
+  padding: 12px 16px;
+  color: var(--text-muted);
   text-decoration: none;
   cursor: pointer;
-  transition: background 0.15s;
   width: 100%;
   border: none;
   background: none;
   text-align: left;
-}
-.dropdown-item:hover { background: #232533; color: white; }
-
-.dropdown-logout { color: #f43f5e; }
-.dropdown-logout:hover { background: rgba(244,63,94,0.1); color: #f43f5e; }
-
-/* ── Bottom nav ── */
-.bottom-tier {
-  background-color: #1a1b26;
-  border-bottom: 1px solid #2a2d3e;
-}
-
-.bottom-tier-content {
-  display: flex;
-  justify-content: space-between;
-  align-items: stretch;
-  height: 55px;
-}
-
-.main-nav { display: flex; height: 100%; }
-
-.nav-button {
-  color: #e2e8f0;
+  transition: all 0.2s;
   font-size: 0.9rem;
-  font-weight: 600;
-  padding: 0 20px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border: none;
-  border-right: 1px solid #2a2d3e;
-  background: transparent;
-  cursor: pointer;
-  text-decoration: none;
-  transition: background-color 0.2s;
-}
-.nav-button:first-child { border-left: 1px solid #2a2d3e; }
-.nav-button:hover { background-color: #232533; }
-
-.active-nav {
-  background-color: #232533;
-  color: #3b82f6 !important;
-  border-bottom: 3px solid #3b82f6;
 }
 
-/* ── Butonul special AI ── */
-.ai-nav-button {
-  color: #c084fc; 
-  font-weight: 700;
-  position: relative;
-  overflow: hidden;
+.dropdown-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: white;
 }
 
-.ai-nav-button:hover {
-  background-color: rgba(168, 85, 247, 0.1) !important;
-  color: #d8b4fe;
+.dropdown-logout:hover {
+  color: #ff4757;
+  background: rgba(255, 71, 87, 0.1);
 }
 
-.active-nav-ai {
-  background-color: rgba(168, 85, 247, 0.15) !important;
-  color: #c084fc !important;
-  border-bottom: 3px solid #a855f7 !important;
-}
-
-.spark-icon {
-  animation: pulse-spark 2s infinite;
-}
-
-@keyframes pulse-spark {
-  0% { transform: scale(1); opacity: 0.8; }
-  50% { transform: scale(1.2); opacity: 1; text-shadow: 0 0 10px rgba(168, 85, 247, 0.8); }
-  100% { transform: scale(1); opacity: 0.8; }
-}
-
-/* ── Dropdown Navigare (Guides) ── */
-.nav-item-dropdown {
-  position: relative;
-  display: flex;
-  height: 100%;
+@keyframes fadeDown {
+  from { opacity: 0; transform: translateY(-10px) translateX(var(--tx, 0)); }
+  to   { opacity: 1; transform: translateY(0) translateX(var(--tx, 0)); }
 }
 
 .nav-submenu {
-  display: none;
-  position: absolute;
-  top: 100%; /* Fix sub buton */
-  left: 0;
-  background: #1a1b26;
-  border: 1px solid #2a2d3e;
-  border-top: none; /* Se lipește vizual de bara de navigație */
-  min-width: 200px;
-  z-index: 1000;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-  border-bottom-left-radius: 8px;
-  border-bottom-right-radius: 8px;
-  overflow: hidden;
+  --tx: -50%;
+}
+.account-dropdown {
+  --tx: 0;
 }
 
-/* Când pui mouse-ul pe zona butonului, apare submeniul */
-.nav-item-dropdown:hover .nav-submenu {
-  display: block;
-  animation: fadeDown 0.15s ease-out;
-}
-
-/* Menține butonul 'Guides' luminat cât timp ești cu mouse-ul în submeniu */
-.nav-item-dropdown:hover .nav-button {
-  background-color: #232533;
-}
-
-.submenu-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 14px 20px;
-  color: #a9b1d6;
-  text-decoration: none;
-  font-size: 0.85rem;
-  font-weight: 500;
-  transition: background 0.15s, color 0.15s;
-  border-bottom: 1px solid #2a2d3e;
-}
-
-.submenu-item:last-child {
-  border-bottom: none;
-}
-
-.submenu-item:hover {
-  background: #232533;
-  color: #3b82f6; /* Se face albastru la hover, ca un link real */
-}
-
-.search-bar {
-  display: flex;
-  align-items: center;
-  position: relative;
-}
-
-.search-bar input {
-  background-color: #0f111a;
-  border: 1px solid #2a2d3e;
-  border-radius: 20px;
-  padding: 8px 15px 8px 35px;
-  color: white;
-  font-size: 0.85rem;
-  width: 250px;
-}
-
-.search-icon {
-  position: absolute;
-  left: 12px;
-  font-size: 0.9rem;
-  color: #64748b;
-}
-
-.main-content { min-height: calc(100vh - 160px); }
-
-.footer {
-  background-color: #1a1b26;
-  border-top: 1px solid #2a2d3e;
-  padding: 30px 0;
-  text-align: center;
-  color: #64748b;
-  font-size: 0.85rem;
-}
-
+/* Toast Notifications */
 .custom-toast {
   position: fixed;
-  bottom: 30px;
-  right: 30px;
-  padding: 15px 25px;
+  bottom: 20px;
+  right: 20px;
+  padding: 12px 24px;
   border-radius: 8px;
-  color: white;
-  font-weight: 600;
-  box-shadow: 0 10px 25px rgba(0,0,0,0.4);
-  z-index: 9999;
+  font-weight: 500;
   display: flex;
   align-items: center;
-  gap: 10px;
-  animation: slideIn 0.3s ease-out;
+  gap: 12px;
+  z-index: 9999;
+  animation: slideIn 0.3s ease-out, fadeOut 0.3s ease-in 2.7s forwards;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  backdrop-filter: blur(8px);
 }
-.custom-toast.success { background-color: #1a1b26; border: 1px solid #10b981; }
-.custom-toast.error   { background-color: #1a1b26; border: 1px solid #f43f5e; }
+
+.custom-toast.success {
+  background-color: rgba(16, 185, 129, 0.2);
+  border: 1px solid #10b981;
+  color: #fff;
+}
+
+.custom-toast.error {
+  background-color: rgba(239, 68, 68, 0.2);
+  border: 1px solid #ef4444;
+  color: #fff;
+}
 
 @keyframes slideIn {
   from { transform: translateX(100%); opacity: 0; }
-  to   { transform: translateX(0); opacity: 1; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; visibility: hidden; }
 }
 </style>

@@ -1,657 +1,1328 @@
 <template>
-  <div class="container builder-layout">
-    
-    <div class="main-panel">
-      <div class="header-section">
-        <h2>🛠️ Configurează-ți PC-ul</h2>
-        
-        <div class="progress-container">
-          <div class="progress-info">
-            <span>Progres Build</span>
-            <span>{{ selectedPartsCount }} / {{ categories.length }} piese</span>
-          </div>
-          <div class="progress-bar-bg">
-            <div class="progress-bar-fill" :style="{ width: progressPercentage + '%' }"></div>
-          </div>
+  <div class="maximalist-app-container">
+    <!-- Overlay pentru textura de zgomot (Dithering) -->
+    <div class="noise-texture"></div>
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar glass-panel">
+      <div class="sidebar-brand">
+        <div class="brand-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
         </div>
+        <span class="font-syne gradient-text-brand">RIGMASTER</span>
       </div>
       
-      <div class="build-list">
-        <div v-if="loading" class="loading">Se încarcă componentele...</div>
-        
-        <div v-else-if="totalPartsLoaded === 0" class="empty-state">
-          Nu s-a încărcat nicio componentă de la API. Verifică dacă serverul Django rulează.
+      <div class="sidebar-scroll-area">
+        <div class="category-list">
+          <div v-for="(cat, idx) in categories" :key="cat.id" 
+               class="category-item" 
+               :class="{ active: activeCategoryId === cat.id, 'has-part': cat.selectedPart }"
+               @click="openCategory(cat.id)">
+               <div class="cat-left">
+                 <span class="cat-icon">{{ cat.icon }}</span>
+                 <span class="cat-name font-inter">{{ cat.name }}</span>
+               </div>
+               <span class="status-indicator"></span>
+          </div>
         </div>
+      </div>
 
-        <div 
-          v-else
-          v-for="category in categories" 
-          :key="category.id" 
-          class="category-container"
-        >
-          <div class="build-row" :class="{ 'has-part': category.selectedPart }">
-            <div class="category-icon">{{ category.icon }}</div>
+      <div class="sidebar-footer">
+         <button class="btn-ghost-outline font-inter" @click="openCategory(null)">
+           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
+           View Summary
+         </button>
+         
+         <button class="btn-primary-green font-mono" @click="openSaveModal" :disabled="selectedPartsCount === 0">
+           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+           SAVE BUILD
+         </button>
+         
+         <button class="btn-primary-violet font-mono" @click="analizeazaBuild" :disabled="selectedPartsCount === 0 || agentLoading">
+           <svg v-if="!agentLoading" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+           <svg v-else class="spin-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="2" x2="12" y2="6"></line><line x1="12" y1="18" x2="12" y2="22"></line><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line><line x1="2" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="22" y2="12"></line><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line></svg>
+           {{ agentLoading ? 'ANALYZING...' : 'AI ANALYSIS' }}
+         </button>
+
+         <div class="ai-sub-actions">
+           <button class="btn-ai-sub font-mono" @click="triggerBottleneck">BOTTLENECK CHECK</button>
+           <button class="btn-ai-sub font-mono" @click="triggerFps">ESTIMATE FPS</button>
+           <button class="btn-ai-sub font-mono" @click="triggerCasePreview">CASE PREVIEW</button>
+         </div>
+      </div>
+    </aside>
+    
+    <!-- MAIN CONTENT -->
+    <main class="main-content">
+       <!-- HERO HEADER -->
+       <div class="hero-header glass-panel">
+           <div class="hero-bg-animated"></div>
+           <div class="hero-content">
+             <div>
+               <h1 class="font-syne hero-title">{{ activeCategory ? activeCategory.name.toUpperCase() + ' SELECTION' : 'SYSTEM SUMMARY' }}</h1>
+               <div class="badges-row font-inter">
+                 <span class="badge-status" :class="hasIncompatibilities ? 'error' : 'success'">
+                   <span class="dot"></span> {{ hasIncompatibilities ? 'Compatibility Issues' : '100% Compatible' }}
+                 </span>
+                 <span class="badge-status info">
+                   <span class="dot"></span> {{ selectedPartsCount }} Components Selected
+                 </span>
+               </div>
+             </div>
+             
+             <div class="price-display">
+               <div class="price-label font-inter">ESTIMATED TOTAL</div>
+               <div class="price-value font-mono gradient-text-green">{{ totalPrice.toFixed(2) }} <span class="currency">RON</span></div>
+               <div class="tdp-value font-mono">PWR DRAIN: {{ totalTdp }}W</div>
+             </div>
+           </div>
+       </div>
+
+       <!-- LOADING STATE -->
+       <div v-if="loading" class="loading-state glass-panel">
+          <div class="spinner-hologram"></div>
+          <p class="font-mono gradient-text-cyan">INITIALIZING DATABASE...</p>
+       </div>
+
+       <!-- BROWSING GRID (Când o categorie este selectată) -->
+       <div v-else-if="activeCategoryId" class="components-grid-container" style="display: flex; flex-direction: column; height: 100%;">
+         <div class="components-grid" style="flex: 1; overflow-y: auto;">
+          <div 
+            v-for="part in activeCategoryParts" 
+            :key="part.id"
+            class="synth-product-card glass-panel interactive-card"
+          >
+            <div class="card-link" style="cursor: pointer;" @click="selectPart(part)">
+              <div class="card-glow"></div>
+              <div class="card-content">
+                <div class="card-top">
+                  <div class="card-brand">{{ part.brand || part.producator || 'N/A' }}</div>
+                </div>
+                
+                <div class="card-image-box">
+                  <img :src="part.imagine_url || 'https://placehold.co/200x200/111827/00f0ff?text=No+Image'" :alt="part.nume || part.name" />
+                </div>
+                
+                <h3 class="card-title">{{ part.nume || part.name }}</h3>
+                <div class="card-specs">
+                  <div class="spec-col">
+                    <span class="neon-price">{{ Number(part.pret || part.price).toLocaleString('ro-RO') }} RON</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card-footer">
+              <button 
+                class="btn-neon"
+                @click="selectPart(part)"
+                style="width: 100%"
+              >
+                ➕ Adaugă în Build
+              </button>
+            </div>
+          </div>
+         </div>
+         <div v-if="totalPages > 1" class="pagination">
+           <button class="page-btn" :disabled="currentPage === 1" @click="goToPage(currentPage - 1)">← Prev</button>
+           <template v-for="page in visiblePages" :key="page">
+             <span v-if="page === '...'" class="page-dots">...</span>
+             <button v-else class="page-btn" :class="{ active: page === currentPage }" @click="goToPage(page)">{{ page }}</button>
+           </template>
+           <button class="page-btn" :disabled="currentPage === totalPages" @click="goToPage(currentPage + 1)">Next →</button>
+         </div>
+       </div>
+
+       <!-- SUMMARY VIEW -->
+       <div v-else class="summary-layout">
+           <!-- COLOANA STÂNGA -->
+           <div class="col-left">
+             
+             <!-- PC Visual Preview -->
+             <div class="pc-preview-card glass-panel interactive-card">
+               <div class="pc-hologram" v-if="!generatedImageUrl && !imageGenerationErrorText">
+                  <div class="holo-core"></div>
+                  <div class="holo-rings"></div>
+               </div>
+               <div class="pc-preview-error font-inter text-center" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: #8b9db5; padding: 20px;" v-else-if="imageGenerationErrorText">
+                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="mb-4 text-red-500" style="opacity: 0.8"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                  <p>{{ imageGenerationErrorText }}</p>
+               </div>
+               <div v-else class="generated-image-container">
+                  <img :src="generatedImageUrl" class="generated-preview-img" alt="PC Build" />
+                  <button class="btn-enlarge font-mono" @click="showImageModal = true">ENLARGE</button>
+               </div>
+               <div class="pc-preview-label font-mono">CASE PREVIEW {{ generatedImageUrl ? '[GENERATED]' : (imageGenerationErrorText ? '[UNAVAILABLE]' : '[SIMULATED]') }}</div>
+             </div>
+
+             <!-- Bottleneck Analysis -->
+             <div class="bottleneck-panel glass-panel">
+               <h3 class="panel-title font-syne" :style="{ marginBottom: showBottleneck ? '1.5rem' : '0', borderBottom: showBottleneck ? '' : 'none', paddingBottom: showBottleneck ? '1rem' : '0', transition: 'all 0.4s' }">BOTTLENECK ANALYSIS</h3>
+               
+               <Transition name="expand">
+                 <div v-if="showBottleneck">
+                   <div v-if="loadingBottleneck" class="loading-state-small">
+                     <div class="spinner-hologram small-spinner"></div>
+                     <p class="font-mono gradient-text-cyan">ANALYZING BOTTLENECK...</p>
+                   </div>
+
+                   <div class="bottleneck-list">
+                     <div class="progress-item" v-for="stat in bottleneckStats" :key="stat.label">
+                       <div class="progress-header font-inter">
+                         <span>{{ stat.label }}</span>
+                         <span class="font-mono" :class="stat.color">{{ stat.value }}%</span>
+                       </div>
+                       <div class="progress-track">
+                         <div class="progress-fill" :style="{ width: stat.value + '%', background: stat.bg }"></div>
+                       </div>
+                     </div>
+                   </div>
+                 </div>
+               </Transition>
+             </div>
+
+             <!-- Gaming FPS Table -->
+             <div class="fps-panel glass-panel">
+               <h3 class="panel-title font-syne" :style="{ marginBottom: showFps ? '1.5rem' : '0', borderBottom: showFps ? '' : 'none', paddingBottom: showFps ? '1rem' : '0', transition: 'all 0.4s' }">FPS ESTIMATES <span class="badge-ultra">ULTRA SETTINGS</span></h3>
+               
+               <Transition name="expand">
+                 <div v-if="showFps">
+                   <div v-if="loadingFps" class="loading-state-small">
+                     <div class="spinner-hologram small-spinner"></div>
+                     <p class="font-mono gradient-text-violet">SIMULATING FPS...</p>
+                   </div>
+
+                   <div v-else class="table-responsive">
+                     <table class="fps-table font-mono">
+                       <thead>
+                         <tr>
+                           <th>GAME TITLE</th>
+                           <th>1080P</th>
+                           <th>1440P</th>
+                           <th>4K</th>
+                         </tr>
+                       </thead>
+                       <tbody>
+                         <tr v-for="game in fpsEstimates" :key="game.name">
+                           <td class="font-inter game-title">{{ game.name }}</td>
+                           <td class="fps-high">{{ game.fhd }}</td>
+                           <td class="fps-med">{{ game.qhd }}</td>
+                           <td class="fps-low">{{ game.uhd }}</td>
+                         </tr>
+                       </tbody>
+                     </table>
+                   </div>
+                 </div>
+               </Transition>
+             </div>
+           </div>
+
+           <!-- COLOANA DREAPTA -->
+           <div class="col-right">
+             
+             <!-- Build List -->
+              <div class="build-list-panel glass-panel">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; border-bottom: 1px solid rgba(255, 255, 255, 0.05); padding-bottom: 0.8rem;">
+                  <h3 class="panel-title font-syne" style="margin-bottom: 0; padding-bottom: 0; border: none;">SELECTED COMPONENTS</h3>
+                  <button v-if="selectedPartsCount > 0" class="btn-clear-all font-mono" @click="clearAllParts" title="Clear All Components">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                    CLEAR
+                  </button>
+                </div>
+               <div class="build-items-container">
+                 
+                 <!-- Empty state -->
+                 <div v-if="selectedPartsCount === 0" class="empty-state font-inter">
+                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                   <p>No components selected. Start building your rig from the dashboard.</p>
+                 </div>
+
+                 <!-- Items -->
+                 <div v-for="cat in categories.filter(c => c.selectedPart)" :key="cat.id" class="build-item">
+                   <div class="item-icon">{{ cat.icon }}</div>
+                    <div class="build-item-info">
+                      <h4 class="font-inter">{{ cat.selectedPart.nume || cat.selectedPart.name }}</h4>
+                      <p class="font-mono text-sm opacity-70">{{ cat.selectedPart.pret || cat.selectedPart.price }} RON</p>
+                    </div>
+                   <div class="item-actions">
+                     <span class="item-price font-mono">{{ cat.selectedPart.price }} RON</span>
+                     <button class="btn-swap" @click="openAlternativesModal(cat)" title="Find Alternatives">
+                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg>
+                     </button>
+                     <button class="btn-remove" @click="removePart(cat.id)" title="Remove">✕</button>
+                   </div>
+                 </div>
+
+               </div>
+             </div>
+
+           </div>
+       </div>
+    </main>
+
+    <!-- ========================================== -->
+    <!-- MODAL 1: SALVEAZĂ BUILD (Teleported)       -->
+    <!-- ========================================== -->
+    <Teleport to="body">
+      <div v-if="showSaveModal" class="modal-overlay" @click.self="showSaveModal = false">
+        <div class="maximalist-modal glass-panel">
+          <div class="modal-header">
+            <h2 class="font-syne gradient-text-violet">SAVE CONFIGURATION</h2>
+            <button class="btn-close" @click="showSaveModal = false">✕</button>
+          </div>
+          
+          <div class="modal-body font-inter">
+            <div class="input-group">
+              <label for="build-name" class="font-mono">BUILD DESIGNATION</label>
+              <input 
+                id="build-name" 
+                type="text" 
+                v-model="newBuildName" 
+                class="synth-input font-inter" 
+                placeholder="e.g. CyberBeast MK.II" 
+              />
+            </div>
+
+            <div class="save-options-row glass-panel-inner">
+              <div class="toggle-container">
+                <label class="synth-switch">
+                  <input type="checkbox" v-model="isPublic" />
+                  <span class="slider round"></span>
+                </label>
+                <span class="toggle-label font-mono">PUBLIC BUILD</span>
+              </div>
+
+              <div class="user-profile-badge">
+                <div class="avatar-circle font-syne">R</div>
+                <span class="username font-mono">radut202...</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="modal-footer">
+            <button class="btn-ghost font-mono" @click="showSaveModal = false">ABORT</button>
+            <button class="btn-primary-cyan font-mono" @click="confirmSave">SAVE</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- ========================================== -->
+    <!-- MODAL 2: ALTERNATIVE (Teleported)          -->
+    <!-- ========================================== -->
+    <Teleport to="body">
+      <div v-if="showAlternativesModal" class="modal-overlay" @click.self="showAlternativesModal = false">
+        <div class="maximalist-modal modal-large glass-panel">
+          <div class="modal-header">
+            <h2 class="font-syne gradient-text-cyan">AI ALTERNATIVES FOR {{ modalTargetCategory?.name.toUpperCase() }}</h2>
+            <button class="btn-close" @click="showAlternativesModal = false">✕</button>
+          </div>
+          
+          <div class="modal-body">
+            <div class="alternatives-grid">
+              
+              <div v-for="alt in alternatives" :key="alt.id" class="alt-card glass-panel-inner interactive-card">
+                <div class="alt-header-container mb-2">
+                  <div class="text-xs text-purple-400 font-bold tracking-wider mb-2 font-syne">{{ alt.tip_alternativa }}</div>
+                  <div class="alt-header">
+                    <span class="alt-icon">{{ modalTargetCategory?.icon }}</span>
+                    <h4 class="font-inter">{{ alt.name }}</h4>
+                  </div>
+                </div>
+                <div class="alt-price font-mono gradient-text-cyan">{{ alt.price }} RON</div>
+                <p class="alt-reason font-inter">{{ alt.reason }}</p>
+                <button class="btn-primary-cyan font-mono" @click="swapComponent(alt)">
+                  ÎNLOCUIEȘTE
+                </button>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+    <!-- MODAL 3: AI ANALYSIS (Teleported) -->
+    <Teleport to="body">
+      <div v-if="showAnalysisModal" class="modal-overlay" @click.self="showAnalysisModal = false">
+        <div class="maximalist-modal glass-panel">
+          <div class="modal-header">
+            <h2 class="font-syne gradient-text-cyan">AI COMPATIBILITY ANALYSIS</h2>
+            <button class="btn-close" @click="showAnalysisModal = false">✕</button>
+          </div>
+          <div class="modal-body font-inter">
+            <div v-if="analysisResult.length === 0" class="flex flex-col items-center text-center">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#00e5ff" stroke-width="2" class="mb-4">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                <polyline points="22 4 12 14.01 9 11.01"></polyline>
+              </svg>
+              <h3 class="text-xl text-white mb-2">Build 100% Compatibil!</h3>
+              <p class="text-gray-400">Toate componentele selectate se potrivesc perfect. Nicio problemă detectată.</p>
+            </div>
             
-            <div class="category-info">
-              <div class="category-name">{{ category.name }}</div>
-              <div v-if="category.selectedPart" class="selected-name">
-                {{ displayPartName(category.selectedPart) }}
-                <span v-if="category.incompatibil" class="incompatibil-warning">
-                  ⚠️ Incompatibil cu selecția curentă
-                </span>
-              </div>
-              <div v-else class="no-part">
-                <span v-if="category.filterLocked" class="filter-hint">
-                  {{ category.filterHint }}
-                </span>
-                <span v-else>Nicio componentă selectată</span>
-              </div>
-            </div>
-
-            <div class="price-section">
-              <span v-if="category.selectedPart">{{ displayPartPrice(category.selectedPart) }} RON</span>
-            </div>
-
-            <div v-if="category.activeFilter" class="filter-tag">
-              🔗 {{ category.activeFilter }}
-            </div>
-
-            <div class="actions">
-              <button v-if="!category.selectedPart" class="btn btn-outline" @click="openPartSelector(category.id)">
-                {{ openCategoryId === category.id ? 'Închide' : '+ Alege' }}
-              </button>
-              <button v-else class="btn-remove" @click="removePart(category.id)">
-                ✕
-              </button>
-            </div>
-          </div>
-
-          <div v-if="openCategoryId === category.id" class="parts-selector-box">
-            <div v-if="category.parts.length === 0" class="mini-loading">
-              {{ category.filterLocked
-                ? 'Nicio piesă compatibilă găsită pentru filtrul activ.'
-                : 'Nu există piese disponibile în această categorie.' }}
-            </div>
-            <div 
-              v-else
-              v-for="part in category.parts" 
-              :key="part.id" 
-              class="part-option"
-              @click="selectPart(category.id, part)"
-            >
-              <div class="part-main-info">
-                <span class="p-name">{{ displayPartName(part) }}</span>
-                <span class="p-specs" v-if="part.frecventa || part.capacitate">{{ part.frecventa }} {{ part.capacitate }}</span>
-              </div>
-              <span class="p-price">{{ displayPartPrice(part) }} RON</span>
+            <div v-else>
+              <h3 class="text-xl text-red-400 mb-4 font-syne">⚠️ Probleme Detectate ({{ analysisResult.length }})</h3>
+              <ul class="space-y-3">
+                <li v-for="(prob, idx) in analysisResult" :key="idx" class="glass-panel-inner p-3 border border-red-500/30 text-gray-200 flex items-start gap-3">
+                  <span class="text-red-500">❌</span>
+                  {{ prob }}
+                </li>
+              </ul>
             </div>
           </div>
         </div>
       </div>
-    </div>
+    </Teleport>
 
-    <div class="summary-panel">
-      <div class="summary-card">
-        <h3>Sumar Build</h3>
-        <div class="divider"></div>
-        
-        <div class="summary-row">
-          <span>Componente:</span>
-          <span>{{ selectedPartsCount }} / {{ categories.length }}</span>
-        </div>
-        
-        <div class="summary-row total">
-          <span>Total Estimativ:</span>
-          <strong class="price-highlight">{{ totalPrice.toFixed(2) }} RON</strong>
-        </div>
-
-        <button 
-          class="btn btn-primary btn-block" 
-          :disabled="selectedPartsCount === 0"
-          @click="salveazaPC"
-        >
-          🚀 Salvează Configurația
-        </button>
-      </div>
-
-      <div class="info-box">
-        <h4>🤖 Analiză AI</h4>
-
-        <div v-if="selectedPartsCount === 0">
-          <p>Începe prin a alege un <strong>Procesor</strong>. Acesta este inima sistemului tău.</p>
-        </div>
-
-        <div v-else>
-          <button class="btn btn-analyze" :disabled="agentLoading" @click="analizeazaBuild">
-            {{ agentLoading ? '⏳ Se analizează...' : '🔍 Analizează Build-ul' }}
-          </button>
-
-          <div v-if="agentError" class="agent-error">⚠️ {{ agentError }}</div>
-
-          <div v-if="agentResult" class="agent-result">
-            <div class="agent-badge" :class="'badge-' + agentResult.severitate">
-              {{ agentResult.severitate === 'ok' ? '✅ Compatibil' : agentResult.severitate === 'warning' ? '⚠️ Atenție' : '❌ Probleme' }}
-            </div>
-
-            <div v-if="agentResult.probleme?.length > 0" class="agent-section">
-              <strong>Probleme:</strong>
-              <ul><li v-for="p in agentResult.probleme" :key="p">{{ p }}</li></ul>
-            </div>
-
-            <div v-if="agentResult.bottleneck?.are_bottleneck" class="agent-section">
-              <strong>Bottleneck:</strong>
-              <p>{{ agentResult.bottleneck.componenta_limitatoare }} limitează {{ agentResult.bottleneck.componenta_limitata }} cu {{ agentResult.bottleneck.procentaj_bottleneck }}%</p>
-            </div>
-
-            <div v-if="agentResult.analiza_ai" class="agent-section">
-              <strong>Feedback AI:</strong>
-              <p>{{ agentResult.analiza_ai }}</p>
-            </div>
-
-            <div v-if="Object.keys(agentResult.sugestii || {}).length > 0" class="agent-section">
-              <strong>Sugestii:</strong>
-              <div v-for="(lista, tip) in agentResult.sugestii" :key="tip">
-                <em>{{ tip.toUpperCase() }}:</em>
-                <div v-for="s in lista" :key="s.id" class="sugestie-item">{{ s.nume || s.model }} — {{ s.pret }} RON</div>
-              </div>
-            </div>
-          </div>
+    <!-- Modal imagine generată -->
+    <Teleport to="body">
+      <div v-if="showImageModal" class="modal-overlay" @click.self="showImageModal = false">
+        <div class="image-modal glass-panel">
+          <button class="btn-close" @click="showImageModal = false">✕</button>
+          <img :src="generatedImageUrl" class="full-size-img" alt="PC Build Full" />
         </div>
       </div>
-    </div>
+    </Teleport>
+
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import axios from 'axios'
-import api from '../plugins/axios.js'
+import { useRouter } from 'vue-router'
+import api from '@/plugins/axios'
+import { showToast } from '@/toast'
 
+// --- STILURI IMPORTATE (Google Fonts) ---
+// Notă: Folosim o injecție a fonturilor direct din componentă pentru a garanta aspectul.
+const fontStyle = document.createElement('style');
+fontStyle.innerHTML = `
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;700&family=Syne:wght@600;700;800&display=swap');
+`;
+document.head.appendChild(fontStyle);
+
+// --- STATE MANAGEMENT ---
+const activeCategoryId = ref(null)
+const loading = ref(false)
 const agentLoading = ref(false)
-const agentResult = ref(null)
-const agentError = ref(null)
-const loading = ref(true)
-const openCategoryId = ref(null)
 
+// Panels State
+const showBottleneck = ref(false)
+const loadingBottleneck = ref(false)
+const showFps = ref(false)
+const loadingFps = ref(false)
+
+// Modals State
+const showSaveModal = ref(false)
+const showAlternativesModal = ref(false)
+const showAnalysisModal = ref(false)
+const analysisResult = ref([])
+const newBuildName = ref('')
+const isPublic = ref(true)
+const modalTargetCategory = ref(null)
+
+// --- DATA STATE ---
 const categories = ref([
-  { id: 'cpus',         name: 'Procesor',      icon: '🧠', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false, filterHint: '',                            incompatibil: false },
-  { id: 'motherboards', name: 'Placă de Bază', icon: '🛹', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false, filterHint: 'Alege mai întâi un Procesor', incompatibil: false },
-  { id: 'gpus',         name: 'Placă Video',   icon: '🎮', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false, filterHint: '',                            incompatibil: false },
-  { id: 'rams',         name: 'Memorie RAM',   icon: '⚡', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false, filterHint: 'Alege mai întâi o Placă de Bază', incompatibil: false },
-  { id: 'storages',     name: 'Stocare',       icon: '💾', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false, filterHint: '',                            incompatibil: false },
-  { id: 'psus',         name: 'Sursă',         icon: '🔌', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false, filterHint: '',                            incompatibil: false },
-  { id: 'cases',        name: 'Carcasă',       icon: '📦', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false, filterHint: '',                            incompatibil: false },
-  { id: 'coolers',      name: 'Cooler CPU',    icon: '❄️', parts: [], allParts: [], selectedPart: null, activeFilter: null, filterLocked: false, filterHint: '',                            incompatibil: false },
+  { id: 'cpu', endpoint: 'cpus', name: 'Procesor',selectedPart: null },
+  { id: 'gpu', endpoint: 'gpus', name: 'Placă Video',selectedPart: null },
+  { id: 'motherboard', endpoint: 'motherboards', name: 'Placă de Bază',selectedPart: null },
+  { id: 'ram', endpoint: 'rams', name: 'Memorie RAM',selectedPart: null },
+  { id: 'storage', endpoint: 'storages', name: 'Stocare',selectedPart: null },
+  { id: 'psu', endpoint: 'psus', name: 'Sursă',selectedPart: null },
+  { id: 'case', endpoint: 'cases', name: 'Carcasă',selectedPart: null },
+  { id: 'cooler', endpoint: 'coolers', name: 'Cooler', selectedPart: null },
 ])
 
-// ── Fetch ─────────────────────────────────────────────────
-const fetchParts = async () => {
+const activeCategoryParts = ref([])
+const totalProducts = ref(0)
+const currentPage = ref(1)
+const PAGE_SIZE = 24
+
+const totalPages = computed(() => Math.ceil(totalProducts.value / PAGE_SIZE))
+
+const visiblePages = computed(() => {
+  const pages = []
+  const total = totalPages.value
+  const current = currentPage.value
+  if (total <= 7) { for (let i = 1; i <= total; i++) pages.push(i) } 
+  else {
+    pages.push(1)
+    if (current > 3) pages.push('...')
+    for (let i = Math.max(2, current - 1); i <= Math.min(total - 1, current + 1); i++) pages.push(i)
+    if (current < total - 2) pages.push('...')
+    pages.push(total)
+  }
+  return pages
+})
+
+const bottleneckStats = ref([])
+const fpsEstimates = ref([])
+const alternatives = ref([])
+
+const generatedImageUrl = ref(null)
+const imageGenerationErrorText = ref(null)
+const showImageModal = ref(false)
+
+const isLoggedIn = ref(false)
+const imageGenerationsCount = ref(0)
+
+const saveCurrentBuildToStorage = () => {
+  const build = {}
+  categories.value.forEach(cat => {
+    if (cat.selectedPart) {
+      build[cat.id] = cat.selectedPart
+    }
+  })
+  localStorage.setItem('current_build', JSON.stringify(build))
+}
+
+onMounted(() => {
+  const token = localStorage.getItem('access_token');
+  isLoggedIn.value = !!token;
+  const storedCount = localStorage.getItem('image_generations_count');
+  if (storedCount) {
+    imageGenerationsCount.value = parseInt(storedCount);
+  }
+  
+  // 1. Verificăm dacă venim din SavedBuildsView cu un "loadBuild"
+  const loadBuildStr = sessionStorage.getItem('loadBuild');
+  if (loadBuildStr) {
+    try {
+      const parts = JSON.parse(loadBuildStr);
+      categories.value.forEach(cat => {
+        if (parts[cat.id]) {
+          cat.selectedPart = parts[cat.id];
+        }
+      });
+      saveCurrentBuildToStorage(); // suprascriem current_build-ul cu cel încărcat
+    } catch (e) {
+      console.error("Eroare la încărcarea build-ului salvat:", e);
+    }
+    sessionStorage.removeItem('loadBuild');
+  } else {
+    // 2. Altfel, încărcăm ultimul build la care se lucra
+    const currentBuildStr = localStorage.getItem('current_build');
+    if (currentBuildStr) {
+      try {
+        const parts = JSON.parse(currentBuildStr);
+        categories.value.forEach(cat => {
+          if (parts[cat.id]) {
+            cat.selectedPart = parts[cat.id];
+          }
+        });
+      } catch (e) {
+        console.error("Eroare la citirea current_build:", e);
+      }
+    }
+  }
+})
+
+// --- COMPUTED ---
+const activeCategory = computed(() => categories.value.find(c => c.id === activeCategoryId.value))
+const selectedPartsCount = computed(() => categories.value.filter(c => c.selectedPart).length)
+const totalPrice = computed(() => categories.value.reduce((acc, cat) => acc + parseFloat(cat.selectedPart?.pret || cat.selectedPart?.price || 0), 0))
+const totalTdp = computed(() => selectedPartsCount.value * 75) // Mock calcul
+const hasIncompatibilities = computed(() => false) // Mock state
+
+// --- METHODS ---
+const fetchCategoryParts = async () => {
+  if (!activeCategoryId.value) return
   loading.value = true
   try {
-    for (const category of categories.value) {
-      const response = await axios.get(`http://127.0.0.1:8000/api/${category.id}/`)
-      const parts = response.data.results || response.data
-      category.allParts = parts        // copie completă, niciodată modificată
-      category.parts = [...parts]      // lista afișată, poate fi filtrată
-      console.log(`✅ Încărcat ${category.id}: ${parts.length} piese`)
+    const cat = categories.value.find(c => c.id === activeCategoryId.value)
+    if (cat && cat.endpoint) {
+      const params = { page: currentPage.value, page_size: PAGE_SIZE }
+      const response = await api.get(`/${cat.endpoint}/`, { params })
+      if (response.data.results !== undefined) {
+        activeCategoryParts.value = response.data.results
+        totalProducts.value = response.data.count
+      } else {
+        activeCategoryParts.value = response.data
+        totalProducts.value = response.data.length
+      }
     }
   } catch (err) {
-    console.error('Eroare la citirea bazei de date:', err)
+    showToast('Eroare la încărcarea componentelor', 'error')
+    activeCategoryParts.value = []
+    totalProducts.value = 0
   } finally {
     loading.value = false
   }
 }
 
-// ── Select cu filtre în cascadă ───────────────────────────
-const selectPart = (categoryId, part) => {
-  const category = categories.value.find(c => c.id === categoryId)
-  category.selectedPart = part
-  openCategoryId.value = null
-  agentResult.value = null
-  agentError.value = null
+const goToPage = (page) => { 
+  if (page < 1 || page > totalPages.value) return; 
+  currentPage.value = page; 
+  fetchCategoryParts(); 
+}
 
-  // CPU selectat → filtrează Plăcile de Bază după socket, avertizează dacă incompatibil
-  if (categoryId === 'cpus') {
-    const socket = part.socket
-    const moboCat = categories.value.find(c => c.id === 'motherboards')
+const openCategory = async (id) => {
+  activeCategoryId.value = id
+  if (id) {
+    currentPage.value = 1
+    await fetchCategoryParts()
+  }
+}
 
-    if (socket) {
-      moboCat.parts = moboCat.allParts.filter(m => m.socket === socket)
-      moboCat.activeFilter = `Socket ${socket}`
-      moboCat.filterLocked = true
+const selectPart = (part) => {
+  const cat = categories.value.find(c => c.id === activeCategoryId.value)
+  if(cat) {
+    cat.selectedPart = part
+    saveCurrentBuildToStorage()
+  }
+  activeCategoryId.value = null // Întoarcere la summary
+}
 
-      if (moboCat.selectedPart && moboCat.selectedPart.socket !== socket) {
-        moboCat.incompatibil = true
-      } else {
-        moboCat.incompatibil = false
-      }
-    } else {
-      moboCat.parts = [...moboCat.allParts]
-      moboCat.activeFilter = null
-      moboCat.filterLocked = false
-      moboCat.incompatibil = false
+const removePart = (id) => {
+  const cat = categories.value.find(c => c.id === id)
+  if(cat) {
+    cat.selectedPart = null
+    saveCurrentBuildToStorage()
+  }
+}
+
+const clearAllParts = () => {
+  categories.value.forEach(cat => {
+    cat.selectedPart = null
+  })
+  saveCurrentBuildToStorage()
+}
+
+const openSaveModal = () => showSaveModal.value = true
+const confirmSave = async () => {
+  if (!isLoggedIn.value) {
+    showToast('Trebuie să fii conectat pentru a salva!', 'error')
+    return
+  }
+
+  const payload = {
+    nume: newBuildName.value || undefined,
+  }
+
+  categories.value.forEach(cat => {
+    if (cat.selectedPart) {
+      payload[cat.id] = cat.selectedPart.id
     }
+  })
 
-    // Reset RAM doar dacă mobo incompatibil sau nicio mobo selectată
-    const ramCat = categories.value.find(c => c.id === 'rams')
-    ramCat.parts = [...ramCat.allParts]
-    ramCat.activeFilter = null
-    ramCat.filterLocked = false
-    ramCat.incompatibil = false
-  }
-
-  // Placă de Bază selectată → filtrează RAM după tip_ram, avertizează dacă incompatibil
-  if (categoryId === 'motherboards') {
-    const tipRam = part.tip_ram
-    const ramCat = categories.value.find(c => c.id === 'rams')
-
-    if (tipRam) {
-      ramCat.parts = ramCat.allParts.filter(r => r.tip === tipRam)
-      ramCat.activeFilter = tipRam
-      ramCat.filterLocked = true
-
-      if (ramCat.selectedPart && ramCat.selectedPart.tip !== tipRam) {
-        ramCat.incompatibil = true
-      } else {
-        ramCat.incompatibil = false
-      }
-    } else {
-      ramCat.parts = [...ramCat.allParts]
-      ramCat.activeFilter = null
-      ramCat.filterLocked = false
-      ramCat.incompatibil = false
-    }
-  }
-}
-
-// ── Remove cu reset filtre ────────────────────────────────
-const removePart = (categoryId) => {
-  const category = categories.value.find(c => c.id === categoryId)
-  if (!category) return
-  category.selectedPart = null
-  category.incompatibil = false
-  agentResult.value = null
-  agentError.value = null
-
-  // La ștergerea CPU → resetează filtrele pe mobo și RAM (dar păstrează selecțiile)
-  if (categoryId === 'cpus') {
-    const moboCat = categories.value.find(c => c.id === 'motherboards')
-    moboCat.parts = [...moboCat.allParts]
-    moboCat.activeFilter = null
-    moboCat.filterLocked = false
-    moboCat.incompatibil = false
-
-    const ramCat = categories.value.find(c => c.id === 'rams')
-    ramCat.parts = [...ramCat.allParts]
-    ramCat.activeFilter = null
-    ramCat.filterLocked = false
-    ramCat.incompatibil = false
-  }
-
-  // La ștergerea Plăcii de Bază → resetează filtrul RAM (dar păstrează selecția RAM)
-  if (categoryId === 'motherboards') {
-    const ramCat = categories.value.find(c => c.id === 'rams')
-    ramCat.parts = [...ramCat.allParts]
-    ramCat.activeFilter = null
-    ramCat.filterLocked = false
-    ramCat.incompatibil = false
-  }
-}
-
-const openPartSelector = (categoryId) => {
-  openCategoryId.value = openCategoryId.value === categoryId ? null : categoryId
-}
-
-// ── Salvare ───────────────────────────────────────────────
-const salveazaPC = async () => {
   try {
-    const payload = {
-      cpu:         categories.value.find(c => c.id === 'cpus')?.selectedPart?.id || null,
-      gpu:         categories.value.find(c => c.id === 'gpus')?.selectedPart?.id || null,
-      motherboard: categories.value.find(c => c.id === 'motherboards')?.selectedPart?.id || null,
-      ram:         categories.value.find(c => c.id === 'rams')?.selectedPart?.id || null,
-      storage:     categories.value.find(c => c.id === 'storages')?.selectedPart?.id || null,
-      psu:         categories.value.find(c => c.id === 'psus')?.selectedPart?.id || null,
-      case:        categories.value.find(c => c.id === 'cases')?.selectedPart?.id || null,
-      cooler:      categories.value.find(c => c.id === 'coolers')?.selectedPart?.id || null,
-      pret_total:  totalPrice.value
-    }
-    const response = await api.post('saved-builds/', payload)
-    alert(`Build salvat cu succes sub numele: ${response.data.nume}`)
+    const response = await api.post('/saved-builds/', payload)
+    showToast('Build salvat cu succes!', 'success')
+    showSaveModal.value = false
   } catch (error) {
-    console.error('Eroare la salvare:', error)
-    alert(error.response?.status === 401 ? 'Loghează-te pentru a salva!' : 'Eroare server.')
+    showToast('Eroare la salvarea build-ului', 'error')
+    console.error(error)
   }
 }
 
-// ── Agent AI ──────────────────────────────────────────────
 const analizeazaBuild = async () => {
-  agentLoading.value = true
-  agentError.value = null
-  agentResult.value = null
-  try {
-    const payload = {
-      cpu:         categories.value.find(c => c.id === 'cpus')?.selectedPart || null,
-      gpu:         categories.value.find(c => c.id === 'gpus')?.selectedPart || null,
-      motherboard: categories.value.find(c => c.id === 'motherboards')?.selectedPart || null,
-      ram:         categories.value.find(c => c.id === 'rams')?.selectedPart || null,
-      psu:         categories.value.find(c => c.id === 'psus')?.selectedPart || null,
-      case:        categories.value.find(c => c.id === 'cases')?.selectedPart || null,
-      cooler:      categories.value.find(c => c.id === 'coolers')?.selectedPart || null,
-      storage:     categories.value.find(c => c.id === 'storages')?.selectedPart || null,
+  const buildPayload = {}
+  categories.value.forEach(cat => {
+    if (cat.selectedPart) {
+      buildPayload[cat.id] = cat.selectedPart
     }
-    const response = await axios.post('http://127.0.0.1:8002/analizeaza-build', payload)
-    agentResult.value = response.data
+  })
+
+  if (Object.keys(buildPayload).length === 0) {
+    showToast('Nu ai selectat nicio componentă pentru analiză.', 'error')
+    return
+  }
+
+  agentLoading.value = true
+  
+  try {
+    const response = await api.post('/builder/compatibility/', {
+      build: buildPayload
+    })
+    
+    analysisResult.value = response.data.probleme || []
+    showAnalysisModal.value = true
   } catch (err) {
-    agentError.value = 'Nu s-a putut contacta agentul. Verifică dacă rulează pe portul 8002.'
+    showToast('Eroare la analiza build-ului', 'error')
   } finally {
     agentLoading.value = false
   }
 }
 
-// ── Helpers ───────────────────────────────────────────────
-const selectedPartsCount = computed(() => categories.value.filter(cat => cat.selectedPart).length)
-const totalPartsLoaded = computed(() => categories.value.reduce((acc, cat) => acc + (cat.parts?.length || 0), 0))
-const totalPrice = computed(() => categories.value.reduce((sum, cat) => sum + parseFloat(cat.selectedPart?.pret || 0), 0))
-const progressPercentage = computed(() => (selectedPartsCount.value / categories.value.length) * 100)
-const displayPartName = (part) => part.nume || part.model || 'Componentă'
-const displayPartPrice = (part) => part.pret || '0.00'
-
-// ── Mount + încarcă din sessionStorage (din SavedBuilds) ──
-onMounted(async () => {
-  await fetchParts()
-
-  // 1. Încărcare din Saved Builds (Logica ta existentă)
-  const saved = sessionStorage.getItem('loadBuild')
-  if (saved) {
-    const parts = JSON.parse(saved)
-    for (const slot of categories.value) {
-      const key = slot.id === 'cpus' ? 'cpu'
-        : slot.id === 'gpus' ? 'gpu'
-        : slot.id === 'motherboards' ? 'motherboard'
-        : slot.id === 'rams' ? 'ram'
-        : slot.id === 'storages' ? 'storage'
-        : slot.id === 'psus' ? 'psu'
-        : slot.id === 'cases' ? 'case'
-        : slot.id === 'coolers' ? 'cooler' : null
-      if (key && parts[key]) slot.selectedPart = parts[key]
-    }
-    sessionStorage.removeItem('loadBuild')
+const openAlternativesModal = async (cat) => {
+  if (!cat.selectedPart) {
+    showToast('Te rog să selectezi o componentă mai întâi.', 'error')
+    return
   }
+  
+  modalTargetCategory.value = cat
+  showAlternativesModal.value = true
+  alternatives.value = [] // clear loading state
+  
+  try {
+    const response = await api.post('/builder/alternatives/', {
+      component_type: cat.id,
+      component_id: cat.selectedPart.id,
+      limit: 3
+    })
+    
+    if (response.data.alternative) {
+      alternatives.value = response.data.alternative.map(alt => ({
+        id: alt.id,
+        name: alt.nume,
+        price: alt.pret,
+        reason: `Performanță: +${alt.diferenta_performanta_procent}% | Economie: ${alt.economie_ron} RON (${alt.magazin})`,
+        ...alt
+      }))
+    } else {
+      showToast(response.data.error || 'Nicio alternativă găsită.', 'error')
+    }
+  } catch (err) {
+    showToast('Eroare la obținerea alternativelor.', 'error')
+  }
+}
 
-  // 2. NOU: Încărcare din AI PC Architect
-  const pendingAiBuild = localStorage.getItem('pending_ai_build')
-  if (pendingAiBuild) {
-    try {
-      const buildRecomandat = JSON.parse(pendingAiBuild)
-      
-      // Selectăm piesele folosind datele trimise de AI
-      // Căutăm piesa completă în allParts pe baza ID-ului trimis de AI
-      
-      if (buildRecomandat.cpu) {
-         const cpuCat = categories.value.find(c => c.id === 'cpus')
-         const cpuPart = cpuCat.allParts.find(p => p.id === buildRecomandat.cpu.id)
-         if (cpuPart) selectPart('cpus', cpuPart)
-      }
-      
-      if (buildRecomandat.gpu) {
-         const gpuCat = categories.value.find(c => c.id === 'gpus')
-         const gpuPart = gpuCat.allParts.find(p => p.id === buildRecomandat.gpu.id)
-         if (gpuPart) selectPart('gpus', gpuPart)
-      }
-      
-      if (buildRecomandat.motherboard) {
-         const moboCat = categories.value.find(c => c.id === 'motherboards')
-         const moboPart = moboCat.allParts.find(p => p.id === buildRecomandat.motherboard.id)
-         if (moboPart) selectPart('motherboards', moboPart)
-      }
-      
-      if (buildRecomandat.ram) {
-         const ramCat = categories.value.find(c => c.id === 'rams')
-         const ramPart = ramCat.allParts.find(p => p.id === buildRecomandat.ram.id)
-         if (ramPart) selectPart('rams', ramPart)
-      }
-
-      // Curățăm localStorage-ul după ce am încărcat piesele
-      localStorage.removeItem('pending_ai_build')
-      
-      // Oprim eventualele erori sau analize vechi
-      agentError.value = null
-      agentResult.value = null
-
-    } catch (error) {
-      console.error('Eroare la parsarea build-ului AI:', error)
-      localStorage.removeItem('pending_ai_build')
+const swapComponent = (alt) => {
+  if(modalTargetCategory.value) {
+    modalTargetCategory.value.selectedPart = {
+      id: alt.id,
+      nume: alt.name || alt.nume,
+      pret: alt.price || alt.pret,
+      magazin: alt.magazin,
+      url_produs: alt.url_produs || alt.url,
+      // mapping extra
     }
   }
-})
+  showAlternativesModal.value = false
+}
+
+const triggerBottleneck = async () => {
+  const cpu = categories.value.find(c => c.id === 'cpu')?.selectedPart
+  const gpu = categories.value.find(c => c.id === 'gpu')?.selectedPart
+  if (!cpu || !gpu) {
+    showToast('Te rog să selectezi un CPU și un GPU pentru analiză!', 'error')
+    return
+  }
+  
+  showBottleneck.value = true;
+  loadingBottleneck.value = true;
+  
+  try {
+    const response = await api.post('/builder/bottleneck/', {
+      cpu_id: cpu.id,
+      gpu_id: gpu.id
+    })
+    const data = response.data
+    bottleneckStats.value = [
+      { label: 'SCOR CPU', value: Math.min(100, Math.round((data.scor_cpu / Math.max(data.scor_cpu, data.scor_gpu)) * 100)), color: 'text-cyan', bg: 'linear-gradient(90deg, #00e5ff, #3b82f6)' },
+      { label: 'SCOR GPU', value: Math.min(100, Math.round((data.scor_gpu / Math.max(data.scor_cpu, data.scor_gpu)) * 100)), color: 'text-violet', bg: 'linear-gradient(90deg, #7c3aed, #ec4899)' },
+      { label: 'BOTTLENECK', value: data.procentaj_bottleneck, color: 'text-red', bg: 'linear-gradient(90deg, #ef4444, #f97316)' },
+    ]
+  } catch (error) {
+    showToast('Eroare la calculul bottleneck-ului', 'error')
+  } finally {
+    loadingBottleneck.value = false;
+  }
+}
+
+const triggerFps = async () => {
+  const cpu = categories.value.find(c => c.id === 'cpu')?.selectedPart
+  const gpu = categories.value.find(c => c.id === 'gpu')?.selectedPart
+  const ram = categories.value.find(c => c.id === 'ram')?.selectedPart
+  
+  if (!cpu || !gpu || !ram) {
+    showToast('Te rog să selectezi CPU, GPU și RAM pentru benchmark!', 'error')
+    return
+  }
+  
+  showFps.value = true;
+  loadingFps.value = true;
+  
+  try {
+    const response = await api.post('/builder/benchmark/', {
+      cpu: cpu,
+      gpu: gpu,
+      ram: ram,
+      rezolutie: '1080p'
+    })
+    
+    if (response.data.error) {
+      showToast(response.data.error, 'error');
+      console.error(response.data.traceback);
+      return;
+    }
+    
+    if (response.data.jocuri) {
+      fpsEstimates.value = response.data.jocuri.slice(0, 5).map(j => ({
+        name: j.nume,
+        fhd: j.fps_1080p?.ultra || '-',
+        qhd: j.fps_1440p?.ultra || '-',
+        uhd: j.fps_4k?.ultra || '-'
+      }))
+    }
+  } catch (error) {
+    showToast('Eroare la simularea FPS-urilor', 'error')
+  } finally {
+    loadingFps.value = false;
+  }
+}
+
+const triggerCasePreview = async () => {
+  if (!isLoggedIn.value) {
+    showToast('Trebuie să fii conectat pentru a genera imagini!', 'error')
+    return
+  }
+  
+  const casePart = categories.value.find(c => c.id === 'case')?.selectedPart
+  const gpu = categories.value.find(c => c.id === 'gpu')?.selectedPart
+  const cpu = categories.value.find(c => c.id === 'cpu')?.selectedPart
+  
+  if (!casePart || !gpu || !cpu) {
+    showToast('Te rog să selectezi Carcasa, GPU și CPU pentru imagine!', 'error')
+    return
+  }
+  
+  try {
+    imageGenerationErrorText.value = null; // Reset error before fetching
+    showToast('Se generează imaginea... Așteaptă câteva secunde.', 'success')
+    const response = await api.post('/builder/generate-image/', {
+      case_name: casePart.nume || casePart.name,
+      gpu_name: gpu.nume || gpu.name,
+      cpu_name: cpu.nume || cpu.name
+    })
+    
+    if (response.data.image_url) {
+      generatedImageUrl.value = response.data.image_url
+      imageGenerationsCount.value++
+      localStorage.setItem('image_generations_count', imageGenerationsCount.value)
+    } else {
+      showToast(response.data.error || 'Eroare la generare', 'error')
+      if (response.data.error) {
+        imageGenerationErrorText.value = response.data.error
+      } else {
+        imageGenerationErrorText.value = "Preview indisponibil momentan."
+      }
+    }
+  } catch (err) {
+    showToast('Eroare la generarea imaginii', 'error')
+    imageGenerationErrorText.value = "Preview indisponibil momentan (Eroare server)."
+  }
+}
 </script>
 
 <style scoped>
-.builder-layout { 
-  display: grid; 
-  grid-template-columns: 1fr 350px; 
-  gap: 30px; 
-  padding: 40px 20px; 
-  color: white; 
+/* ==========================================================================
+   DESIGN SYSTEM & CSS VARIABLES
+   ========================================================================== */
+.maximalist-app-container {
+  /* Core Colors */
+  --bg-base: #0C0D12;
+  --bg-surface: rgba(255, 255, 255, 0.03);
+  --border-glass: rgba(255, 255, 255, 0.08);
+  
+  /* Accents */
+  --neon-cyan: #00e5ff;
+  --neon-violet: #7c3aed;
+  --neon-green: #00e5a0;
+  --neon-pink: #ec4899;
+  
+  /* Text */
+  --text-primary: #f0f4ff;
+  --text-secondary: #8b9db5;
+
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  min-height: 100vh;
+  display: flex;
+  overflow: hidden; /* Fără scroll pe body */
+  position: relative;
 }
 
-.main-panel { 
-  background-color: #1a1b26; 
-  border-radius: 12px; 
-  border: 1px solid #2a2d3e; 
-  padding: 25px; 
+/* Typography Classes */
+.font-inter { font-family: 'Inter', sans-serif; }
+.font-mono { font-family: 'JetBrains Mono', monospace; }
+.font-syne { font-family: 'Syne', sans-serif; }
+
+/* Dithering / Noise Effect */
+.noise-texture {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.03'/%3E%3C/svg%3E");
 }
 
-.build-row { 
-  display: flex; 
-  align-items: center; 
-  padding: 20px; 
-  border-bottom: 1px solid #2a2d3e; 
+/* Glassmorphism Panel Core */
+.glass-panel {
+  background: var(--bg-surface);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border-glass);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  position: relative;
+  z-index: 1;
+}
+
+.glass-panel-inner {
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+}
+
+/* Interactive Cards Hover */
+.interactive-card {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+}
+.interactive-card:hover {
+  border-color: rgba(0, 229, 255, 0.4);
+  transform: translateY(-4px);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6), 0 0 20px rgba(0, 229, 255, 0.15);
+}
+
+/* Gradients Text */
+.gradient-text-brand { background: linear-gradient(90deg, #f0f4ff, #8b9db5); -webkit-background-clip: text; color: transparent; font-weight: 800; font-size: 1.2rem; letter-spacing: 0.5px;}
+.gradient-text-cyan { background: linear-gradient(90deg, #00e5ff, #3b82f6); -webkit-background-clip: text; color: transparent; }
+.gradient-text-violet { background: linear-gradient(90deg, #ec4899, #7c3aed); -webkit-background-clip: text; color: transparent; }
+.gradient-text-green { background: linear-gradient(90deg, #00e5a0, #10b981); -webkit-background-clip: text; color: transparent; }
+
+/* Text colors */
+.text-cyan { color: var(--neon-cyan); }
+.text-violet { color: var(--neon-violet); }
+.text-green { color: var(--neon-green); }
+
+/* ==========================================================================
+   LAYOUT: SIDEBAR
+   ========================================================================== */
+.sidebar {
+  width: 280px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border-glass);
+  background: rgba(12, 13, 18, 0.85);
+  z-index: 10;
+}
+
+.sidebar-brand {
+  padding: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  border-bottom: 1px solid var(--border-glass);
+}
+.brand-icon svg { width: 28px; height: 28px; stroke: var(--neon-cyan); }
+
+.sidebar-scroll-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.5rem 1rem;
+}
+.sidebar-scroll-area::-webkit-scrollbar { width: 4px; }
+.sidebar-scroll-area::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
+
+.category-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-bottom: 0.5rem;
+  border: 1px solid transparent;
+}
+.category-item:hover { background: rgba(255,255,255,0.05); }
+.category-item.active {
+  background: rgba(0, 229, 255, 0.1);
+  border-color: rgba(0, 229, 255, 0.3);
+}
+.cat-left { display: flex; align-items: center; gap: 1rem; }
+.cat-icon { font-size: 1.2rem; }
+.cat-name { font-weight: 500; font-size: 0.95rem; color: var(--text-secondary); transition: color 0.2s;}
+.category-item.active .cat-name, .category-item.has-part .cat-name { color: var(--text-primary); }
+
+.status-indicator { width: 8px; height: 8px; border-radius: 50%; background: #334155; transition: 0.3s;}
+.category-item.has-part .status-indicator { background: var(--neon-green); box-shadow: 0 0 10px var(--neon-green); }
+
+.sidebar-footer {
+  padding: 1.5rem;
+  border-top: 1px solid var(--border-glass);
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  background: rgba(0,0,0,0.2);
+}
+
+/* ==========================================================================
+   BUTTONS
+   ========================================================================== */
+.btn-ghost-outline {
+  background: transparent; border: 1px solid var(--border-glass); color: var(--text-primary);
+  padding: 0.8rem; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+  transition: 0.2s; font-weight: 600; font-size: 0.9rem;
+}
+.btn-ghost-outline:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.2); }
+
+.btn-primary-green {
+  background: var(--neon-green); color: #000; border: none; padding: 0.8rem; border-radius: 8px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+  font-weight: 700; transition: 0.2s; box-shadow: 0 0 15px rgba(0, 229, 160, 0.2);
+}
+.btn-primary-green:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 0 25px rgba(0, 229, 160, 0.4); }
+.btn-primary-green:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
+
+.btn-primary-violet {
+  background: var(--neon-violet); color: #fff; border: none; padding: 0.8rem; border-radius: 8px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+  font-weight: 700; transition: 0.2s; box-shadow: 0 0 15px rgba(124, 58, 237, 0.2);
+}
+.btn-primary-violet:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 0 25px rgba(124, 58, 237, 0.4); }
+.btn-primary-violet:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
+
+.btn-primary-cyan {
+  background: rgba(0, 229, 255, 0.1); border: 1px solid var(--neon-cyan); color: var(--neon-cyan);
+  padding: 0.6rem 1.2rem; border-radius: 6px; cursor: pointer; font-weight: 700; transition: 0.2s;
+}
+.btn-primary-cyan:hover { background: var(--neon-cyan); color: #000; box-shadow: 0 0 15px rgba(0,229,255,0.4);}
+
+.ai-sub-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.btn-ai-sub {
+  background: rgba(124, 58, 237, 0.05);
+  border: 1px solid rgba(124, 58, 237, 0.2);
+  color: #c4b5fd;
+  padding: 0.6rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 600;
+  transition: 0.2s;
+  letter-spacing: 0.5px;
+}
+.btn-ai-sub:hover {
+  background: rgba(124, 58, 237, 0.2);
+  color: #fff;
+  border-color: rgba(124, 58, 237, 0.5);
+}
+
+.spin-icon { animation: spin 1s linear infinite; }
+@keyframes spin { 100% { transform: rotate(360deg); } }
+
+/* ==========================================================================
+   LAYOUT: MAIN CONTENT & HERO
+   ========================================================================== */
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 1.5rem;
+  position: relative;
+  z-index: 5;
+}
+.main-content::-webkit-scrollbar { width: 8px; }
+.main-content::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+
+.hero-header {
+  border-radius: 16px;
+  padding: 2.5rem;
+  margin-bottom: 1.5rem;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  border-color: rgba(0, 229, 255, 0.15);
+}
+
+.hero-bg-animated {
+  position: absolute; inset: 0; z-index: 0;
+  background: linear-gradient(120deg, rgba(12,13,18,1) 0%, rgba(0, 229, 255, 0.05) 50%, rgba(124, 58, 237, 0.05) 100%);
+  background-size: 200% 200%;
+  animation: gradientMove 10s ease infinite;
+}
+@keyframes floatingBg {
+  0% { background-position: 0% 0%; }
+  100% { background-position: 100% 100%; }
+}
+
+.pagination { display: flex; justify-content: center; align-items: center; gap: 8px; padding: 20px 0; flex-wrap: wrap; }
+.page-btn { background: #1a1b26; border: 1px solid #2a2d3e; color: #a9b1d6; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-size: 0.9rem; font-weight: 600; transition: all 0.15s; min-width: 40px; }
+.page-btn:hover:not(:disabled) { background: #232533; color: white; border-color: #3b82f6; }
+.page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.page-btn.active { background: #3b82f6; border-color: #3b82f6; color: white; }
+.page-dots { color: #64748b; padding: 0 4px; }
+
+@keyframes gradientMove { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+
+.hero-content {
+  position: relative; z-index: 1; width: 100%;
+  display: flex; justify-content: space-between; align-items: flex-end;
+}
+
+.hero-title { font-size: 2.5rem; margin: 0 0 1rem 0; letter-spacing: -1px; text-shadow: 0 2px 10px rgba(0,0,0,0.5); }
+
+.badges-row { display: flex; gap: 1rem; }
+.badge-status { padding: 0.4rem 1rem; border-radius: 20px; font-size: 0.85rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1);}
+.badge-status .dot { width: 8px; height: 8px; border-radius: 50%; }
+.badge-status.success .dot { background: var(--neon-green); box-shadow: 0 0 8px var(--neon-green); }
+.badge-status.error .dot { background: var(--neon-pink); box-shadow: 0 0 8px var(--neon-pink); }
+.badge-status.info .dot { background: var(--neon-cyan); box-shadow: 0 0 8px var(--neon-cyan); }
+
+.price-display { text-align: right; }
+.price-label { font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.3rem; letter-spacing: 1px; }
+.price-value { font-size: 3rem; font-weight: 700; line-height: 1; margin-bottom: 0.5rem; text-shadow: 0 0 20px rgba(0,229,160,0.2); }
+.price-value .currency { font-size: 1.5rem; }
+.tdp-value { font-size: 0.9rem; color: #f97316; font-weight: 600; }
+
+/* ==========================================================================
+   LOADING & GRID
+   ========================================================================== */
+.loading-state {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  height: 400px; border-radius: 16px;
+}
+.spinner-hologram { width: 60px; height: 60px; border: 3px solid rgba(0, 229, 255, 0.1); border-top-color: var(--neon-cyan); border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 1.5rem; box-shadow: 0 0 20px rgba(0,229,255,0.2); }
+
+.loading-state-small {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 2rem 0; min-height: 150px;
+}
+.small-spinner { width: 40px; height: 40px; border-width: 2px; margin-bottom: 1rem; }
+
+/* Transitions */
+.expand-enter-active,
+.expand-leave-active {
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+  max-height: 600px;
+  opacity: 1;
+}
+.expand-enter-from,
+.expand-leave-to {
+  max-height: 0;
+  opacity: 0;
+  margin-bottom: 0 !important;
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  border-width: 0 !important;
+}
+
+.generated-image-container { position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+.generated-preview-img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 8px; }
+.btn-enlarge { position: absolute; bottom: 10px; right: 10px; background: rgba(0, 229, 255, 0.2); border: 1px solid var(--neon-cyan); color: #fff; padding: 4px 8px; font-size: 0.8rem; cursor: pointer; border-radius: 4px; z-index: 10;}
+.image-modal { position: relative; max-width: 90vw; max-height: 90vh; padding: 2rem; display: flex; justify-content: center; align-items: center; }
+.full-size-img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 12px; }
+
+.components-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 25px; margin-bottom: 30px;
+}
+
+.synth-product-card {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  transition: transform 0.3s ease, border-color 0.3s ease;
+}
+
+.synth-product-card:hover {
+  transform: translateY(-5px);
+  border-color: rgba(0, 240, 255, 0.5);
+}
+
+.card-top {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 15px;
+}
+.card-brand {
+  background: rgba(255,255,255,0.1);
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #94a3b8;
+}
+
+.card-image-box {
+  position: relative;
+  width: 100%;
+  height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20px;
+  background: rgba(255,255,255,0.02);
+  border-radius: 12px;
+}
+.card-image-box img {
+  max-width: 80%;
+  max-height: 80%;
+  object-fit: contain;
+  filter: drop-shadow(0 10px 15px rgba(0,0,0,0.5));
+}
+
+.card-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-bottom: 5px;
+  line-height: 1.3;
+  color: #e2e8f0;
+}
+
+.card-specs {
+  display: flex;
+  gap: 15px;
+  margin-bottom: 25px;
+  border-top: 1px solid rgba(255,255,255,0.05);
+  padding-top: 15px;
+}
+.spec-col span {
+  font-size: 0.7rem;
+  color: #64748b;
+  text-transform: uppercase;
+}
+.spec-col {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.neon-price {
+  color: #00f0ff;
+  font-weight: 800;
+  font-size: 1.3rem;
+  text-shadow: 0 0 10px rgba(0, 240, 255, 0.3);
+}
+
+.btn-neon {
+  background: linear-gradient(90deg, rgba(168, 85, 247, 0.8), rgba(0, 240, 255, 0.8));
+  border: none;
+  padding: 12px 20px;
+  border-radius: 20px;
+  color: white;
+  font-weight: 700;
+  cursor: pointer;
   transition: 0.3s;
 }
-
-.category-container { 
-  border-bottom: 1px solid #232533; 
+.btn-neon:hover:not(:disabled) {
+  box-shadow: 0 0 15px rgba(168, 85, 247, 0.6);
+  transform: scale(1.05);
 }
+.btn-neon:disabled { opacity: 0.5; cursor: not-allowed; }
 
-.category-info { 
-  flex: 1;
-  display: flex; 
-  flex-direction: column; 
-  margin-left: 15px;
+.card-link { text-decoration: none; flex: 1; }
+
+/* ==========================================================================
+   SUMMARY LAYOUT (Coloane stânga/dreapta)
+   ========================================================================== */
+.summary-layout {
+  display: grid;
+  grid-template-columns: 1fr 1.3fr;
+  gap: 1.5rem;
 }
+@media (max-width: 1200px) { .summary-layout { grid-template-columns: 1fr; } }
 
-.price-section { 
-  margin-left: auto;
-  margin-right: 25px; 
-  min-width: 120px; 
-  text-align: right; 
-  font-weight: bold;
+.panel-title { font-size: 1.2rem; margin: 0 0 1.5rem 0; letter-spacing: 1px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 1rem; }
+
+/* PC Preview Hologram */
+.pc-preview-card { border-radius: 16px; padding: 2rem; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 300px; margin-bottom: 1.5rem; overflow: hidden; position: relative;}
+.pc-hologram { position: relative; width: 120px; height: 180px; perspective: 1000px; transform-style: preserve-3d; animation: float 6s ease-in-out infinite; }
+.holo-core { width: 100%; height: 100%; background: linear-gradient(180deg, rgba(0, 229, 255, 0.1), rgba(124, 58, 237, 0.3)); border: 1px solid rgba(0, 229, 255, 0.5); box-shadow: 0 0 40px rgba(0, 229, 255, 0.2) inset, 0 0 20px rgba(124, 58, 237, 0.4); border-radius: 10px; }
+.holo-rings { position: absolute; top: 50%; left: 50%; width: 160%; height: 60%; border: 1px dashed rgba(0, 229, 255, 0.3); border-radius: 50%; transform: translate(-50%, -50%) rotateX(75deg); animation: rotateRings 10s linear infinite; }
+.pc-preview-label { position: absolute; bottom: 1.5rem; color: rgba(0, 229, 255, 0.6); font-size: 0.8rem; letter-spacing: 2px; }
+@keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+@keyframes rotateRings { 100% { transform: translate(-50%, -50%) rotateX(75deg) rotateZ(360deg); } }
+
+/* Bottleneck Analysis */
+.bottleneck-panel { border-radius: 16px; padding: 2rem; margin-bottom: 1.5rem; }
+.progress-item { margin-bottom: 1.2rem; }
+.progress-item:last-child { margin-bottom: 0; }
+.progress-header { display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.5rem; color: var(--text-secondary); font-weight: 600;}
+.progress-track { width: 100%; height: 8px; background: rgba(255,255,255,0.05); border-radius: 4px; overflow: hidden; box-shadow: inset 0 1px 3px rgba(0,0,0,0.5);}
+.progress-fill { height: 100%; border-radius: 4px; box-shadow: 0 0 10px currentColor; }
+
+/* Build List */
+.build-list-panel { border-radius: 16px; padding: 2rem; margin-bottom: 1.5rem; }
+.build-items-container { display: flex; flex-direction: column; gap: 1rem; }
+.empty-state { text-align: center; color: var(--text-secondary); padding: 2rem; display: flex; flex-direction: column; align-items: center; gap: 1rem; }
+.empty-state svg { width: 48px; height: 48px; opacity: 0.5; }
+.build-item { background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 1rem; display: flex; align-items: center; gap: 1rem; transition: 0.2s;}
+.build-item:hover { border-color: rgba(255,255,255,0.15); background: rgba(255,255,255,0.02);}
+.item-icon { font-size: 1.5rem; background: rgba(255,255,255,0.05); width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; border-radius: 8px; }
+.item-info { flex: 1; display: flex; flex-direction: column; }
+.item-cat { font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 0.2rem; }
+.item-name { font-weight: 600; font-size: 0.95rem; }
+.item-actions { display: flex; align-items: center; gap: 1rem; }
+.item-price { font-weight: 700; color: var(--neon-green); }
+.btn-swap { background: rgba(0, 229, 255, 0.1); border: 1px solid rgba(0, 229, 255, 0.3); color: var(--neon-cyan); width: 32px; height: 32px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s;}
+.btn-swap svg { width: 16px; height: 16px; }
+.btn-swap:hover { background: var(--neon-cyan); color: #000; box-shadow: 0 0 10px rgba(0,229,255,0.4);}
+
+.btn-clear-all {
+  background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: #ef4444;
+  padding: 0.3rem 0.6rem; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 4px;
+  font-size: 0.8rem; font-weight: bold; transition: 0.2s;
 }
+.btn-clear-all:hover { background: #ef4444; color: #fff; box-shadow: 0 0 10px rgba(239, 68, 68, 0.4);}
+.btn-remove { background: transparent; border: none; color: var(--text-secondary); cursor: pointer; font-size: 1.2rem; transition: 0.2s;}
+.btn-remove:hover { color: var(--neon-pink); }
 
-.actions { 
-  width: 120px; 
-  display: flex; 
-  justify-content: flex-end; 
-}
+/* FPS Panel */
+.fps-panel { border-radius: 16px; padding: 2rem; }
+.badge-ultra { background: var(--neon-violet); color: white; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.7rem; letter-spacing: 1px; }
+.table-responsive { overflow-x: auto; }
+.fps-table { width: 100%; border-collapse: collapse; text-align: left; }
+.fps-table th { padding: 1rem 0; color: var(--text-secondary); font-size: 0.8rem; border-bottom: 1px solid rgba(255,255,255,0.1); }
+.fps-table td { padding: 1rem 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+.game-title { font-weight: 600; }
+.fps-high { color: var(--neon-green); font-weight: 700;}
+.fps-med { color: var(--neon-cyan); font-weight: 700;}
+.fps-low { color: #f97316; font-weight: 700;}
 
-.no-part {
-  font-size: 0.8rem;
-  color: #475569;
-}
+/* ==========================================================================
+   MODALS
+   ========================================================================== */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; z-index: 9999; }
+.maximalist-modal { width: 100%; max-width: 500px; border-radius: 16px; border: 1px solid rgba(124, 58, 237, 0.3); box-shadow: 0 20px 50px rgba(0,0,0,0.8), 0 0 40px rgba(124, 58, 237, 0.1); display: flex; flex-direction: column; }
+.modal-large { max-width: 700px; border-color: rgba(0, 229, 255, 0.3); box-shadow: 0 20px 50px rgba(0,0,0,0.8), 0 0 40px rgba(0, 229, 255, 0.1); }
 
-.filter-hint {
-  color: #f59e0b;
-  font-size: 0.78rem;
-}
+.modal-header { padding: 1.5rem 2rem; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: center; }
+.modal-header h2 { margin: 0; font-size: 1.25rem; letter-spacing: 1px; }
+.btn-close { background: transparent; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer; transition: 0.2s; }
+.btn-close:hover { color: white; transform: rotate(90deg); }
 
-.incompatibil-warning {
-  display: block;
-  font-size: 0.75rem;
-  color: #f43f5e;
-  margin-top: 3px;
-}
+.modal-body { padding: 2rem; overflow-y: auto; max-height: 60vh; }
 
-.filter-tag {
-  font-size: 0.7rem;
-  color: #475569;
-  background: rgba(255,255,255,0.04);
-  border: 1px solid #2a2d3e;
-  border-radius: 20px;
-  padding: 2px 10px;
-  margin-right: 12px;
-  white-space: nowrap;
-}
+.input-group { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 2rem; }
+.input-group label { color: var(--text-secondary); font-size: 0.85rem; letter-spacing: 1px; }
+.synth-input { background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 1rem; color: white; font-size: 1rem; outline: none; transition: 0.2s; }
+.synth-input:focus { border-color: var(--neon-violet); box-shadow: 0 0 15px rgba(124, 58, 237, 0.2); }
 
-.parts-selector-box {
-  background-color: #16161e;
-  max-height: 350px;
-  overflow-y: auto;
-  border-left: 3px solid #3b82f6;
-  margin: 0 10px 15px 10px;
-  border-radius: 0 0 8px 8px;
-  box-shadow: inset 0 4px 10px rgba(0,0,0,0.3);
-}
+.save-options-row { display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.5rem; }
+.toggle-container { display: flex; align-items: center; gap: 1rem; }
+.toggle-label { color: white; font-size: 0.9rem; letter-spacing: 1px; }
 
-.part-option {
-  display: flex; 
-  justify-content: space-between; 
-  align-items: center;
-  padding: 15px 25px; 
-  cursor: pointer; 
-  border-bottom: 1px solid #232533;
-  transition: 0.2s;
-}
+/* Switch CSS */
+.synth-switch { position: relative; display: inline-block; width: 44px; height: 24px; }
+.synth-switch input { opacity: 0; width: 0; height: 0; }
+.slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(255,255,255,0.1); transition: .4s; border-radius: 34px; }
+.slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+.synth-switch input:checked + .slider { background-color: var(--neon-green); box-shadow: 0 0 10px var(--neon-green); }
+.synth-switch input:checked + .slider:before { transform: translateX(20px); }
 
-.part-option:hover { 
-  background-color: rgba(59, 130, 246, 0.1); 
-}
+.user-profile-badge { display: flex; align-items: center; gap: 0.8rem; color: var(--text-secondary); font-size: 0.85rem; }
+.avatar-circle { width: 28px; height: 28px; background: linear-gradient(135deg, var(--neon-cyan), var(--neon-violet)); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 0.8rem; }
 
-.p-name { font-weight: 500; color: #a9b1d6; }
-.p-price { color: #10b981; font-weight: bold; }
+.modal-footer { padding: 1.5rem 2rem; border-top: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: flex-end; gap: 1rem; background: rgba(0,0,0,0.2); border-bottom-left-radius: 16px; border-bottom-right-radius: 16px;}
+.btn-ghost { background: transparent; border: none; color: var(--text-secondary); font-weight: 600; padding: 0.8rem 1.5rem; cursor: pointer; border-radius: 8px; transition: 0.2s; }
+.btn-ghost:hover { background: rgba(255,255,255,0.05); color: white; }
 
-.btn { 
-  padding: 8px 18px; 
-  border-radius: 6px; 
-  cursor: pointer; 
-  font-weight: 600; 
-  transition: 0.2s;
-}
-
-.btn-outline { 
-  background: transparent; 
-  border: 1px solid #3b82f6; 
-  color: #3b82f6; 
-}
-
-.btn-outline:hover { 
-  background: #3b82f6; 
-  color: white; 
-}
-
-.btn-primary { 
-  background: #10b981; 
-  border: none; 
-  color: white; 
-  padding: 15px; 
-  font-size: 1rem;
-}
-
-.btn-primary:hover:not(:disabled) { 
-  background: #059669; 
-  transform: translateY(-1px);
-}
-
-.btn-primary:disabled { 
-  background: #334155; 
-  cursor: not-allowed; 
-  opacity: 0.5;
-}
-
-.btn-block { width: 100%; }
-
-.summary-card { 
-  background: #1a1b26; 
-  border: 1px solid #2a2d3e; 
-  padding: 25px; 
-  border-radius: 12px; 
-  margin-bottom: 20px; 
-}
-
-.price-highlight { 
-  color: #10b981; 
-  font-size: 1.6rem; 
-}
-
-.info-box { 
-  background: #1e293b; 
-  padding: 20px; 
-  border-radius: 12px; 
-  border-left: 4px solid #3b82f6; 
-}
-
-.info-box h4 { 
-  color: #3b82f6; 
-  margin-bottom: 10px; 
-}
-
-.btn-analyze {
-  width: 100%;
-  padding: 10px;
-  background: #6366f1;
-  border: none;
-  color: white;
-  border-radius: 6px;
-  cursor: pointer;
-  font-weight: 600;
-  margin-bottom: 12px;
-  transition: 0.2s;
-}
-.btn-analyze:hover:not(:disabled) { background: #4f46e5; }
-.btn-analyze:disabled { opacity: 0.6; cursor: not-allowed; }
-
-.agent-error {
-  background: rgba(239,68,68,0.1);
-  border: 1px solid #ef4444;
-  color: #fca5a5;
-  padding: 10px;
-  border-radius: 6px;
-  font-size: 0.85rem;
-}
-
-.agent-badge {
-  display: inline-block;
-  padding: 4px 12px;
-  border-radius: 20px;
-  font-size: 0.85rem;
-  font-weight: 600;
-  margin-bottom: 10px;
-}
-.badge-ok      { background: rgba(16,185,129,0.2); color: #10b981; }
-.badge-warning { background: rgba(245,158,11,0.2);  color: #f59e0b; }
-.badge-error   { background: rgba(239,68,68,0.2);   color: #ef4444; }
-
-.agent-section { margin-top: 10px; font-size: 0.85rem; color: #a9b1d6; }
-.agent-section ul { margin: 4px 0 0 16px; }
-.agent-section p { margin-top: 4px; line-height: 1.5; }
-.sugestie-item { padding: 2px 0 2px 8px; color: #7aa2f7; font-size: 0.8rem; }
-
-.parts-selector-box::-webkit-scrollbar { width: 6px; }
-.parts-selector-box::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
-.btn-remove {
-  background: transparent;
-  border: 1px solid #ef4444;
-  color: #ef4444;
-  padding: 8px 18px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-weight: 600;
-  transition: 0.2s;
-}
-
-.btn-remove:hover {
-  background: #ef4444;
-  color: white;
-}
+/* Alternatives Grid */
+.alternatives-grid { display: flex; flex-direction: column; gap: 1rem; }
+.alt-card { padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem; }
+.alt-header { display: flex; align-items: center; gap: 0.8rem; }
+.alt-icon { font-size: 1.5rem; }
+.alt-header h4 { margin: 0; font-size: 1.1rem; }
+.alt-price { font-size: 1.5rem; font-weight: 700; margin: 0; }
+.alt-reason { color: var(--text-secondary); font-size: 0.9rem; line-height: 1.5; margin: 0; }
 </style>

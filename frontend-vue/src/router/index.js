@@ -5,6 +5,8 @@ import LoginView from '../views/LogInView.vue'
 import RegisterView from '../views/RegisterView.vue'
 import ProfileView from '../views/ProfileView.vue'
 import DocumentatiiView from '../views/DocumentatieView.vue'
+import ProductsListView from '../views/ProductsListView.vue'
+import ProductDetailView from '../views/ProductDetailView.vue'
 
 const routes = [
   {
@@ -42,7 +44,17 @@ const routes = [
   path: '/chat-ai',
   name: 'chat-ai',
   component: () => import('../views/ChatAIView.vue')
-}
+},
+{ 
+    path: '/products/:category', 
+    name: 'ProductsList', 
+    component: ProductsListView 
+  },
+  { 
+    path: '/products/:category/:id', 
+    name: 'ProductDetail', 
+    component: ProductDetailView 
+  }
 ]
 
 const router = createRouter({

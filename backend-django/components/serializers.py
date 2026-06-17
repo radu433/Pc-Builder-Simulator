@@ -38,4 +38,4 @@ class SaveBuildSerializer(serializers.ModelSerializer):
     class Meta:
         model = SaveBuild
         fields = '__all__'
-        read_only_fields = ['user','nume','data_salvarii']  
+        read_only_fields = ['user','data_salvarii']  

@@ -19,6 +19,7 @@ class ComponentaBase(models.Model):
 class GPU(ComponentaBase):
     serie = models.CharField(max_length=200)
     model_chipset = models.CharField(max_length=200)
+    chipset_brand = models.CharField(max_length=50, default='Unknown')  # NVIDIA, AMD, Intel
     vram_gb = models.IntegerField()
     tip_vram = models.CharField(max_length=50, null=True, blank=True)
     consum_tdp = models.IntegerField()
@@ -57,6 +58,7 @@ class Motherboard(ComponentaBase):
 
 class RAM(ComponentaBase):
     capacitate_totala_gb = models.IntegerField()
+    capacitate_modul_gb = models.IntegerField(default=0)  # ex: 8 pentru un kit 2x8GB
     numar_module = models.IntegerField(default=2)
     tip_memorie = models.CharField(max_length=50)
     frecventa_mhz = models.IntegerField()
@@ -70,6 +72,7 @@ class PSU(ComponentaBase):
     putere_w = models.IntegerField()
     certificare = models.CharField(max_length=150)
     este_modulara = models.CharField(max_length=10, default="Non")
+    format = models.CharField(max_length=50, default="ATX")  # ex: ATX, SFX, SFX-L
     lungime_mm = models.IntegerField(default=150)
 
     def __str__(self):
@@ -176,6 +179,18 @@ class SaveBuild(models.Model):
 class Blacklist(models.Model):
      part_number = models.CharField(max_length=100, unique=True, null=True, blank=True)
      nume = models.CharField(max_length=300)
+
+class BuildAnalysisCache(models.Model):
+    cache_key=models.CharField(max_length=32, unique=True,db_index=True)
+    cpu = models.ForeignKey(CPU, on_delete=models.CASCADE)
+    gpu = models.ForeignKey(GPU, on_delete=models.CASCADE)
+    ram = models.ForeignKey(RAM, on_delete=models.CASCADE, null=True, blank=True)
+    psu = models.ForeignKey(PSU, on_delete=models.CASCADE, null=True, blank=True)
+    fps_data = models.JSONField(default=dict)
+    bottleneck_data = models.JSONField(default=dict)
+    analiza_text = models.TextField(blank=True)
+    generated_image_path = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
 
 def __str__(self):
         return f"{self.nume} - {self.user.username}"
