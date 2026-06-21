@@ -96,10 +96,10 @@
 
             <!-- BUTON ÎNCARCĂ ÎN BUILDER (apare când AI recomandă componente) -->
             <button
-              v-if="msg.role === 'ai' && hasBuildRecommendation(msg.text)"
+              v-if="msg.role === 'ai' && hasBuildRecommendation(msg)"
               class="btn-load-into-builder"
               :disabled="loadingBuildMsgIndex === index"
-              @click="loadTextBuildIntoBuilder(msg.text, index)"
+              @click="loadTextBuildIntoBuilder(msg, index)"
             >
               <span v-if="loadingBuildMsgIndex === index">⏳ Se caută componentele...</span>
               <span v-else>⬇ Încarcă în Builder</span>
@@ -195,17 +195,26 @@ const chatBox = ref(null)
 const loadingBuildMsgIndex = ref(null)
 
 const BUILD_KEYWORDS = ['procesor', 'placă video', 'gpu', 'ram', 'memorie', 'stocare', 'sursă', 'carcasă', 'placă de bază']
-const hasBuildRecommendation = (text) => {
+const hasBuildRecommendation = (msg) => {
+  // Prioritar: componente reale din DB returnate de backend
+  if (msg.recomandate && Object.keys(msg.recomandate).length > 0) return true
+  // Fallback (mesaje vechi din cache, fără componente structurate)
+  const text = msg.text
   if (!text) return false
   const lower = text.toLowerCase()
   return BUILD_KEYWORDS.filter(k => lower.includes(k)).length >= 3
 }
 
-const loadTextBuildIntoBuilder = async (text, index) => {
+const loadTextBuildIntoBuilder = async (msg, index) => {
   loadingBuildMsgIndex.value = index
   try {
-    const response = await api.post('/builder/parse-build/', { text })
-    const build = response.data.build
+    // 1. Folosim componentele reale (cu ID din DB) trimise de backend
+    let build = msg.recomandate
+    // 2. Fallback: pentru mesaje vechi parsăm textul prin backend
+    if (!build || Object.keys(build).length === 0) {
+      const response = await api.post('/builder/parse-build/', { text: msg.text })
+      build = response.data.build
+    }
     if (!build || Object.keys(build).length === 0) {
       showToast('Nu am găsit componente în baza de date pentru această configurație.', 'error')
       return
@@ -307,7 +316,8 @@ const sendMessage = async () => {
       role: 'ai',
       text: raspunsAI.mesaj_text,
       isBuild: raspunsAI.contine_build,
-      buildData: raspunsAI.build_data
+      buildData: raspunsAI.build_data,
+      recomandate: raspunsAI.componente_recomandate || null
     })
 
   } catch (error) {

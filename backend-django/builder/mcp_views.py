@@ -247,6 +247,110 @@ def _convert_for_json(obj):
     return obj
 
 
+def _get_model_map():
+    """Mapare tip componentă → model Django."""
+    from components.models import CPU, GPU, RAM, Storage, PSU, Motherboard, Case, Cooler
+    return {
+        'cpu': CPU, 'gpu': GPU, 'ram': RAM, 'storage': Storage,
+        'psu': PSU, 'motherboard': Motherboard, 'case': Case, 'cooler': Cooler,
+    }
+
+
+# Cuvinte fără valoare distinctivă la potrivirea numelor de componente
+_STOPWORDS = {'de', 'cu', 'gb', 'tb', 'mhz', 'ghz', 'ddr4', 'ddr5', 'pci', 'rgb', 'w'}
+
+
+def _full_component_dict(model_class, comp_id):
+    """Returnează dict-ul complet (toate câmpurile) al unei componente după ID."""
+    from django.forms.models import model_to_dict
+    try:
+        obj = model_class.objects.get(id=comp_id)
+        return _convert_for_json(model_to_dict(obj))
+    except model_class.DoesNotExist:
+        return None
+
+
+def _match_component_in_text(text, comps):
+    """
+    Alege din lista `comps` (componente reale din DB) pe cea al cărei nume
+    apare cel mai bine în textul AI-ului. Returnează componenta sau None.
+
+    Strategie: numărăm câți tokeni distinctivi ai numelui din DB apar (ca
+    cuvinte întregi) în text. Câștigă componenta cu cele mai multe potriviri,
+    cu condiția să fie strict mai bună decât următoarea (altfel e ambiguu).
+    Astfel un nume scurt scris de AI ("RTX 4060 Ti") se potrivește corect cu
+    numele lung din DB ("NVIDIA GeForce RTX 4060 Ti 8GB").
+    """
+    low = text.lower()
+    scored = []
+    for c in comps:
+        nume = (c.get("nume") or "").lower().strip()
+        if not nume:
+            continue
+        # Numele complet apare ca atare → potrivire sigură
+        if nume in low:
+            return c
+        tokens = [
+            t for t in re.findall(r'[\w\.]+', nume)
+            if len(t) >= 2 and t not in _STOPWORDS
+        ]
+        if not tokens:
+            continue
+        # Potrivire pe cuvânt întreg (evită "ti" din "putin", "4060" din "14060")
+        hits = sum(
+            1 for t in tokens
+            if re.search(r'(?<![\w])' + re.escape(t) + r'(?![\w])', low)
+        )
+        if hits >= 2:
+            scored.append((hits, c))
+
+    if not scored:
+        return None
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    best_hits, best_c = scored[0]
+    # Dezambiguizare: trebuie să fie strict mai bună decât următoarea candidată
+    if len(scored) > 1 and scored[1][0] == best_hits:
+        return None
+    return best_c
+
+
+def _build_recommended_components(build_data, mesaj_text, seen_components):
+    """
+    Construiește build-ul de încărcat în Builder, cu ID-uri REALE din DB.
+
+    Prioritate:
+      1. Build-ul complet generat de create_build_from_preferences (ID-uri exacte).
+      2. Potrivirea numelor din textul AI-ului cu componentele reale căutate în DB.
+    """
+    model_map = _get_model_map()
+    rec = {}
+
+    # Path 1 — build automat complet (cele mai sigure ID-uri)
+    if build_data and build_data.get("build"):
+        for ct, comp in build_data["build"].items():
+            model_class = model_map.get(ct)
+            cid = comp.get("id") if isinstance(comp, dict) else None
+            if model_class and cid:
+                full = _full_component_dict(model_class, cid)
+                if full:
+                    rec[ct] = full
+        if rec:
+            return rec
+
+    # Path 2 — potrivim textul AI-ului cu ce a căutat în DB
+    for ct, comps in seen_components.items():
+        match = _match_component_in_text(mesaj_text, comps)
+        if not match:
+            continue
+        model_class = model_map.get(ct)
+        cid = match.get("id")
+        full = _full_component_dict(model_class, cid) if (model_class and cid) else None
+        rec[ct] = full if full else _convert_for_json(match)
+
+    return rec
+
+
 class ChatView(APIView):
     """
     POST /api/builder/chat/
@@ -285,6 +389,13 @@ class ChatView(APIView):
             f"Dacă are, întreabă-l dacă vrea să le folosească sau altele noi. "
             f"Dacă nu are, întreabă-l de buget, jocuri și rezoluție. "
             f"Când ai toate datele, folosește create_build_from_preferences. "
+            f"REGULĂ CRITICĂ: Înainte de a recomanda ORICE componentă, apelează ÎNTÂI "
+            f"search_components (sau create_build_from_preferences) ca să vezi ce există REAL "
+            f"în baza de date. Recomandă EXCLUSIV componente returnate de aceste tool-uri și "
+            f"folosește numele EXACT din câmpul 'nume' al rezultatului (copiază-l identic, fără "
+            f"să-l prescurtezi sau să-l modifici). NU inventa componente care nu apar în baza de date. "
+            f"Când prezinți un build, scrie pe câte o linie separată fiecare componentă în formatul "
+            f"'Tip: Nume exact din DB' (ex: 'Procesor: AMD Ryzen 5 5600X'). "
             f"Când utilizatorul îți cere estimări de FPS (benchmark), întreabă-l mai întâi pentru ce jocuri dorește estimarea (dacă nu au fost deja stabilite sau salvate), apoi apelează benchmark_build trimițând 'jocuri_preferate' și 'user_id' = {user_id}. "
             f"Răspunde ÎNTOTDEAUNA în limba română. "
             f"Fii prietenos și profesionist."
@@ -324,6 +435,8 @@ class ChatView(APIView):
             # Loop de function calling — Gemini poate cere mai multe tool-uri în serie
             build_data = None
             all_tool_results = {}
+            # Componentele REALE pe care AI-ul le-a văzut din DB (cu ID-uri valide)
+            seen_components = {}
 
             for iteration in range(self.MAX_TOOL_ITERATIONS):
                 response = client.models.generate_content(
@@ -360,6 +473,17 @@ class ChatView(APIView):
                         if tool_name == "create_build_from_preferences" and result.get("succes"):
                             build_data = result
 
+                        # Reținem componentele reale din DB pe care le-a returnat căutarea
+                        if tool_name == "search_components" and isinstance(result, dict):
+                            ct = tool_args.get("component_type")
+                            comps = result.get("components")
+                            if ct and comps:
+                                bucket = seen_components.setdefault(ct, [])
+                                existing_ids = {c.get("id") for c in bucket}
+                                for c in comps:
+                                    if c.get("id") not in existing_ids:
+                                        bucket.append(c)
+
                         function_call_parts.append(part)
                         function_response_parts.append(
                             types.Part.from_function_response(
@@ -389,11 +513,17 @@ class ChatView(APIView):
             if not mesaj_text:
                 mesaj_text = "Am procesat cererea ta, dar nu am putut genera un răspuns text."
 
+            # Componentele reale (cu ID din DB) de încărcat în Builder
+            componente_recomandate = _build_recommended_components(
+                build_data, mesaj_text, seen_components
+            )
+
             # Construim răspunsul
             response_data = {
                 "mesaj_text": mesaj_text,
                 "contine_build": build_data is not None,
                 "build_data": build_data,
+                "componente_recomandate": componente_recomandate,
             }
 
             return Response(response_data, status=status.HTTP_200_OK)

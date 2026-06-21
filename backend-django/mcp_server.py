@@ -581,11 +581,12 @@ def generate_build_image(case_name: str, gpu_name: str, cpu_name: str) -> dict:
     )
 
     client = genai.Client(api_key=settings.GEMINI_IMAGE_API_KEY)
+    err_str = ""
 
-    # Încearcă Imagen 3 (model stabil pentru generare imagini)
+    # 1. Imagen 4 — calitate maximă (necesită cont cu billing activ pe proiectul cheii)
     try:
         response = client.models.generate_images(
-            model="imagen-3.0-generate-002",
+            model="imagen-4.0-generate-001",
             prompt=prompt,
             config=types.GenerateImagesConfig(
                 number_of_images=1,
@@ -599,22 +600,22 @@ def generate_build_image(case_name: str, gpu_name: str, cpu_name: str) -> dict:
         return {
             "image_base64": base64.b64encode(image_bytes).decode(),
             "cached": False,
-            "model_folosit": "imagen-3.0-generate-002"
+            "model_folosit": "imagen-4.0-generate-001"
         }
-
     except Exception as e:
-        err_str = str(e)
+        err_str = f"imagen-4.0-generate-001: {str(e)}"
 
-        # Fallback: Gemini 2.0 Flash cu generare nativă de imagini
+    # 2. Fallback — Gemini cu generare nativă de imagini (merge și pe free tier)
+    for model_name in ["gemini-2.5-flash-image", "gemini-3.1-flash-image"]:
         try:
-            response2 = client.models.generate_content(
-                model="gemini-2.0-flash-preview-image-generation",
+            response = client.models.generate_content(
+                model=model_name,
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     response_modalities=["IMAGE", "TEXT"],
                 )
             )
-            for part in response2.candidates[0].content.parts:
+            for part in response.candidates[0].content.parts:
                 if part.inline_data is not None:
                     image_bytes = part.inline_data.data
                     with open(cache_path, "wb") as f:
@@ -622,17 +623,19 @@ def generate_build_image(case_name: str, gpu_name: str, cpu_name: str) -> dict:
                     return {
                         "image_base64": base64.b64encode(image_bytes).decode(),
                         "cached": False,
-                        "model_folosit": "gemini-2.0-flash-preview-image-generation"
+                        "model_folosit": model_name
                     }
-        except Exception as e2:
-            err_str = f"{err_str} | fallback: {str(e2)}"
+            err_str = f"{model_name}: răspuns fără imagine"
+        except Exception as e:
+            err_str = f"{model_name}: {str(e)}"
+            continue
 
-        return {
-            "error": "Generarea imaginii nu este disponibilă momentan.",
-            "image_base64": None,
-            "cached": False,
-            "detalii": err_str[:300]
-        }
+    return {
+        "error": "Generarea imaginii nu este disponibilă momentan.",
+        "image_base64": None,
+        "cached": False,
+        "detalii": err_str[:300]
+    }
 
 @mcp.tool()
 def compare_components(component_type: str, component_names: list[str]) -> dict:
