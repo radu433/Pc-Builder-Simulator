@@ -10,26 +10,49 @@ jobs:
   test-backend:
     name: Backend Tests (Django)
     runs-on: ubuntu-latest
-    
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: rootpassword
+          MYSQL_DATABASE: pc_builder_sim
+          MYSQL_USER: radupcb
+          MYSQL_PASSWORD: rm123456
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      DB_NAME: pc_builder_sim
+      DB_USER: radupcb
+      DB_PASSWORD: rm123456
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+
     steps:
     - name: Checkout Code
       uses: actions/checkout@v4
-    
+
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.11' # Poți schimba dacă folosești altă versiune specifică
-        
+        python-version: '3.11'
+
     - name: Install Backend Dependencies
       run: |
         cd backend-django
         python -m pip install --upgrade pip
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-        
+
     - name: Run Django Tests
       run: |
         cd backend-django
-        python manage.py test components
+        python manage.py test components accounts
 
   test-frontend:
     name: Frontend Tests (Vue)
@@ -38,19 +61,18 @@ jobs:
     steps:
     - name: Checkout Code
       uses: actions/checkout@v4
-    
+
     - name: Set up Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '20' # Verificat din engines în package.json
-        
+        node-version: '20'
+
     - name: Install Frontend Dependencies
       run: |
         cd frontend-vue
         npm install
-        # Instalăm și uneltele de testare în caz că nu au fost adăugate în package.json
         npm install -D vitest @vue/test-utils jsdom
-        
+
     - name: Run Vue Tests
       run: |
         cd frontend-vue
