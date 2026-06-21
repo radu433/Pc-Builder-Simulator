@@ -62,7 +62,7 @@ class CPUApiTests(APITestCase):
 class SaveBuildApiTests(APITestCase):
     def setUp(self):
         self.user = User.objects.create_user(username='testuser', password='testpassword')
-        self.url = reverse('savebuild-list') # endpointul de save build
+        self.url = reverse('saved-builds-list')
         
         # Cream componente dummy pentru build
         self.cpu = CPU.objects.create(

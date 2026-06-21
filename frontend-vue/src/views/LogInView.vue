@@ -56,6 +56,7 @@ const handleLogin = async () => {
     })
 
     localStorage.setItem('access_token', response.data.access)
+    localStorage.setItem('refresh_token', response.data.refresh)
     localStorage.setItem('username', identifier.value)
 
     showToast(`Bun venit, ${identifier.value}!`, 'success')

@@ -180,7 +180,6 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import axios from 'axios'
 import api from '../plugins/axios'
 import { useRouter } from 'vue-router'
 import { showToast } from '@/toast'
@@ -217,11 +216,8 @@ const partSlots = [
 // ── Fetch builds ──────────────────────────────────────────
 const fetchSavedBuilds = async () => {
   try {
-    const token = localStorage.getItem('access_token')
-    if (!token) { router.push('/login'); return }
-    const response = await api.get('saved-builds/', {
-      headers: { Authorization: `Bearer ${token}` }
-    })
+    if (!localStorage.getItem('access_token')) { router.push('/login'); return }
+    const response = await api.get('saved-builds/')
     builds.value = response.data.results || response.data
   } catch (error) {
     console.error('Eroare la preluarea build-urilor:', error)
