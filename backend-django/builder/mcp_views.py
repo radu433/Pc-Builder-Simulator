@@ -626,13 +626,80 @@ class GenerateImageView(APIView):
             gpu_name=str(gpu_name),
             cpu_name=str(cpu_name),
         )
-        if result.get("image_path"):
-            import os
-            from django.conf import settings
-            filename = os.path.basename(result["image_path"])
-            result["image_url"] = request.build_absolute_uri(settings.MEDIA_URL + 'builds/' + filename)
-        
+
+        if result.get("image_base64"):
+            result["image_url"] = f"data:image/jpeg;base64,{result['image_base64']}"
+
         return Response(_convert_for_json(result))
+
+class ParseBuildFromTextView(APIView):
+    """POST /api/builder/parse-build/ — Extrage componente din textul AI și le caută în DB."""
+    permission_classes = [IsAuthenticated]
+
+    # Mapare tipuri → modele Django
+    _MODEL_MAP = None
+
+    @staticmethod
+    def _get_model_map():
+        from components.models import CPU, GPU, RAM, Storage, PSU, Motherboard, Case, Cooler
+        return {
+            'cpu':         CPU,
+            'gpu':         GPU,
+            'ram':         RAM,
+            'storage':     Storage,
+            'psu':         PSU,
+            'motherboard': Motherboard,
+            'case':        Case,
+            'cooler':      Cooler,
+        }
+
+    # Pattern-uri pentru fiecare tip — caută textul de după ":" pe linie
+    _PATTERNS = {
+        'cpu':         r'(?:Procesor|CPU)[^:\n]*:\s*([^\n*•]+)',
+        'gpu':         r'(?:Plac[aă]\s*Video|GPU|Grafic)[^:\n]*:\s*([^\n*•]+)',
+        'ram':         r'(?:RAM|Memorie)[^:\n]*:\s*([^\n*•]+)',
+        'storage':     r'(?:Stocare|SSD|HDD|NVMe)[^:\n]*:\s*([^\n*•]+)',
+        'psu':         r'(?:Surs[aă]|PSU)[^:\n]*:\s*([^\n*•]+)',
+        'motherboard': r'(?:Plac[aă]\s*de\s*Baz[aă]|Motherboard|Chipset)[^:\n]*:\s*([^\n*•]+)',
+        'case':        r'(?:Carcas[aă]|Case)[^:\n]*:\s*([^\n*•]+)',
+        'cooler':      r'(?:Cooler|R[aă]cire)[^:\n]*:\s*([^\n*•]+)',
+    }
+
+    def post(self, request):
+        from django.forms.models import model_to_dict
+
+        text = request.data.get('text', '')
+        if not text:
+            return Response({'error': 'Text lipsă'}, status=400)
+
+        model_map = self._get_model_map()
+        build = {}
+
+        for comp_type, pattern in self._PATTERNS.items():
+            match = re.search(pattern, text, re.IGNORECASE)
+            if not match:
+                continue
+
+            raw = match.group(1).strip()
+            # Ia prima opțiune dacă AI-ul a oferit alternative ("sau" / "or")
+            raw = re.split(r'\s+(?:sau|or)\s+', raw, flags=re.IGNORECASE)[0]
+            # Elimină parantezele cu descrieri
+            raw = re.sub(r'\([^)]+\)', '', raw).strip()
+
+            # Extrage cuvinte cheie cu cel puțin 3 caractere
+            keywords = [w for w in re.findall(r'[\w\-\.]{3,}', raw) if not w.isdigit()]
+
+            model_class = model_map[comp_type]
+            for kw in keywords[:6]:
+                qs = model_class.objects.filter(nume__icontains=kw, stoc=True)[:1]
+                if not qs.exists():
+                    qs = model_class.objects.filter(nume__icontains=kw)[:1]
+                if qs.exists():
+                    build[comp_type] = model_to_dict(qs.first())
+                    break
+
+        return Response({'build': build, 'gasit': len(build)})
+
 
 class AlternativesView(APIView):
     """POST /api/builder/alternatives/ — Caută alternative pentru componentă."""

@@ -94,6 +94,17 @@
               <p class="msg-text" v-html="formatMessage(msg.text)"></p>
             </div>
 
+            <!-- BUTON ÎNCARCĂ ÎN BUILDER (apare când AI recomandă componente) -->
+            <button
+              v-if="msg.role === 'ai' && hasBuildRecommendation(msg.text)"
+              class="btn-load-into-builder"
+              :disabled="loadingBuildMsgIndex === index"
+              @click="loadTextBuildIntoBuilder(msg.text, index)"
+            >
+              <span v-if="loadingBuildMsgIndex === index">⏳ Se caută componentele...</span>
+              <span v-else>⬇ Încarcă în Builder</span>
+            </button>
+
             <!-- CARDURI COMPONENTE RECOMANDATE (AI Message Only) -->
             <div class="recommended-components" v-if="msg.role === 'ai' && msg.isBuild && msg.buildData?.build">
               <div 
@@ -174,12 +185,39 @@
 import { ref, onMounted, nextTick, watch, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/plugins/axios'
+import { showToast } from '@/toast'
 
 const router = useRouter()
 const userInput = ref('')
 const messages = ref([])
 const isTyping = ref(false)
 const chatBox = ref(null)
+const loadingBuildMsgIndex = ref(null)
+
+const BUILD_KEYWORDS = ['procesor', 'placă video', 'gpu', 'ram', 'memorie', 'stocare', 'sursă', 'carcasă', 'placă de bază']
+const hasBuildRecommendation = (text) => {
+  if (!text) return false
+  const lower = text.toLowerCase()
+  return BUILD_KEYWORDS.filter(k => lower.includes(k)).length >= 3
+}
+
+const loadTextBuildIntoBuilder = async (text, index) => {
+  loadingBuildMsgIndex.value = index
+  try {
+    const response = await api.post('/builder/parse-build/', { text })
+    const build = response.data.build
+    if (!build || Object.keys(build).length === 0) {
+      showToast('Nu am găsit componente în baza de date pentru această configurație.', 'error')
+      return
+    }
+    sessionStorage.setItem('loadBuild', JSON.stringify(build))
+    router.push('/')
+  } catch {
+    showToast('Eroare la căutarea componentelor.', 'error')
+  } finally {
+    loadingBuildMsgIndex.value = null
+  }
+}
 
 // Verificare autentificare
 const isLoggedIn = computed(() => {
@@ -766,6 +804,33 @@ const incarcaInBuilder = (buildData) => {
   background: rgba(0, 229, 160, 0.15);
   border-color: #00e5a0;
   color: #00e5a0;
+}
+
+/* =====================================================================
+   BUTON ÎNCARCĂ ÎN BUILDER
+===================================================================== */
+.btn-load-into-builder {
+  margin-top: 10px;
+  padding: 8px 16px;
+  background: linear-gradient(135deg, #059669, #00e5a0);
+  color: #000;
+  font-size: 0.8rem;
+  font-weight: 700;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.btn-load-into-builder:hover:not(:disabled) {
+  filter: brightness(1.1);
+  box-shadow: 0 0 16px rgba(0, 229, 160, 0.4);
+}
+.btn-load-into-builder:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 /* =====================================================================

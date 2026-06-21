@@ -9,6 +9,7 @@ from .mcp_views import (
     PreferencesView,
     GenerateImageView,
     AlternativesView,
+    ParseBuildFromTextView,
 )
 
 urlpatterns = [
@@ -24,4 +25,5 @@ urlpatterns = [
     path('preferences/', PreferencesView.as_view(), name='builder-preferences'),
     path('generate-image/', GenerateImageView.as_view(), name='builder-generate-image'),
     path('alternatives/', AlternativesView.as_view(), name='builder-alternatives'),
+    path('parse-build/', ParseBuildFromTextView.as_view(), name='builder-parse-build'),
 ]

@@ -559,15 +559,19 @@ def create_build_from_preferences(
 @mcp.tool()
 def generate_build_image(case_name: str, gpu_name: str, cpu_name: str) -> dict:
     """Generează o imagine render cu build-ul PC pe baza componentelor selectate."""
+    import base64
 
-    cache_key = f"{case_name}_{gpu_name}_{cpu_name}".replace(" ", "_").lower()
-    cache_key = hashlib.md5(cache_key.encode()).hexdigest()
-    cache_path = os.path.join(settings.MEDIA_ROOT, "builds", f"{cache_key}.png")
-
-    if os.path.exists(cache_path):
-        return {"image_path": cache_path, "cached": True}
+    cache_key = hashlib.md5(
+        f"{case_name}_{gpu_name}_{cpu_name}".replace(" ", "_").lower().encode()
+    ).hexdigest()
+    cache_path = os.path.join(settings.MEDIA_ROOT, "builds", f"{cache_key}.jpg")
 
     os.makedirs(os.path.join(settings.MEDIA_ROOT, "builds"), exist_ok=True)
+
+    if os.path.exists(cache_path):
+        with open(cache_path, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode()
+        return {"image_base64": b64, "cached": True}
 
     prompt = (
         f"Realistic PC build render inside a {case_name} mid-tower case, "
@@ -585,14 +589,15 @@ def generate_build_image(case_name: str, gpu_name: str, cpu_name: str) -> dict:
             prompt=prompt,
             config=types.GenerateImagesConfig(
                 number_of_images=1,
-                aspect_ratio="1:1",
+                output_mime_type="image/jpeg",
+                aspect_ratio="16:9",
             )
         )
         image_bytes = response.generated_images[0].image.image_bytes
         with open(cache_path, "wb") as f:
             f.write(image_bytes)
         return {
-            "image_path": cache_path,
+            "image_base64": base64.b64encode(image_bytes).decode(),
             "cached": False,
             "model_folosit": "imagen-3.0-generate-002"
         }
@@ -611,20 +616,20 @@ def generate_build_image(case_name: str, gpu_name: str, cpu_name: str) -> dict:
             )
             for part in response2.candidates[0].content.parts:
                 if part.inline_data is not None:
+                    image_bytes = part.inline_data.data
                     with open(cache_path, "wb") as f:
-                        f.write(part.inline_data.data)
+                        f.write(image_bytes)
                     return {
-                        "image_path": cache_path,
+                        "image_base64": base64.b64encode(image_bytes).decode(),
                         "cached": False,
-                        "model_folosit": "gemini-2.0-flash-preview-image-generation (fallback)"
+                        "model_folosit": "gemini-2.0-flash-preview-image-generation"
                     }
         except Exception as e2:
             err_str = f"{err_str} | fallback: {str(e2)}"
 
-        # Ultimul fallback: returnează eroare clară
         return {
             "error": "Generarea imaginii nu este disponibilă momentan.",
-            "image_path": None,
+            "image_base64": None,
             "cached": False,
             "detalii": err_str[:300]
         }
