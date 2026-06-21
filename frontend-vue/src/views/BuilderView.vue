@@ -239,7 +239,15 @@
 
                  <!-- Items -->
                  <div v-for="cat in categories.filter(c => c.selectedPart)" :key="cat.id" class="build-item">
-                   <div class="item-icon">{{ cat.icon }}</div>
+                   <div class="item-icon">
+                     <img
+                       v-if="cat.selectedPart.imagine_url"
+                       :src="cat.selectedPart.imagine_url"
+                       :alt="cat.selectedPart.nume || cat.selectedPart.name"
+                       class="item-thumb"
+                     />
+                     <span v-else>{{ cat.icon }}</span>
+                   </div>
                     <div class="build-item-info">
                       <h4 class="font-inter">{{ cat.selectedPart.nume || cat.selectedPart.name }}</h4>
                       <p class="font-mono text-sm opacity-70">{{ cat.selectedPart.pret || cat.selectedPart.price }} RON</p>
@@ -1248,7 +1256,8 @@ const triggerCasePreview = async () => {
 .empty-state svg { width: 48px; height: 48px; opacity: 0.5; }
 .build-item { background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 1rem; display: flex; align-items: center; gap: 1rem; transition: 0.2s;}
 .build-item:hover { border-color: rgba(255,255,255,0.15); background: rgba(255,255,255,0.02);}
-.item-icon { font-size: 1.5rem; background: rgba(255,255,255,0.05); width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; border-radius: 8px; }
+.item-icon { font-size: 1.5rem; background: rgba(255,255,255,0.05); width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; border-radius: 8px; overflow: hidden; flex-shrink: 0; }
+.item-thumb { width: 100%; height: 100%; object-fit: contain; padding: 4px; }
 .item-info { flex: 1; display: flex; flex-direction: column; }
 .item-cat { font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 0.2rem; }
 .item-name { font-weight: 600; font-size: 0.95rem; }
