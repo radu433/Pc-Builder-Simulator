@@ -576,11 +576,12 @@ def generate_build_image(case_name: str, gpu_name: str, cpu_name: str) -> dict:
         f"photorealistic, dark background, professional photography"
     )
 
-    # Încearcă Imagen 4 Fast (25 RPD, fără RPM limit)
+    client = genai.Client(api_key=settings.GEMINI_IMAGE_API_KEY)
+
+    # Încearcă Imagen 3 (model stabil pentru generare imagini)
     try:
-        client = genai.Client(api_key=settings.GEMINI_IMAGE_API_KEY)
         response = client.models.generate_images(
-            model="gemini-2.5-flash-lite",
+            model="imagen-3.0-generate-002",
             prompt=prompt,
             config=types.GenerateImagesConfig(
                 number_of_images=1,
@@ -593,40 +594,39 @@ def generate_build_image(case_name: str, gpu_name: str, cpu_name: str) -> dict:
         return {
             "image_path": cache_path,
             "cached": False,
-            "model_folosit": "imagen-4.0-fast-generate-001"
+            "model_folosit": "imagen-3.0-generate-002"
         }
 
     except Exception as e:
         err_str = str(e)
 
-        # Fallback: Gemini 2.5 Flash Lite (text+image, 10 RPM / 20 RPD)
-        if "429" in err_str or "quota" in err_str.lower() or "exhausted" in err_str.lower():
-            try:
-                response2 = client.models.generate_content(
-                    model="gemini-2.5-flash-lite",
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        response_modalities=["IMAGE", "TEXT"],
-                    )
+        # Fallback: Gemini 2.0 Flash cu generare nativă de imagini
+        try:
+            response2 = client.models.generate_content(
+                model="gemini-2.0-flash-preview-image-generation",
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_modalities=["IMAGE", "TEXT"],
                 )
-                for part in response2.candidates[0].content.parts:
-                    if part.inline_data is not None:
-                        with open(cache_path, "wb") as f:
-                            f.write(part.inline_data.data)
-                        return {
-                            "image_path": cache_path,
-                            "cached": False,
-                            "model_folosit": "gemini-2.5-flash-lite (fallback)"
-                        }
-            except Exception as e2:
-                pass
+            )
+            for part in response2.candidates[0].content.parts:
+                if part.inline_data is not None:
+                    with open(cache_path, "wb") as f:
+                        f.write(part.inline_data.data)
+                    return {
+                        "image_path": cache_path,
+                        "cached": False,
+                        "model_folosit": "gemini-2.0-flash-preview-image-generation (fallback)"
+                    }
+        except Exception as e2:
+            err_str = f"{err_str} | fallback: {str(e2)}"
 
-        # Ultimul fallback: returnează placeholder în loc să crape
+        # Ultimul fallback: returnează eroare clară
         return {
-            "error": "Generarea imaginii nu este disponibilă momentan (cotă epuizată).",
+            "error": "Generarea imaginii nu este disponibilă momentan.",
             "image_path": None,
             "cached": False,
-            "detalii": err_str[:200]
+            "detalii": err_str[:300]
         }
 
 @mcp.tool()
